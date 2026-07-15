@@ -17,4 +17,10 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // https://v2.tauri.app/start/create-project/#manual-setup-tauri-cli
+  server: {
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
+  },
 })
