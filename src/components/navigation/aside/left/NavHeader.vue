@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Bot, Pin, Search, Settings } from '@lucide/vue'
+import { useRouter } from 'vue-router'
 import { MOCK_PINNED_CHATS } from '@/data/mock-fleet-projects'
 import {
   DropdownMenu,
@@ -11,13 +12,14 @@ import {
 } from '@/components/shadcn/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/shadcn/ui/sidebar'
 
+const { push } = useRouter()
 const pinnedChats = MOCK_PINNED_CHATS
 </script>
 
 <template>
   <SidebarMenu class="pt-8">
     <SidebarMenuItem>
-      <SidebarMenuButton tooltip="New Agent">
+      <SidebarMenuButton tooltip="New Agent" @click="push('/')">
         <Bot />
         <span>New Agent</span>
       </SidebarMenuButton>
@@ -51,14 +53,12 @@ const pinnedChats = MOCK_PINNED_CHATS
               </span>
             </DropdownMenuItem>
           </template>
-          <DropdownMenuItem v-else disabled>
-            No pinned chats
-          </DropdownMenuItem>
+          <DropdownMenuItem v-else disabled> No pinned chats </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
     <SidebarMenuItem>
-      <SidebarMenuButton tooltip="Settings">
+      <SidebarMenuButton tooltip="Settings" @click="push('/settings')">
         <Settings />
         <span>Settings</span>
       </SidebarMenuButton>

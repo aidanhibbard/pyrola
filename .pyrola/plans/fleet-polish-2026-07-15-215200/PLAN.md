@@ -9,7 +9,7 @@ dependsOn:
   - mcp-studio-2026-07-15-215200
 todos:
   - id: project-registry
-    content: Multi-project registry in ~/.pyrola/fleet.sqlite
+    content: Multi-project registry in {appDataDir}/.pyrola/projects.json (JSON v1; SQLite deferred)
     status: pending
   - id: thread-grouping
     content: Left sidebar — project chat lists + Pinned section (unlimited, cross-project)
@@ -37,7 +37,7 @@ Cross-project fleet management, background agents, cost tracking, and Cursor UX 
 
 ## Fleet data model
 
-**Project registry** in `~/.pyrola/fleet.sqlite`:
+**Project registry** in `{appDataDir}/.pyrola/projects.json` + `active-project.json`:
 
 - **Projects** — id, name, slug, rootPath, lastOpened
 - **Agent runs** — token usage, cost estimate (optional index)

@@ -9,7 +9,7 @@ dependsOn:
   - agent-harness-2026-07-15-215200
 todos:
   - id: chat-dir-layout
-    content: Define ~/.pyrola/chats/<project-slug>/<chat-id>/ on-disk layout
+    content: Define {appDataDir}/.pyrola/chats/<project-slug>/<chat-id>/ on-disk layout
     status: pending
   - id: chat-schema
     content: Zod schema for meta.json + messages.jsonl (AI SDK UIMessage parts)
@@ -24,7 +24,7 @@ todos:
     content: UI + command to duplicate/fork a chat (copy dir, new id, forkedFrom meta)
     status: pending
   - id: sidebar-integration
-    content: Left sidebar lists chats from ~/.pyrola/chats/<project-slug>/
+    content: Left sidebar lists chats from {appDataDir}/.pyrola/chats/<project-slug>/
     status: pending
   - id: pin-chat
     content: Pin/unpin chats (unlimited) — pinned field in meta.json + Pinned sidebar section
@@ -38,7 +38,7 @@ Chats are **user-level only**, organized per project. No `<repo>/.pyrola/chats` 
 ## Directory layout
 
 ```text
-~/.pyrola/
+{appDataDir}/.pyrola/
   chats/
     <project-slug>/              # e.g. platform, pyrola, marketing
       <chat-id>/                 # nanoid or uuid
@@ -97,7 +97,7 @@ Harness appends after each completed tool result (crash-safe tail).
 
 | Action | Behavior |
 |--------|----------|
-| **New chat** | Create `<chat-id>/` under `~/.pyrola/chats/<project-slug>/` |
+| **New chat** | Create `<chat-id>/` under `{appDataDir}/.pyrola/chats/<project-slug>/` |
 | **Delete chat** | Confirm dialog → `rm -rf` chat directory via Tauri fs command |
 | **Duplicate / fork** | Copy source directory → new `<chat-id>/` → update `meta.json` (`forkedFrom`, new `id`, new timestamps) → open forked chat |
 | **Rename** | Update `meta.json` title only |
@@ -111,7 +111,7 @@ Fork preserves full message history so the user can branch exploration without l
 
 ### Storage
 
-Pin state lives in each chat's `meta.json` (`pinned: boolean`, `pinnedAt: ISO timestamp`). No separate index file — scan all `~/.pyrola/chats/*/*/meta.json` where `pinned === true`.
+Pin state lives in each chat's `meta.json` (`pinned: boolean`, `pinnedAt: ISO timestamp`). No separate index file — scan all `{appDataDir}/.pyrola/chats/*/*/meta.json` where `pinned === true`.
 
 ### Sidebar UX
 
@@ -147,7 +147,7 @@ Forked chat inherits `pinned: false` unless user explicitly pins the fork.
 
 ## Relationship to SQLite
 
-`~/.pyrola/fleet.sqlite` (if used) holds **project registry only** — `id`, `name`, `rootPath`, `slug`, `lastOpened`. Chat content is **never** in SQLite.
+`{appDataDir}/.pyrola/projects.json` holds **project registry only** — `id`, `name`, `rootPath`, `slug`, `lastOpened`. Chat content is **never** in SQLite.
 
 ## Key modules
 
@@ -175,7 +175,7 @@ Forked chat inherits `pinned: false` unless user explicitly pins the fork.
 
 ## Definition of done
 
-- Chats persist under `~/.pyrola/chats/<project-slug>/` only
+- Chats persist under `{appDataDir}/.pyrola/chats/<project-slug>/` only
 - No chat files written to project `.pyrola/`
 - User can delete, fork, and pin/unpin chats from sidebar
 - Pinned section shows unlimited pinned chats across all projects

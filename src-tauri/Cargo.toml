@@ -23,7 +23,15 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = ["macos-private-api"] }
 tauri-plugin-log = "2"
+tauri-plugin-fs = "2"
 window-vibrancy = "0.7"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["sync", "process", "io-util", "rt-multi-thread", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+open = "5"
+lazy_static = "1"
+notify = "7.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSButton"] }

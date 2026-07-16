@@ -30,11 +30,13 @@ Wire BYOK config loader + keychain + HTTP proxy. **Settings UI** is covered in [
 ## Config layout
 
 ```text
-~/.pyrola/settings.json     # user defaults, apiKeyRef names
-~/.pyrola/mcp.json          # optional global MCP
-<repo>/.pyrola/settings.json  # project overrides (wins)
+{appDataDir}/.pyrola/settings.json     # user defaults (Tauri-managed; see below)
+{appDataDir}/.pyrola/mcp.json          # optional global MCP
+<repo>/.pyrola/settings.json          # project overrides (wins)
 <repo>/.pyrola/mcp.json
 ```
+
+User-level paths resolve via Tauri `app.path().app_data_dir()/.pyrola/` (macOS / Windows / Linux).
 
 **No `settings.local.json`.** Two levels only.
 

@@ -1,18 +1,35 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { Moon, Sun } from '@lucide/vue'
-import { useColorMode } from '@vueuse/core'
+import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
+import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
 
 defineProps<{
   class?: HTMLAttributes['class']
 }>()
 
-const mode = useColorMode()
+const config = usePyrolaConfig()
 
-const toggleMode = () => {
-  mode.value = mode.value === 'dark' ? 'light' : 'dark'
+const currentTheme = computed(
+  () => config.effectiveSettings.value['appearance.theme'] ?? 'system',
+)
+
+const nextTheme = (): PyrolaTheme => {
+  if (currentTheme.value === 'light') {
+    return 'dark'
+  }
+  if (currentTheme.value === 'dark') {
+    return 'system'
+  }
+  return 'light'
+}
+
+const toggleMode = async (): Promise<void> => {
+  const theme = nextTheme()
+  await config.setTheme('personal', theme)
 }
 </script>
 

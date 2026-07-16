@@ -11,6 +11,14 @@
         "mcp-remote",
         "https://registry.ai-elements-vue.com/mcp"
       ]
+    },
+    "bullmq": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://docs.bullmq.io/~gitbook/mcp"
+      ]
     }
   }
 }

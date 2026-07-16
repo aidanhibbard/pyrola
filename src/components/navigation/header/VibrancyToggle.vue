@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { GlassWater } from '@lucide/vue'
+import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
-import useVibrancy from '@/composables/use-vibrancy'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 
 defineProps<{
   class?: HTMLAttributes['class']
 }>()
 
-const { vibrancyEnabled } = useVibrancy()
+const config = usePyrolaConfig()
 
-const toggleVibrancy = () => {
-  vibrancyEnabled.value = !vibrancyEnabled.value
+const vibrancyEnabled = computed(
+  () => config.effectiveSettings.value['appearance.glass'] ?? true,
+)
+
+const toggleVibrancy = async (): Promise<void> => {
+  await config.setGlass('personal', !vibrancyEnabled.value)
 }
 </script>
 

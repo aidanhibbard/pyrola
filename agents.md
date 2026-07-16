@@ -152,7 +152,7 @@ For first-party forms that **read and write persisted server state** (settings, 
 - **After a successful mutation** (`POST` / `PUT` / `PATCH` / `DELETE`): reconcile the UI with the server by calling **`await refresh()`** (or the equivalent refetch) on the **same** query/composable instance that backs the read model. Local `data` should match what the user just saved; avoid leaving the form on stale client-only state.
 - **Loading:** Use a dedicated `ref` (or the composable's `pending`/`isFetching` where it fits) so the flow is: set loading **`true`** → perform mutation → **`await refresh()`** so data matches the server → set loading **`false`**.
 - **Control flow:** Wrap mutation + `refresh()` in **`try` / `catch` / `finally`**. Always clear loading in **`finally`** so it resets whether the mutation or refresh succeeds or throws.
-- **Toasts:** On both success and failure, show feedback with **`toast` from `vue-sonner`** (the app uses the shadcn-style **Sonner** toaster). Keep messages short and specific.
+- **Toasts:** On failure, always show **`toast.error()`** from `vue-sonner`. On success, show **`toast.success()`** when the user needs confirmation (save, delete, copy, etc.). Skip a success toast when navigation or the UI already makes the outcome obvious (e.g. `router.push`).
 
 ## Tables And Filtered Lists
 
@@ -235,30 +235,54 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 ## User Feedback, Loading, And Errors
 
 - For user-triggered async actions, use explicit loading state that makes the UI look intentional while work is in progress.
-- Wrap async mutations and user actions in `try` / `catch` / `finally` when failure is possible. Show success and failure feedback with `toast` from `vue-sonner` where the app already uses Sonner.
-- Always clear loading state in `finally` so buttons, forms, and controls recover whether the action succeeds or throws.
+- **Never use the `void` operator on promises** (e.g. `void saveSettings()`). It fires async work without handling outcomes and gives the user no feedback when something fails. Always `await` inside `try` / `catch` (and `finally` when loading state must be cleared).
+- Wrap async mutations and user actions in **`try` / `catch`**. Add **`finally`** only when needed — typically to reset loading state so buttons and controls recover whether the action succeeds or throws.
+- **On failure:** always notify with **`toast.error()`** from `vue-sonner`. Include a brief title and, when available, the error message in the `description` field.
+- **On success:** show **`toast.success()`** when the user needs confirmation the action completed (save, delete, copy, test connection, etc.). Skip a success toast when the outcome is already obvious from the UI — for example `router.push` to another page, closing a dialog, or inline state that updates immediately.
 - Keep toast messages short, specific, and user-facing.
 
 ## Error Handling
 
-- **No empty catch blocks.** Every `catch` must either handle the error (log, notify, recover) or re-throw it. Silent failures hide bugs and make debugging difficult.
-- **Always notify users of errors.** Use `toast.error()` from `vue-sonner` to inform users when an operation fails. Include a brief title and, when available, the error message in the `description` field.
-- **Example pattern:**
+- **No `void` on promises.** Do not prefix async calls with `void` to silence floating-promise lint warnings. Handle the promise explicitly so failures surface to the user.
+- **No empty catch blocks — under no circumstances.** Every `catch` must notify the user with `toast.error()`, recover with real handling logic, or re-throw. Never leave a `catch` empty, comment-only, or filled with `console.log` / `console.error` as a substitute for user feedback.
+- **Use `finally` only when needed.** Prefer `try` / `catch` alone when there is no loading flag or other cleanup. Use `try` / `catch` / `finally` when a `ref` (or similar) must be cleared whether the action succeeds or throws.
+- **Example — mutation with loading and success toast:**
   ```ts
-  try {
-    await someAsyncOperation()
-  } catch (error) {
-    toast.error('Operation failed', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
+  const saving = ref(false)
+
+  const handleSave = async (): Promise<void> => {
+    saving.value = true
+    try {
+      await saveSettings()
+      await refresh()
+      toast.success('Settings saved')
+    } catch (error) {
+      toast.error('Failed to save settings', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      saving.value = false
+    }
   }
   ```
-- For non-critical errors (e.g., optional features, background tasks), still log or notify rather than silently swallowing the exception.
+- **Example — navigation without success toast:**
+  ```ts
+  const handleOpenSettings = async (): Promise<void> => {
+    try {
+      await router.push({ name: 'settings' })
+    } catch (error) {
+      toast.error('Navigation failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  }
+  ```
+- For non-critical errors (e.g., optional features, background tasks), still notify with `toast.error()` rather than silently swallowing the exception.
 
 ## Logging
 
-- Do not add client-side logging in first-party app code. Avoid `console.log`, `console.warn`, `console.error`, and similar browser logging outside temporary local debugging that is removed before finishing the task.
-- Logging should happen on the backend/API only, where logs can use a scoped server logger and avoid leaking browser/user details.
+- **No `console.log` (or `console.warn`, `console.error`, `console.debug`, etc.) in first-party app code — under no circumstances.** Do not add client-side logging for debugging, error handling, or any other reason. Remove any `console.*` calls before finishing a task; do not leave them behind "temporarily."
+- Logging belongs on the backend/API only, where logs can use a scoped server logger and avoid leaking browser/user details.
 - Do not prefix log messages with service names such as `[service-name]`.
 - If the backend has a logger utility, create a scoped logger per file with `logger.withTag('name')` and use that tagged logger for all logs in the file.
 - Keep log messages focused on the event itself, not the file name.

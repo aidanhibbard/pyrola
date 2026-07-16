@@ -12,9 +12,13 @@ import {
 } from '@/components/shadcn/ui/resizable'
 import { Toaster } from '@/components/shadcn/ui/sonner'
 import useVibrancy from '@/composables/use-vibrancy'
+import usePyrolaLiveSync from '@/composables/use-pyrola-live-sync'
+import useFleetRegistry from '@/composables/use-fleet-registry'
 import { RouterView } from 'vue-router'
 
+useFleetRegistry()
 useVibrancy()
+usePyrolaLiveSync()
 
 const rightSidebarOpen = ref(false)
 </script>
@@ -25,13 +29,13 @@ const rightSidebarOpen = ref(false)
     <SidebarInset>
       <RightSidebarProvider v-model:open="rightSidebarOpen" class="h-svh flex-1">
         <TitleBar />
-        <ResizablePanelGroup direction="horizontal" class="flex-1 overflow-hidden">
-          <ResizablePanel :min-size="30">
+        <ResizablePanelGroup direction="horizontal" class="min-h-0 flex-1 overflow-hidden">
+          <ResizablePanel :min-size="30" class="h-full min-h-0">
             <main
-              class="h-full overflow-auto pt-(--titlebar-height)"
+              class="flex h-full min-h-0 flex-col overflow-hidden pt-(--titlebar-height)"
               style="--titlebar-height: 40px"
             >
-              <RouterView />
+              <RouterView class="min-h-0 flex-1" />
             </main>
           </ResizablePanel>
           <ResizableHandle v-if="rightSidebarOpen" />

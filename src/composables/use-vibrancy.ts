@@ -1,7 +1,8 @@
-import { useColorMode, useStorage } from '@vueuse/core'
+import { useColorMode } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { onMounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 
 const isLinux = (): boolean => navigator.userAgent.toLowerCase().includes('linux')
 
@@ -24,17 +25,27 @@ const clearNativeVibrancy = async (): Promise<void> => {
   await invoke('clear_vibrancy')
 }
 
-// Shared across every call to `useVibrancy` so the titlebar toggle and any
-// other consumer stay in sync and the preference persists across launches.
-export const vibrancyEnabled = useStorage('pyrola-vibrancy-enabled', true)
-
 export default () => {
   const mode = useColorMode()
+  const config = usePyrolaConfig()
+
+  const syncTheme = (): void => {
+    const theme = config.effectiveSettings.value['appearance.theme'] ?? 'system'
+    if (theme === 'system') {
+      mode.value = 'auto'
+      return
+    }
+    mode.value = theme
+  }
 
   const syncVibrancy = async (): Promise<void> => {
-    const isDark = mode.value === 'dark'
+    syncTheme()
 
-    if (!vibrancyEnabled.value) {
+    const glassEnabled = config.effectiveSettings.value['appearance.glass'] ?? true
+    const glassVariant = config.effectiveSettings.value['appearance.glassVariant'] ?? 'dark'
+    const isDark = glassVariant === 'dark' || mode.value === 'dark'
+
+    if (!glassEnabled) {
       clearLinuxFallback()
       try {
         await clearNativeVibrancy()
@@ -62,9 +73,38 @@ export default () => {
     }
   }
 
-  watch([() => mode.value, () => vibrancyEnabled.value], syncVibrancy)
+  watch(
+    () => [
+      config.effectiveSettings.value['appearance.glass'],
+      config.effectiveSettings.value['appearance.glassVariant'],
+      config.effectiveSettings.value['appearance.theme'],
+      config.hydrated.value,
+    ],
+    async () => {
+      if (config.hydrated.value) {
+        try {
+          await syncVibrancy()
+        } catch (error) {
+          toast.error('Failed to sync appearance', {
+            description: error instanceof Error ? error.message : 'Unknown error',
+          })
+        }
+      }
+    },
+    { deep: true },
+  )
 
-  onMounted(syncVibrancy)
+  onMounted(async () => {
+    if (config.hydrated.value) {
+      try {
+        await syncVibrancy()
+      } catch (error) {
+        toast.error('Failed to sync appearance', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
+  })
 
-  return { vibrancyEnabled }
+  return { syncVibrancy }
 }

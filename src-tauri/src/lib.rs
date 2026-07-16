@@ -1,6 +1,21 @@
+mod commands;
+
+use commands::{
+  config_exists, delete_secret, get_active_project, get_default_workspace_root, get_secret,
+  get_user_pyrola_dir, get_pyrola_dir, has_project_pyrola, http_proxy_request, list_project_files,
+  list_pyrola_files,
+  mcp_list_tools, mcp_logout,
+  mcp_refresh, mcp_start, mcp_status, mcp_stop, read_json_file, read_mcp_config, read_settings,
+  registry_add_project, registry_list_projects, registry_remove_project, registry_set_active_project,
+  reveal_in_folder, set_secret, watch_pyrola_paths, write_json_file, write_mcp_config, write_settings,
+  WatchState,
+};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_fs::init())
+    .manage(WatchState::new())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -32,7 +47,37 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       set_vibrancy_dark,
       set_vibrancy_light,
-      clear_vibrancy
+      clear_vibrancy,
+      get_user_pyrola_dir,
+      get_default_workspace_root,
+      has_project_pyrola,
+      read_settings,
+      write_settings,
+      read_mcp_config,
+      write_mcp_config,
+      read_json_file,
+      write_json_file,
+      config_exists,
+      registry_list_projects,
+      registry_add_project,
+      registry_remove_project,
+      registry_set_active_project,
+      get_active_project,
+      get_secret,
+      set_secret,
+      delete_secret,
+      http_proxy_request,
+      reveal_in_folder,
+      get_pyrola_dir,
+      list_project_files,
+      list_pyrola_files,
+      mcp_start,
+      mcp_stop,
+      mcp_refresh,
+      mcp_logout,
+      mcp_list_tools,
+      mcp_status,
+      watch_pyrola_paths,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -42,7 +87,9 @@ pub fn run() {
 fn hide_macos_traffic_lights(window: &tauri::WebviewWindow) {
   use objc2_app_kit::{NSWindow, NSWindowButton};
 
-  let Ok(ns_window_ptr) = window.ns_window() else { return };
+  let Ok(ns_window_ptr) = window.ns_window() else {
+    return;
+  };
   let ns_window: &NSWindow = unsafe { &*(ns_window_ptr as *const NSWindow) };
 
   for btn in [
@@ -56,16 +103,6 @@ fn hide_macos_traffic_lights(window: &tauri::WebviewWindow) {
   }
 }
 
-/// Applies the platform-appropriate vibrancy/glass effect to the given window.
-///
-/// - macOS: uses `NSVisualEffectMaterial` vibrancy (works on macOS 10.10+).
-///   Liquid Glass (macOS 26+) is not yet available in the published
-///   `window-vibrancy` crate, so this falls back to classic vibrancy on all
-///   macOS versions for now.
-/// - Windows: uses Mica on Windows 11, falling back to Acrylic when Mica is
-///   unsupported (e.g. Windows 10).
-/// - Linux: unsupported by `window-vibrancy`; the frontend applies a CSS
-///   `backdrop-filter` fallback instead.
 #[cfg(target_os = "macos")]
 fn apply_platform_vibrancy(window: &tauri::WebviewWindow, dark: bool) {
   use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -98,9 +135,7 @@ fn apply_platform_vibrancy(window: &tauri::WebviewWindow, dark: bool) {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn apply_platform_vibrancy(_window: &tauri::WebviewWindow, _dark: bool) {
-  // Linux vibrancy is compositor-controlled; handled via CSS on the frontend.
-}
+fn apply_platform_vibrancy(_window: &tauri::WebviewWindow, _dark: bool) {}
 
 fn clear_platform_vibrancy(window: &tauri::WebviewWindow) {
   #[cfg(target_os = "macos")]
