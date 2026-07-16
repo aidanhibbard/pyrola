@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import type { FileDiff } from '@/types/harness/file-diff'
 
 const diffLineSchema = z.object({
   kind: z.enum(['context', 'add', 'remove']),

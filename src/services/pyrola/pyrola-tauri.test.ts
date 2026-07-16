@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const invoke = vi.fn()
+const invoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke,

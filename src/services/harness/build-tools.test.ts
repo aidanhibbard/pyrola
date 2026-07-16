@@ -1,45 +1,68 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { FileDiff } from '@/types/harness/file-diff'
 
-const fsStagePreviewWrite = vi.fn()
-const fsStagePreviewEdit = vi.fn()
-const fsStagePreviewApplyPatch = vi.fn()
-const fsWriteFile = vi.fn()
-const fsEditFile = vi.fn()
-const fsApplyPatch = vi.fn()
-const requestApproval = vi.fn()
+const fsStagePreviewWrite = vi.fn<
+  (args: { projectRoot: string; path: string; content: string }) => Promise<FileDiff[]>
+>()
+const fsStagePreviewEdit = vi.fn<
+  (args: {
+    projectRoot: string
+    path: string
+    replacements: Array<{ oldString: string; newString: string }>
+  }) => Promise<FileDiff[]>
+>()
+const fsStagePreviewApplyPatch = vi.fn<
+  (args: { projectRoot: string; patch: string }) => Promise<FileDiff[]>
+>()
+const fsWriteFile = vi.fn<
+  (args: { projectRoot: string; path: string; content: string }) => Promise<FileDiff>
+>()
+const fsEditFile = vi.fn<
+  (args: {
+    projectRoot: string
+    path: string
+    replacements: Array<{ oldString: string; newString: string }>
+  }) => Promise<FileDiff>
+>()
+const fsApplyPatch = vi.fn<
+  (args: { projectRoot: string; patch: string }) => Promise<FileDiff[]>
+>()
+const requestApproval = vi.fn<
+  (toolCallId: string, name: string, diff: FileDiff[]) => Promise<boolean>
+>()
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
-  fsReadFile: vi.fn(),
-  fsListDir: vi.fn(),
+  fsReadFile: vi.fn<() => Promise<string>>(),
+  fsListDir: vi.fn<() => Promise<unknown>>(),
   fsWriteFile,
   fsEditFile,
   fsApplyPatch,
   fsStagePreviewWrite,
   fsStagePreviewEdit,
   fsStagePreviewApplyPatch,
-  workspaceGrep: vi.fn(),
-  workspaceGlob: vi.fn(),
-  gitStatus: vi.fn(),
-  gitDiff: vi.fn(),
-  gitLog: vi.fn(),
-  lspEnsureServer: vi.fn(),
-  lspRequest: vi.fn(),
-  mcpCallTool: vi.fn(),
-  shellRunCommand: vi.fn(),
-  httpProxyRequest: vi.fn(),
+  workspaceGrep: vi.fn<() => Promise<unknown>>(),
+  workspaceGlob: vi.fn<() => Promise<unknown>>(),
+  gitStatus: vi.fn<() => Promise<unknown>>(),
+  gitDiff: vi.fn<() => Promise<unknown>>(),
+  gitLog: vi.fn<() => Promise<unknown>>(),
+  lspEnsureServer: vi.fn<() => Promise<unknown>>(),
+  lspRequest: vi.fn<() => Promise<unknown>>(),
+  mcpCallTool: vi.fn<() => Promise<unknown>>(),
+  shellRunCommand: vi.fn<() => Promise<unknown>>(),
+  httpProxyRequest: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('@/services/git/git-repo-info', () => ({
-  default: vi.fn(),
+  default: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('@/services/harness/approval-gate', () => ({
   requestApproval,
-  shouldAutoApprove: vi.fn(() => true),
+  shouldAutoApprove: vi.fn<() => boolean>(() => true),
 }))
 
-const sampleDiff = {
+const sampleDiff: FileDiff = {
   path: 'src/main.ts',
   operation: 'update',
   hunks: [],
@@ -60,7 +83,7 @@ describe('build-tools stage preview wiring', () => {
   const ctx = {
     projectRoot: '/project',
     settings: { version: 1 } as PyrolaSettings,
-    onPendingApproval: vi.fn(),
+    onPendingApproval: vi.fn<(toolCallId: string, name: string, diff: FileDiff[]) => void>(),
   }
 
   const runTool = async (

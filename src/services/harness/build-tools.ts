@@ -306,33 +306,29 @@ export default (ctx: HarnessToolContext) => ({
       prompt: z.string(),
       blocking: z.boolean().default(true),
     }),
-    execute: async ({ agentName }) => {
+    execute: async ({ agentName }): Promise<{ error: true }> => {
       throw new Error(`spawn_subagent is not implemented yet (${agentName})`)
-      return { error: true }
     },
   }),
   create_plan: tool({
     description: 'Create a plan file',
     inputSchema: z.object({ title: z.string(), body: z.string() }),
-    execute: async ({ title }) => {
+    execute: async ({ title }): Promise<{ error: true }> => {
       throw new Error(`create_plan is not implemented yet (${title})`)
-      return { error: true }
     },
   }),
   update_plan_todo: tool({
     description: 'Update plan todos',
     inputSchema: z.object({ todos: z.array(z.record(z.unknown())) }),
-    execute: async ({ todos }) => {
+    execute: async ({ todos }): Promise<{ error: true }> => {
       throw new Error(`update_plan_todo is not implemented yet (${todos.length} todos)`)
-      return { error: true }
     },
   }),
   write_studio_artifact: tool({
     description: 'Write a studio artifact',
     inputSchema: z.object({ slug: z.string(), content: z.string() }),
-    execute: async ({ slug }) => {
+    execute: async ({ slug }): Promise<{ error: true }> => {
       throw new Error(`write_studio_artifact is not implemented yet (${slug})`)
-      return { error: true }
     },
   }),
   run_terminal: tool({
@@ -357,7 +353,7 @@ export default (ctx: HarnessToolContext) => ({
       }
       const result = await lspRequest(server.id, method, {
         path,
-        ...(params ?? {}),
+        ...params,
       }).catch(() => null)
       return { method, path, result }
     },

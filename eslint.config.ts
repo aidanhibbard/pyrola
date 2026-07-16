@@ -20,6 +20,7 @@ export default defineConfigWithVueTs(
     '**/dist/**',
     '**/dist-ssr/**',
     '**/coverage/**',
+    'src-tauri/target/**',
     'src/components/shadcn/**',
     'src/components/ai-elements/**',
   ]),
