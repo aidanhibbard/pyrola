@@ -43,6 +43,8 @@ todos:
 
 Single **Settings** page covering personal preferences, providers, MCP, and project overrides. Two tabs — **Personal** (always) and **Project** (only when active workspace has `.pyrola/`).
 
+**UI spec (per-control):** [ui-settings-page plan](../ui-settings-page-2026-07-15-231800/PLAN.md) — ASCII mockups, every button, component map, SET-1…SET-9 phases.
+
 ## Settings page structure
 
 ```text
