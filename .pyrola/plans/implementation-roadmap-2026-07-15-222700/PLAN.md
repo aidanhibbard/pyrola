@@ -85,8 +85,9 @@ flowchart LR
 
 | Deliverable | Child plan |
 |-------------|------------|
-| MCP client lifecycle (start, stop, refresh, logout) | [mcp-studio](../mcp-studio-2026-07-15-215200/PLAN.md) |
-| `call_mcp_tool` in harness | [mcp-studio](../mcp-studio-2026-07-15-215200/PLAN.md) |
+| MCP transports (stdio, HTTP, SSE) + all auth types | [mcp-client](../mcp-client-2026-07-15-232000/PLAN.md) |
+| MCP client lifecycle (start, stop, refresh, logout) | [mcp-client](../mcp-client-2026-07-15-232000/PLAN.md) |
+| `call_mcp_tool` in harness | [mcp-client](../mcp-client-2026-07-15-232000/PLAN.md) |
 | Tool cards in chat stream | [agent-harness](../agent-harness-2026-07-15-215200/PLAN.md) |
 | Agent mode with built-in read tools (grep, read_file, git read) | [agent-harness](../agent-harness-2026-07-15-215200/PLAN.md) |
 | Settings MCP status + tools list (live) | [settings-ui](../settings-ui-2026-07-15-221100/PLAN.md) |

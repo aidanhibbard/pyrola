@@ -18,7 +18,7 @@ todos:
     content: ProvidersSection — list, add/edit dialogs, keychain, test connection
     status: pending
   - id: set-4-mcp-list
-    content: McpServersSection — status rows, Start/Stop/Refresh/Log out actions
+    content: McpServersSection — status rows, per-row ↻ Refresh, Start/Stop/Log out
     status: pending
   - id: set-5-mcp-crud
     content: MCP structured add/edit dialogs + expandable tools panel
@@ -191,19 +191,58 @@ Changes apply **immediately** on toggle (no Save button). Failed vibrancy invoke
 
 ```text
 ┌─ MCP Servers ───────────────────────────────────────────────────────────────┐
-│  Scope: Personal (~/.pyrola/mcp.json)          [ + Add server ]            │
+│  Scope: Personal (~/.pyrola/mcp.json)    [ ↻ Refresh all ]  [ + Add server ] │
 │                                                                             │
-│  ▾ shadcn                          stdio   connected   12 tools   [⋯]      │
-│  │  [Refresh]  [Log out]  [Stop]                                            │
+│  ▾ shadcn          stdio  connected  12 tools     [↻] [⋯]                  │
+│  │  [↻ Refresh]  [Log out]  [Stop]    ← repeated in expanded toolbar        │
 │  │  ├── get_component_list    List shadcn-vue components                  │
 │  │  ├── get_component_docs      Fetch docs for a component                  │
 │  │  └── …                                                                   │
 │                                                                             │
-│  ▸ ai-elements-vue                 sse     auth_required          [⋯]      │
+│  ▸ ai-elements-vue   sse    auth_required           [↻] [⋯]                  │
 │                                                                             │
-│  ▸ postgres                        stdio   stopped                [⋯]      │
+│  ▸ postgres          stdio  stopped                 [↻] [⋯]                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Cursor parity:** **Refresh** is a **first-class icon button** (`↻`) on every collapsed row — not hidden in the `⋯` menu only. Matches Cursor/VS Code MCP settings where reconnect + re-list tools is one click.
+
+### MCP Refresh — UI behavior (Cursor-style)
+
+| Control | Location | Action |
+|---------|----------|--------|
+| **↻ per row** | Collapsed row, right of status/tools badge | `mcp_refresh { serverId }` for that server |
+| **↻ Refresh all** | Section header (MCP Servers) | Refresh every server with status `connected` or `error` sequentially |
+| **↻ Refresh** | Expanded row toolbar | Same as per-row; duplicate for convenience when tools panel open |
+| **↻ in ⋯ menu** | Overflow menu | Same command (menu is secondary access) |
+
+**While refreshing:**
+
+- Row status → `starting` (or sub-state `refreshing` with spinner on ↻ button)
+- ↻ button disabled + `animate-spin` on icon
+- Tool count badge dimmed until `tools/list` completes
+
+**On success:**
+
+- Status → `connected`; tool count updates
+- `toast.success('shadcn refreshed — 12 tools')` (short, server name + count)
+
+**On failure:**
+
+- Status → `error` with message; ↻ re-enabled
+- `toast.error('Refresh failed', { description: error.message })`
+
+**What Refresh does** (distinct from Start/Stop and from Edit):
+
+1. If OAuth token expired → attempt `refresh_token` first
+2. Stop transport (kill stdio / disconnect HTTP-SSE)
+3. Re-resolve inputs/env from keychain
+4. Reconnect + `initialize` + `tools/list`
+5. Invalidate cached tool schemas → update context-usage MCP bucket
+
+Does **not** edit `mcp.json`. Use after server code changes, MCP version bumps, transient 401/500, or stale tool list.
+
+**Keyboard:** Optional `R` when MCP row focused (v1.5).
 
 ### Add / Edit MCP server dialog (structured form — primary)
 
@@ -239,7 +278,8 @@ Changes apply **immediately** on toggle (no Save button). Failed vibrancy invoke
 | Type badge | `stdio` / `http` / `sse` |
 | Status pill | `connected` `starting` `stopped` `error` `auth_required` |
 | Tools badge | `N tools` when connected |
-| **⋯ menu** | Start/Stop, Refresh, Authenticate, Log out, Edit, Delete |
+| **↻ Refresh** | Icon button — **always visible** on collapsed row (Cursor parity) |
+| **⋯ menu** | Start/Stop, Refresh (duplicate), Authenticate, Log out, Edit, Delete |
 
 ### MCP row actions
 
@@ -376,6 +416,7 @@ stateDiagram-v2
 | `projectTab` | Agents/Rules/Skills visible; override banner |
 | `noProjectDotPyrola` | Project tab not rendered |
 | `mcpAuthRequired` | Authenticate button highlighted on row |
+| `mcpRefreshing` | ↻ spinner on row; status `starting` |
 | `providerTestLoading` | Test button shows spinner |
 | `unsavedDialog` | N/A — all saves immediate |
 
@@ -408,6 +449,7 @@ src/components/settings/
 └── mcp/
     ├── McpServerList.vue
     ├── McpServerRow.vue
+    ├── McpRefreshButton.vue      # ↻ icon — per-row + reused in toolbar
     ├── McpToolsPanel.vue
     ├── AddMcpServerDialog.vue
     └── EditMcpServerDialog.vue

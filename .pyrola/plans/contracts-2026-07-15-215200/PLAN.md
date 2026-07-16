@@ -55,6 +55,7 @@ Chat messages are **not** in SQLite. See [chat-persistence plan](../chat-persist
 ### Config schemas
 
 - [`src/schemas/pyrola-settings.ts`](../../../src/schemas/pyrola-settings.ts)
+- [`src/schemas/mcp-config.ts`](../../../src/schemas/mcp-config.ts) — see [mcp-client plan](../mcp-client-2026-07-15-232000/PLAN.md)
 - [`src/services/config/load-pyrola-config.ts`](../../../src/services/config/load-pyrola-config.ts)
 - [`src/types/pyrola/`](../../../src/types/pyrola/)
 

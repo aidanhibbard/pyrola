@@ -48,6 +48,8 @@ Studio is a **superset** of Ask and Plan — use it when you want exploration, o
 
 ## MCP
 
+Detailed transport, auth, and lifecycle spec: [mcp-client plan](../mcp-client-2026-07-15-232000/PLAN.md).
+
 - Parse `.pyrola/mcp.json` (VS Code schema; existing stub has shadcn + ai-elements servers)
 - Merge user + project configs (project wins by server name)
 - Expose as `call_mcp_tool(server, tool, args)`
@@ -62,7 +64,7 @@ Studio is a **superset** of Ask and Plan — use it when you want exploration, o
 | `mcp_list_tools` | Return cached or live tool list for a server |
 | `mcp_logout` | Clear keychain tokens for server id; disconnect |
 
-Settings UI wires these to Refresh / Log out / Show tools. See [settings-ui plan](../settings-ui-2026-07-15-221100/PLAN.md).
+Settings UI wires these to Refresh / Log out / Show tools. See [settings-ui plan](../settings-ui-2026-07-15-221100/PLAN.md) and [mcp-client plan](../mcp-client-2026-07-15-232000/PLAN.md).
 
 ## Studio renderer — Comark (`@comark/vue`)
 

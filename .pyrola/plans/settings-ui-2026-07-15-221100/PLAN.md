@@ -147,20 +147,43 @@ Per server row (collapsed):
 | Type | stdio / http / sse |
 | Status | `connected` · `stopped` · `error` · `auth_required` · `starting` |
 | Tools | Count badge when connected (e.g. `12 tools`) |
-| Actions | See action menu below |
+| **↻ Refresh** | Icon button on every collapsed row — **always visible** (Cursor parity) |
+| Actions | Start/Stop, Authenticate, Log out, Edit, Delete via `⋯` menu (Refresh duplicated in menu) |
 
-**Row actions** (icon buttons or `...` menu):
+**Row actions** (icon buttons + `...` menu):
 
 | Action | When shown | Behavior |
 |--------|------------|----------|
-| **Start / Stop** | Always | Spawn or kill MCP server process |
-| **Refresh** | Always | Stop → reconnect → `tools/list` → update tool cache + status. If OAuth token expired, refresh token first |
+| **↻ Refresh** | **Always** — primary icon on collapsed row + expanded toolbar | `mcp_refresh` — see Refresh section below |
+| **Start / Stop** | `⋯` menu (and expanded toolbar) | Spawn or kill MCP server process |
 | **Authenticate** | `auth_required` or unresolved inputs | Run auth flow (OAuth browser, input prompts) |
 | **Log out** | Authenticated (OAuth or saved inputs) | Clear tokens + keychain entries for this server; set status `auth_required` |
 | **Edit** | Always | Open mcp.json editor for this server entry |
 | **Delete** | Always | Confirm → remove from mcp.json + stop process |
 
-**Refresh** is distinct from CRUD — it does not change config; it re-initializes the live connection and re-discovers tools. Use after server code changes, token expiry, or transient errors.
+**Section header:** **↻ Refresh all** — runs `mcp_refresh` on each server in `connected` or `error` state (sequential, with per-row spinners).
+
+### Refresh (Cursor-style)
+
+**Refresh** is a **first-class UI control**, not a buried menu item:
+
+- **Per row:** `↻` icon button visible on collapsed row (Lucide `RefreshCw`)
+- **Expanded row:** `[↻ Refresh]` text button in toolbar beside Log out / Stop
+- **Section:** `[↻ Refresh all]` in MCP Servers header
+
+**Refresh flow** (`mcp_refresh`):
+
+1. Attempt OAuth `refresh_token` if expired
+2. Stop transport → reconnect → `initialize` → `tools/list`
+3. Update tool count badge + tools panel + context-usage MCP bucket
+
+**UI feedback:**
+
+- Row enters `refreshing` / `starting` — ↻ icon spins, button disabled
+- Success → `toast.success` with server name + tool count
+- Failure → status `error`, `toast.error` with message
+
+**Refresh** is distinct from CRUD — it does not change config. Use after server code changes, token expiry, or transient errors.
 
 ### Tools panel (expand row)
 
@@ -168,7 +191,7 @@ Click server row or **Show tools** chevron to expand:
 
 ```text
 ▾ postgres
-  Status: connected · 8 tools                    [Refresh] [Log out] [⋯]
+  Status: connected · 8 tools                    [↻ Refresh] [Log out] [⋯]
   ├── query          Run a read-only SQL query
   ├── list_tables    List tables in schema
   ├── describe_table Show column definitions
@@ -194,7 +217,7 @@ Tools list cached in memory per server session; **Refresh** invalidates and re-f
 | **Client credentials** | Fallback when DCR unsupported | Stored client id/secret in keychain |
 | **envFile** | `"envFile": "${workspaceFolder}/.env"` | Path picker + load |
 
-Implement OAuth in Rust/Tauri: open browser to auth URL, callback on `http://127.0.0.1:<port>`, persist tokens in keychain, refresh on expiry (follow MCP authorization spec).
+Implement OAuth in Rust/Tauri: open browser to auth URL, callback on `http://127.0.0.1:<port>`, persist tokens in keychain, refresh on expiry (follow MCP authorization spec). **Full transport + OAuth architecture:** [mcp-client plan](../mcp-client-2026-07-15-232000/PLAN.md).
 
 **Authenticate button** visible when status is `auth_required` or inputs are unresolved.
 
@@ -218,6 +241,7 @@ JSON editor (Monaco) with `$schema` IntelliSense for mcp.json, or structured for
 - `src/components/settings/ProviderList.vue`
 - `src/components/settings/McpServerList.vue`
 - `src/components/settings/McpServerRow.vue`
+- `src/components/settings/McpRefreshButton.vue`
 - `src/components/settings/McpToolsPanel.vue`
 - `src/components/settings/AppearanceSection.vue`
 - `src/services/mcp/auth/` — oauth, inputs, token refresh, logout
