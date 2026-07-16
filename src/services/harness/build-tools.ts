@@ -17,6 +17,8 @@ import {
   lspEnsureServer,
   lspRequest,
   mcpCallTool,
+  mcpStatus,
+  readMcpConfig,
   shellRunCommand,
   workspaceGlob,
   workspaceGrep,
@@ -28,6 +30,8 @@ import {
   shouldAutoApprove,
 } from '@/services/harness/approval-gate'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import { migrateMcpConfig } from '@/schemas/mcp-config'
+import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -232,6 +236,45 @@ export default (ctx: HarnessToolContext) => ({
     }),
     execute: async ({ serverId, tool: toolName, args }) =>
       mcpCallTool(serverId, toolName, args as Record<string, unknown>),
+  }),
+  get_mcp_tools: tool({
+    description:
+      'List configured MCP servers and their available tools. Call this before call_mcp_tool when unsure what MCP capabilities exist.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      const personal = migrateMcpConfig(await readMcpConfig('personal', null))
+      const projectRaw = await readMcpConfig('project', ctx.projectRoot).catch(() => null)
+      const project = projectRaw ? migrateMcpConfig(projectRaw) : null
+      const servers = listEffectiveMcpServers(personal, project)
+
+      const catalog = await Promise.all(
+        servers.map(async (server) => {
+          try {
+            const state = await mcpStatus(server.id)
+            return {
+              serverId: server.id,
+              scope: server.scope,
+              status: state.status,
+              error: state.error ?? null,
+              tools: state.tools.map((item) => ({
+                name: item.name,
+                description: item.description ?? '',
+              })),
+            }
+          } catch (error) {
+            return {
+              serverId: server.id,
+              scope: server.scope,
+              status: 'error',
+              error: error instanceof Error ? error.message : String(error),
+              tools: [],
+            }
+          }
+        }),
+      )
+
+      return { servers: catalog }
+    },
   }),
   ask_user: tool({
     description: 'Ask the user a clarifying question',

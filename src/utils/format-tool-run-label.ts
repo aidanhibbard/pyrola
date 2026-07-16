@@ -16,6 +16,7 @@ const TOOL_LABELS: Record<string, string> = {
   web_fetch: 'Fetched URL',
   web_search: 'Searched web',
   call_mcp_tool: 'Called MCP tool',
+  get_mcp_tools: 'Listed MCP tools',
   create_plan: 'Created plan',
   update_plan_todo: 'Updated plan',
   spawn_subagent: 'Spawned subagent',
