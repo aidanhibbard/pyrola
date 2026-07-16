@@ -2,6 +2,7 @@
 import { SidebarTrigger } from "@/components/shadcn/ui/sidebar"
 import WindowControls from "./WindowControls.vue"
 import RightSidebarTrigger from "@/components/navigation/aside/right/RightSidebarTrigger.vue"
+import ModeToggle from "./ModeToggle.vue"
 </script>
 
 <template>
@@ -16,6 +17,7 @@ import RightSidebarTrigger from "@/components/navigation/aside/right/RightSideba
     <!-- Draggable spacer -->
     <div class="h-full flex-1" data-tauri-drag-region />
 
+    <ModeToggle class="mr-1" />
     <RightSidebarTrigger class="mr-3" />
   </header>
 </template>
