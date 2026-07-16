@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { Bot, Pin, Search, Settings } from '@lucide/vue'
+import { MOCK_PINNED_CHATS } from '@/data/mock-fleet-projects'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/shadcn/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/shadcn/ui/sidebar'
+
+const pinnedChats = MOCK_PINNED_CHATS
 </script>
 
 <template>
@@ -31,9 +36,23 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/sh
             <span>Pinned</span>
           </SidebarMenuButton>
         </DropdownMenuTrigger>
-        <DropdownMenuContent class="w-48 rounded-lg" side="bottom" align="start">
-          <DropdownMenuItem>
-            <span>No pinned items</span>
+        <DropdownMenuContent class="w-64 rounded-lg" side="bottom" align="start">
+          <DropdownMenuLabel>Pinned</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <template v-if="pinnedChats.length > 0">
+            <DropdownMenuItem
+              v-for="chat in pinnedChats"
+              :key="chat.chatId"
+              class="flex items-center justify-between gap-2"
+            >
+              <span class="truncate">{{ chat.title }}</span>
+              <span class="shrink-0 text-xs text-muted-foreground">
+                {{ chat.projectLabel }}
+              </span>
+            </DropdownMenuItem>
+          </template>
+          <DropdownMenuItem v-else disabled>
+            No pinned chats
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
