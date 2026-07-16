@@ -25,7 +25,7 @@ import {
 } from "@/components/shadcn/ui/sidebar"
 
 const props = withDefaults(defineProps<SidebarProps>(), {
-  collapsible: "icon",
+  collapsible: "offcanvas",
 })
 
 // This is sample data.
