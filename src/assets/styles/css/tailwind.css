@@ -48,9 +48,9 @@
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(1 0 0 / 70%);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: oklch(1 0 0 / 70%);
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
@@ -69,7 +69,7 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.985 0 0 / 70%);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -82,9 +82,9 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.205 0 0 / 70%);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.205 0 0 / 70%);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
@@ -103,7 +103,7 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.205 0 0 / 70%);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -127,14 +127,16 @@
  *
  * By default the background stays transparent so native window vibrancy
  * (applied on the Rust side via the `window-vibrancy` crate) shows through
- * on macOS and Windows. Surfaces like cards, popovers, and the sidebar keep
- * their own opaque `--card` / `--popover` / `--sidebar` tokens so content
- * stays legible regardless of vibrancy state.
+ * on macOS and Windows. Surfaces like cards, popovers, and the sidebar use
+ * translucent `--card` / `--popover` / `--sidebar` tokens (with a
+ * `backdrop-blur` applied via `.vibrancy-surface`) so they read as frosted
+ * glass on top of the native blur instead of blocking it with an opaque
+ * fill.
  *
  * When the user disables the glass toggle, `use-vibrancy` adds
- * `.vibrancy-off` to `<html>`, which restores an opaque background so the
- * window doesn't render as blank/transparent once the native effect is
- * cleared.
+ * `.vibrancy-off` to `<html>`, which restores opaque backgrounds (root +
+ * surfaces) so the window doesn't render as blank/transparent once the
+ * native effect is cleared.
  *
  * On Linux there is no native vibrancy API, so `use-vibrancy` applies a CSS
  * `backdrop-filter` blur fallback instead via the `.linux-vibrancy` classes.
@@ -154,10 +156,16 @@ body {
 
 html.vibrancy-off:not(.dark) {
   --background: oklch(1 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --card: oklch(1 0 0);
+  --popover: oklch(1 0 0);
 }
 
 html.vibrancy-off.dark {
   --background: oklch(0.145 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --card: oklch(0.205 0 0);
+  --popover: oklch(0.205 0 0);
 }
 
 html.linux-vibrancy body {
@@ -168,4 +176,34 @@ html.linux-vibrancy body {
 
 html.linux-vibrancy.dark-vibrancy body {
   background: oklch(0.145 0 0 / 70%);
+}
+
+/*
+ * Frosted-glass surfaces.
+ *
+ * shadcn primitives that render on `--sidebar` / `--card` / `--popover`
+ * (sidebar, cards, popovers, dropdowns, menus, command palette, hover
+ * cards, context menus, select/combobox content, etc.) now use translucent
+ * tokens. Target them by their stable `data-slot` attribute — rather than
+ * editing the vendored component files — to add a `backdrop-filter` blur so
+ * they read as frosted glass on top of the native window vibrancy instead
+ * of just alpha-blending a flat tint. No-op when vibrancy is disabled since
+ * the underlying tokens become fully opaque.
+ */
+[data-slot='sidebar'],
+[data-slot='card'],
+[data-slot='popover-content'],
+[data-slot='dropdown-menu-content'],
+[data-slot='dropdown-menu-sub-content'],
+[data-slot='context-menu-content'],
+[data-slot='context-menu-sub-content'],
+[data-slot='menubar-content'],
+[data-slot='menubar-sub-content'],
+[data-slot='hover-card-content'],
+[data-slot='select-content'],
+[data-slot='command'],
+[data-slot='navigation-menu-content'],
+[data-slot='navigation-menu-viewport'] {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
