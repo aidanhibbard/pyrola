@@ -12,6 +12,7 @@ import {
 } from '@/components/shadcn/ui/resizable'
 import { Toaster } from '@/components/shadcn/ui/sonner'
 import useVibrancy from '@/composables/use-vibrancy'
+import { RouterView } from 'vue-router'
 
 useVibrancy()
 
@@ -30,7 +31,7 @@ const rightSidebarOpen = ref(false)
               class="h-full overflow-auto pt-(--titlebar-height)"
               style="--titlebar-height: 40px"
             >
-              <slot />
+              <RouterView />
             </main>
           </ResizablePanel>
           <ResizableHandle v-if="rightSidebarOpen" />

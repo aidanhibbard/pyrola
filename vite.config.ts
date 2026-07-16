@@ -13,9 +13,16 @@ export default defineConfig({
     tailwindcss()
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    alias: [
+      {
+        find: '@/components/ui',
+        replacement: fileURLToPath(new URL('./src/components/shadcn/ui', import.meta.url)),
+      },
+      {
+        find: '@',
+        replacement: fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    ],
   },
   // https://v2.tauri.app/start/create-project/#manual-setup-tauri-cli
   server: {

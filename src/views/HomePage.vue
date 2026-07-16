@@ -1,10 +1,10 @@
+<script setup lang="ts">
+import ChatHomeEmptyChatInput from '@/components/chat/HomeEmptyChatInput.vue'
+import { Empty } from '@/components/shadcn/ui/empty'
+</script>
+
 <template>
-  <div class="flex flex-1 flex-col gap-4 p-4 pt-0">
-    <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-      <div class="bg-muted/50 aspect-video rounded-xl" />
-      <div class="bg-muted/50 aspect-video rounded-xl" />
-      <div class="bg-muted/50 aspect-video rounded-xl" />
-    </div>
-    <div class="bg-muted/50 min-h-screen flex-1 rounded-xl md:min-h-min" />
-  </div>
+  <Empty class="min-h-[calc(100svh-40px)] w-full items-stretch px-6 md:px-10">
+    <ChatHomeEmptyChatInput />
+  </Empty>
 </template>
