@@ -159,6 +159,8 @@ html.vibrancy-off:not(.dark) {
   --sidebar: oklch(0.985 0 0);
   --card: oklch(1 0 0);
   --popover: oklch(1 0 0);
+  --border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.922 0 0);
 }
 
 html.vibrancy-off.dark {
@@ -166,6 +168,31 @@ html.vibrancy-off.dark {
   --sidebar: oklch(0.205 0 0);
   --card: oklch(0.205 0 0);
   --popover: oklch(0.205 0 0);
+  --border: oklch(0.32 0 0);
+  --sidebar-border: oklch(0.32 0 0);
+}
+
+html.vibrancy-off,
+html.vibrancy-off body {
+  background: var(--background);
+}
+
+html.vibrancy-off [data-slot='sidebar'],
+html.vibrancy-off [data-slot='card'],
+html.vibrancy-off [data-slot='popover-content'],
+html.vibrancy-off [data-slot='dropdown-menu-content'],
+html.vibrancy-off [data-slot='dropdown-menu-sub-content'],
+html.vibrancy-off [data-slot='context-menu-content'],
+html.vibrancy-off [data-slot='context-menu-sub-content'],
+html.vibrancy-off [data-slot='menubar-content'],
+html.vibrancy-off [data-slot='menubar-sub-content'],
+html.vibrancy-off [data-slot='hover-card-content'],
+html.vibrancy-off [data-slot='select-content'],
+html.vibrancy-off [data-slot='command'],
+html.vibrancy-off [data-slot='navigation-menu-content'],
+html.vibrancy-off [data-slot='navigation-menu-viewport'] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html.linux-vibrancy body {
