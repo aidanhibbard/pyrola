@@ -14,6 +14,9 @@ todos:
   - id: mcp-tool
     content: call_mcp_tool in harness with per-agent allowlist
     status: pending
+  - id: mcp-lifecycle
+    content: MCP lifecycle commands — start, stop, refresh, list_tools, logout
+    status: pending
   - id: comark-vue
     content: Install @comark/vue + use-studio-renderer composable
     status: pending
@@ -48,6 +51,18 @@ Studio is a **superset** of Ask and Plan — use it when you want exploration, o
 - Parse `.pyrola/mcp.json` (VS Code schema; existing stub has shadcn + ai-elements servers)
 - Merge user + project configs (project wins by server name)
 - Expose as `call_mcp_tool(server, tool, args)`
+
+### MCP client lifecycle (Rust + TS)
+
+| Command | Purpose |
+|---------|---------|
+| `mcp_start` | Spawn stdio / connect http+sse server |
+| `mcp_stop` | Kill process / disconnect |
+| `mcp_refresh` | Stop → start → `initialize` → `tools/list` → return fresh tool schemas |
+| `mcp_list_tools` | Return cached or live tool list for a server |
+| `mcp_logout` | Clear keychain tokens for server id; disconnect |
+
+Settings UI wires these to Refresh / Log out / Show tools. See [settings-ui plan](../settings-ui-2026-07-15-221100/PLAN.md).
 
 ## Studio renderer — Comark (`@comark/vue`)
 

@@ -74,14 +74,14 @@ Terminal left boundary = right edge of `LeftSidebar`. Terminal never renders ben
 
 ## Left sidebar (stub → wired)
 
-- New Agent, Search, Repositories, thread history, Settings
-- Replace hardcoded sample nav in [`NavHeader.vue`](../../../src/components/navigation/aside/left/NavHeader.vue)
+- New Agent, Search, **Pinned** (all pinned chats, unlimited), Repositories, thread history, Settings
+- Replace hardcoded sample nav in [`NavHeader.vue`](../../../src/components/navigation/aside/left/NavHeader.vue) — wire Pinned to `list_pinned_chats`
 
 ## Workbench tabs (v1)
 
 | Tab | v1 scope |
 |-----|----------|
-| Changes | Placeholder → git summary in Phase 3 |
+| Changes | Git status + per-turn summaries (informational only — no commit UI) |
 | Editor | Monaco + syntax highlighting |
 | Browser | Tauri webview placeholder |
 | Studio | Comark placeholder → Phase 5 |

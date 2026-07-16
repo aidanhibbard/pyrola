@@ -12,7 +12,7 @@ todos:
     content: Multi-project registry in ~/.pyrola/fleet.sqlite
     status: pending
   - id: thread-grouping
-    content: Left sidebar groups threads by project with status pills
+    content: Left sidebar — project chat lists + Pinned section (unlimited, cross-project)
     status: pending
   - id: concurrency
     content: fleet.maxConcurrentAgents queue + per-agent Tauri capabilities
@@ -21,7 +21,7 @@ todos:
     content: Tray icon + agents continue when window closed
     status: pending
   - id: cost-tracking
-    content: Token/cost tracking via tokenlens
+    content: Per-turn token cost via tokenlens (see context-usage plan for bucket breakdown)
     status: pending
   - id: cursor-polish
     content: Branch context bar, worked-for timing, collapsed tool summaries
@@ -37,12 +37,26 @@ Cross-project fleet management, background agents, cost tracking, and Cursor UX 
 
 ## Fleet data model
 
-Persist in `~/.pyrola/fleet.sqlite`:
+**Project registry** in `~/.pyrola/fleet.sqlite`:
 
-- **Projects** — id, name, rootPath, lastOpened
-- **Threads** — id, projectId, title, mode, status, model, createdAt
-- **Messages** — AI SDK UIMessage parts JSON
-- **Agent runs** — token usage, cost estimate
+- **Projects** — id, name, slug, rootPath, lastOpened
+- **Agent runs** — token usage, cost estimate (optional index)
+
+**Chats** on filesystem only (not SQLite):
+
+```text
+~/.pyrola/chats/<project-slug>/<chat-id>/
+  meta.json
+  messages.jsonl
+```
+
+No `<repo>/.pyrola/chats`. UI supports **delete**, **fork**, and **pin/unpin** (unlimited). See [chat-persistence plan](../chat-persistence-2026-07-15-220100/PLAN.md).
+
+## Sidebar
+
+- **Pinned** section — all pinned chats across fleet, no cap, sorted by `pinnedAt`
+- **Per-project** thread lists — pinned chats show pin icon; pinned first within project
+- Pin/unpin from chat row context menu
 
 ## Concurrency
 
@@ -56,7 +70,7 @@ Agents keep running when window is minimized/closed. Work lost only on full quit
 
 ## Cursor UX polish
 
-- Git branch in context bar (`aidanhibbard > main > This Mac`)
+- Git branch in context bar (display only — see [git-informational plan](../git-informational-2026-07-15-221700/PLAN.md))
 - "Worked for 57s" timing on agent turns
 - Collapsed tool summary rows ("Explored 4 files, 2 searches, 1 tool")
 - Per-turn file change summaries (`+30 -5`)

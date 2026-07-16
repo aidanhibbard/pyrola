@@ -10,7 +10,7 @@ todos:
     content: Load and merge ~/.pyrola + .pyrola settings (project wins)
     status: pending
   - id: settings-ui
-    content: Settings UI for providers, models, keychain key refs
+    content: "Deferred to settings-ui plan — Personal + Project tabs, full provider/MCP UI"
     status: pending
   - id: provider-registry
     content: Provider registry wrapping @ai-sdk/* packages
@@ -25,7 +25,7 @@ todos:
 
 ## Summary
 
-Wire BYOK provider config: user-level defaults, project overrides, secrets in OS keychain only.
+Wire BYOK config loader + keychain + HTTP proxy. **Settings UI** is covered in [settings-ui plan](../settings-ui-2026-07-15-221100/PLAN.md).
 
 ## Config layout
 
@@ -52,9 +52,11 @@ Wire BYOK provider config: user-level defaults, project overrides, secrets in OS
 
 ## Provider flow
 
-1. Resolve `apiKeyRef` from settings → keychain lookup
-2. Build AI SDK provider instance from registry
-3. HTTP calls route through Rust `proxy_provider_request` for self-hosted / OpenAI-compatible endpoints
+1. Resolve `apiKeyRef` from merged settings → keychain lookup
+2. Build AI SDK provider from registry ([all AI SDK providers](https://ai-sdk.dev/providers/ai-sdk-providers) + [OpenAI-compatible custom](https://ai-sdk.dev/providers/openai-compatible-providers))
+3. HTTP calls route through Rust `proxy_provider_request`
+
+See [settings-ui plan](../settings-ui-2026-07-15-221100/PLAN.md) for provider picker, custom provider form, and API key UI.
 
 ## Key modules
 

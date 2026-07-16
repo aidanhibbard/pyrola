@@ -9,7 +9,7 @@ todos:
     content: Define HarnessEvent IPC envelope (text-delta, tool-start, tool-result, todo-update, plan-write)
     status: pending
   - id: sqlite-schema
-    content: Freeze SQLite schema (projects, threads, messages, tool_results)
+    content: Freeze SQLite schema (projects registry only — chats are filesystem, see chat-persistence plan)
     status: pending
   - id: config-schemas
     content: Zod schemas for settings.json + mcp.json merge logic
@@ -38,12 +38,19 @@ type HarnessEvent =
   | { type: 'plan-write'; planPath: string }
 ```
 
-### SQLite tables
+### SQLite tables (fleet registry only)
 
-- `projects` — id, name, rootPath, lastOpened
-- `threads` — id, projectId, title, mode, status, model, createdAt
-- `messages` — threadId, parts JSON (AI SDK UIMessage)
-- `tool_results` — checkpoint per completed tool call
+- `projects` — id, name, slug, rootPath, lastOpened
+
+Chat messages are **not** in SQLite. See [chat-persistence plan](../chat-persistence-2026-07-15-220100/PLAN.md).
+
+### Chat filesystem (user-level)
+
+```text
+~/.pyrola/chats/<project-slug>/<chat-id>/
+  meta.json
+  messages.jsonl
+```
 
 ### Config schemas
 
