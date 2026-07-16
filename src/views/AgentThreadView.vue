@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
+import ChatChatBreadcrumbs from '@/components/chat/ChatBreadcrumbs.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
@@ -132,7 +133,15 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="relative flex h-full min-h-0 flex-col">
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-(--titlebar-height) -translate-y-full items-center"
+      style="--titlebar-height: 40px"
+    >
+      <div class="pointer-events-auto mx-auto w-full min-w-0 max-w-3xl px-4">
+        <ChatChatBreadcrumbs class="min-w-0" />
+      </div>
+    </div>
     <ChatThread
       class="min-h-0 flex-1"
       :timeline="timeline"
