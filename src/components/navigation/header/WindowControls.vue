@@ -2,19 +2,11 @@
 import { X, Minus, Plus } from "@lucide/vue"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
-const appWindow = getCurrentWindow()
-
-function minimize() {
-  appWindow.minimize()
-}
-
-function toggleMaximize() {
-  appWindow.toggleMaximize()
-}
-
-function close() {
-  appWindow.close()
-}
+const {
+  minimize,
+  toggleMaximize,
+  close
+} = getCurrentWindow()
 </script>
 
 <template>

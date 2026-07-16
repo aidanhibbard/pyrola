@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { LucideIcon } from "@lucide/vue"
-import { ChevronRight } from "@lucide/vue"
+import type { LucideIcon } from '@lucide/vue'
+import { ChevronRight } from '@lucide/vue'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/components/shadcn/ui/collapsible"
+} from '@/components/shadcn/ui/collapsible'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -15,7 +15,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-} from "@/components/shadcn/ui/sidebar"
+} from '@/components/shadcn/ui/sidebar'
 
 defineProps<{
   items: {
@@ -33,7 +33,7 @@ defineProps<{
 
 <template>
   <SidebarGroup>
-    <SidebarGroupLabel>Platform</SidebarGroupLabel>
+    <SidebarGroupLabel>Projects</SidebarGroupLabel>
     <SidebarMenu>
       <Collapsible
         v-for="item in items"
@@ -47,7 +47,9 @@ defineProps<{
             <SidebarMenuButton :tooltip="item.title">
               <component :is="item.icon" v-if="item.icon" />
               <span>{{ item.title }}</span>
-              <ChevronRight class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+              <ChevronRight
+                class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
+              />
             </SidebarMenuButton>
           </CollapsibleTrigger>
           <CollapsibleContent>

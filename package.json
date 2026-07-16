@@ -56,6 +56,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@iconify-json/radix-icons": "^1.2.6",
+    "@iconify/vue": "^5.0.1",
     "@tauri-apps/cli": "^2.11.4",
     "@tsconfig/node24": "^24.0.4",
     "@types/jsdom": "^28.0.3",

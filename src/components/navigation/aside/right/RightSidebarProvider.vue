@@ -1,25 +1,24 @@
 <script setup lang="ts">
-import type { HTMLAttributes } from "vue"
-import { ref } from "vue"
-import { cn } from "@/lib/utils"
-import { provideRightSidebarContext, RIGHT_SIDEBAR_WIDTH } from "./utils"
+import type { HTMLAttributes } from 'vue'
+import { ref } from 'vue'
+import { cn } from '@/lib/utils'
+import { provideRightSidebarContext, RIGHT_SIDEBAR_WIDTH } from './utils'
 
-const props = withDefaults(defineProps<{
-  defaultOpen?: boolean
-  class?: HTMLAttributes["class"]
-}>(), {
-  defaultOpen: false,
-})
+const props = withDefaults(
+  defineProps<{
+    defaultOpen?: boolean
+    class?: HTMLAttributes['class']
+  }>(),
+  {
+    defaultOpen: false,
+  },
+)
 
 const open = ref(props.defaultOpen)
 
-function setOpen(value: boolean) {
-  open.value = value
-}
+const setOpen = (value: boolean) => (open.value = value)
 
-function toggleSidebar() {
-  open.value = !open.value
-}
+const toggleSidebar = () => (open.value = !open.value)
 
 provideRightSidebarContext({
   open,
