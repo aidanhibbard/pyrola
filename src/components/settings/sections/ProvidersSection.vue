@@ -436,6 +436,9 @@ const removeProvider = async (providerId: string): Promise<void> => {
 
     if (wasDefault && remaining.length > 0) {
       const nextId = remaining[0]
+      if (!nextId) {
+        return
+      }
       await config.updateSetting(props.tab, 'agent.defaultProvider', nextId)
       const catalogModels = getProviderCatalogEntry(nextId)?.models ?? []
       if (catalogModels[0]) {
@@ -501,8 +504,8 @@ const handleDefaultModelOpenChange = (open: boolean): void => {
   }
 }
 
-const handleDefaultProviderChange = async (value: string): Promise<void> => {
-  if (value === defaultProvider.value) {
+const handleDefaultProviderChange = async (value: unknown): Promise<void> => {
+  if (typeof value !== 'string' || value === defaultProvider.value) {
     return
   }
 
@@ -525,8 +528,8 @@ const handleDefaultProviderChange = async (value: string): Promise<void> => {
   }
 }
 
-const handleDefaultModelChange = async (value: string): Promise<void> => {
-  if (value === defaultModel.value) {
+const handleDefaultModelChange = async (value: unknown): Promise<void> => {
+  if (typeof value !== 'string' || value === defaultModel.value) {
     return
   }
 

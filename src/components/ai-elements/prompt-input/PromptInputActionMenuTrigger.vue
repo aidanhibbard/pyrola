@@ -18,7 +18,7 @@ const props = defineProps<Props>()
 
 <template>
   <DropdownMenuTrigger as-child>
-    <PromptInputButton :class="props.class" :size="props.size" v-bind="props">
+    <PromptInputButton :class="props.class" v-bind="props">
       <slot><PlusIcon class="size-4" /></slot>
     </PromptInputButton>
   </DropdownMenuTrigger>

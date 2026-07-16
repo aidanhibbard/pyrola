@@ -19,9 +19,9 @@ const machineLabel = computed(
   () => config.personalSettings.value['general.machineLabel'] ?? 'This machine',
 )
 
-const updateMachineLabel = async (value: string): Promise<void> => {
+const updateMachineLabel = async (value: string | number): Promise<void> => {
   try {
-    await config.setMachineLabel(value)
+    await config.setMachineLabel(String(value))
   } catch (error) {
     toast.error('Failed to save machine label', {
       description: error instanceof Error ? error.message : 'Unknown error',

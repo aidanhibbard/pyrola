@@ -12,7 +12,9 @@ const props = defineProps<{
 
 const { usage, modelId } = useContextValue()
 
-const cacheTokens = computed(() => usage.value?.cachedInputTokens ?? 0)
+const cacheTokens = computed(
+  () => (usage.value as { cachedInputTokens?: number } | undefined)?.cachedInputTokens ?? 0,
+)
 
 const cacheCostText = computed(() => {
   if (!modelId.value || !cacheTokens.value)

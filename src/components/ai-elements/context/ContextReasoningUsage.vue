@@ -12,7 +12,9 @@ const props = defineProps<{
 
 const { usage, modelId } = useContextValue()
 
-const reasoningTokens = computed(() => usage.value?.reasoningTokens ?? 0)
+const reasoningTokens = computed(
+  () => (usage.value as { reasoningTokens?: number } | undefined)?.reasoningTokens ?? 0,
+)
 
 const reasoningCostText = computed(() => {
   if (!modelId.value || !reasoningTokens.value)

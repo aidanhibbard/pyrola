@@ -11,10 +11,11 @@
       "path": "./tsconfig.vitest.json"
     }
   ],
-    "compilerOptions": {
+  "compilerOptions": {
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "ignoreDeprecations": "6.0"
   }
 }

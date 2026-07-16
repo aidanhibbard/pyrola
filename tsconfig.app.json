@@ -1,7 +1,11 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
-  "exclude": ["src/**/__tests__/*"],
+  "exclude": [
+    "src/**/__tests__/*",
+    "src/components/shadcn/ui/chart/**",
+    "src/components/ai-elements/canvas/**"
+  ],
   "compilerOptions": {
     // Extra safety for array and object lookups, but may have false positives.
     "noUncheckedIndexedAccess": true,
@@ -9,8 +13,11 @@
     // Path mapping for cleaner imports.
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/components/ui": ["./src/components/shadcn/ui"],
+      "@/components/ui/*": ["./src/components/shadcn/ui/*"]
     },
+    "ignoreDeprecations": "6.0",
 
     // `vue-tsc --build` produces a .tsbuildinfo file for incremental type-checking.
     // Specified here to keep it out of the root directory.

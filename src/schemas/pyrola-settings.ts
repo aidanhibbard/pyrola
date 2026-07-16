@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 
 const themeSchema = z.enum(['light', 'dark', 'system'])
 const glassVariantSchema = z.enum(['light', 'dark'])
@@ -26,7 +27,7 @@ export const pyrolaSettingsSchema = z
   })
   .catchall(z.union([z.string(), customProviderSchema, z.number(), z.boolean()]))
 
-export const defaultPyrolaSettings = (): z.infer<typeof pyrolaSettingsSchema> => ({
+export const defaultPyrolaSettings = (): PyrolaSettings => ({
   version: 1,
   'appearance.theme': 'system',
   'appearance.glass': true,
@@ -38,7 +39,7 @@ export const defaultPyrolaSettings = (): z.infer<typeof pyrolaSettingsSchema> =>
 
 export const migratePyrolaSettings = (
   raw: unknown,
-): z.infer<typeof pyrolaSettingsSchema> => {
+): PyrolaSettings => {
   if (typeof raw !== 'object' || raw === null) {
     return defaultPyrolaSettings()
   }

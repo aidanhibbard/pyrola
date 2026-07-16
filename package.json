@@ -14,6 +14,7 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
+    "ci": "run-s lint type-check build",
     "tauri": "tauri",
     "vp:dev": "vitepress dev docs",
     "vp:build": "vitepress build docs",
