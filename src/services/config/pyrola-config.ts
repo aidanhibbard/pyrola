@@ -1,5 +1,9 @@
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
-import { defaultPyrolaSettings, migratePyrolaSettings } from '@/schemas/pyrola-settings'
+import {
+  defaultPyrolaSettings,
+  migratePyrolaSettings,
+  pyrolaSettingsSchema,
+} from '@/schemas/pyrola-settings'
 import {
   mergeSettings,
   parseSettingsRecord,
@@ -19,6 +23,29 @@ const toSettings = (raw: Record<string, unknown>): PyrolaSettings => {
   return { ...defaultPyrolaSettings(), ...parseSettingsRecord(migrated as Record<string, unknown>) }
 }
 
+export const parseProjectOverrides = (record: Record<string, unknown>): PyrolaSettings => {
+  const overrideKeys = Object.keys(record).filter((key) => key !== 'version')
+  if (overrideKeys.length === 0) {
+    return { version: 1 }
+  }
+
+  const parsed = pyrolaSettingsSchema.safeParse(record)
+  if (!parsed.success) {
+    return { version: 1 }
+  }
+
+  const settings: PyrolaSettings = { version: 1 }
+
+  for (const key of overrideKeys) {
+    const value = parsed.data[key as keyof typeof parsed.data]
+    if (value !== undefined) {
+      ;(settings as Record<string, unknown>)[key] = value
+    }
+  }
+
+  return settings
+}
+
 export const loadPersonalSettings = async (): Promise<PyrolaSettings> => {
   const raw = await readSettings('personal')
   return toSettings(raw)
@@ -26,11 +53,7 @@ export const loadPersonalSettings = async (): Promise<PyrolaSettings> => {
 
 export const loadProjectSettings = async (rootPath: string): Promise<PyrolaSettings> => {
   const raw = await readSettings('project', rootPath)
-  const record = raw as Record<string, unknown>
-  if (Object.keys(record).length === 0) {
-    return { version: 1 }
-  }
-  return toSettings(record)
+  return parseProjectOverrides(raw as Record<string, unknown>)
 }
 
 export const loadEffectiveSettings = async (

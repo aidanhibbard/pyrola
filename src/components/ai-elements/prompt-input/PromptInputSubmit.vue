@@ -2,7 +2,7 @@
 // import type { InputGroupButtonVariants } from '@/components/ui/input-group'
 import type { ChatStatus } from 'ai'
 import type { HTMLAttributes } from 'vue'
-import { CornerDownLeftIcon, Loader2Icon, SquareIcon, XIcon } from '@lucide/vue'
+import { ArrowUpIcon, Loader2Icon, SquareIcon, XIcon } from '@lucide/vue'
 import { InputGroupButton } from '@/components/ui/input-group'
 import { cn } from '@/lib/utils'
 import { computed } from 'vue'
@@ -31,7 +31,7 @@ const icon = computed(() => {
   else if (props.status === 'error') {
     return XIcon
   }
-  return CornerDownLeftIcon
+  return ArrowUpIcon
 })
 
 const iconClass = computed(() => {
@@ -47,7 +47,7 @@ const { status, size, variant, class: _, ...restProps } = props
 <template>
   <InputGroupButton
     aria-label="Submit"
-    :class="cn(props.class)"
+    :class="cn('rounded-full', props.class)"
     :size="size"
     :variant="variant"
     type="submit"

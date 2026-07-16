@@ -1,4 +1,5 @@
 pub mod config;
+pub mod git;
 pub mod http;
 pub mod keychain;
 pub mod mcp;
@@ -11,6 +12,7 @@ pub use config::{
   config_exists, read_json_file, read_mcp_config, read_settings, write_json_file, write_mcp_config,
   write_settings,
 };
+pub use git::{git_checkout_branch, git_list_branches, git_repo_info};
 pub use http::http_proxy_request;
 pub use keychain::{delete_secret, get_secret, set_secret};
 pub use mcp::{mcp_list_tools, mcp_logout, mcp_refresh, mcp_start, mcp_status, mcp_stop};

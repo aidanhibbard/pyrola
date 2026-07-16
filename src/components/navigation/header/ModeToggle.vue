@@ -2,6 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { Moon, Sun } from '@lucide/vue'
 import { computed } from 'vue'
+import { toast } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
@@ -28,8 +29,14 @@ const nextTheme = (): PyrolaTheme => {
 }
 
 const toggleMode = async (): Promise<void> => {
-  const theme = nextTheme()
-  await config.setTheme('personal', theme)
+  try {
+    const theme = nextTheme()
+    await config.setTheme('personal', theme)
+  } catch (error) {
+    toast.error('Failed to save theme', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 </script>
 

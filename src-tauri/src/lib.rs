@@ -2,7 +2,8 @@ mod commands;
 
 use commands::{
   config_exists, delete_secret, get_active_project, get_default_workspace_root, get_secret,
-  get_user_pyrola_dir, get_pyrola_dir, has_project_pyrola, http_proxy_request, list_project_files,
+  get_user_pyrola_dir, get_pyrola_dir, git_checkout_branch, git_list_branches, git_repo_info,
+  has_project_pyrola, http_proxy_request, list_project_files,
   list_pyrola_files,
   mcp_list_tools, mcp_logout,
   mcp_refresh, mcp_start, mcp_status, mcp_stop, read_json_file, read_mcp_config, read_settings,
@@ -68,6 +69,9 @@ pub fn run() {
       delete_secret,
       http_proxy_request,
       reveal_in_folder,
+      git_repo_info,
+      git_list_branches,
+      git_checkout_branch,
       get_pyrola_dir,
       list_project_files,
       list_pyrola_files,

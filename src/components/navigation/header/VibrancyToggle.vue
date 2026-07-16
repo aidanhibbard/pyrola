@@ -2,6 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { GlassWater } from '@lucide/vue'
 import { computed } from 'vue'
+import { toast } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
@@ -17,7 +18,13 @@ const vibrancyEnabled = computed(
 )
 
 const toggleVibrancy = async (): Promise<void> => {
-  await config.setGlass('personal', !vibrancyEnabled.value)
+  try {
+    await config.setGlass('personal', !vibrancyEnabled.value)
+  } catch (error) {
+    toast.error('Failed to save window glass setting', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 </script>
 

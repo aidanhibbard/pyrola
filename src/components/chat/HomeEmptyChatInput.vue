@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { BrainIcon, CircleUserRoundIcon, FolderIcon } from '@lucide/vue'
+import { computed, reactive, watch } from 'vue'
+import { toast } from 'vue-sonner'
+import { FolderIcon } from '@lucide/vue'
+import { Input } from '@/components/shadcn/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/shadcn/ui/select'
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -9,73 +18,227 @@ import {
   PromptInputActionMenuItem,
   PromptInputActionMenuTrigger,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
+import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
+import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
+import useFleetRegistry from '@/composables/use-fleet-registry'
+import useGitBranches from '@/composables/use-git-branches'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
+import { listProviderModels } from '@/services/providers/list-provider-models'
 import {
-  ModelSelector,
-  ModelSelectorContent,
-  ModelSelectorEmpty,
-  ModelSelectorGroup,
-  ModelSelectorInput,
-  ModelSelectorItem,
-  ModelSelectorList,
-  ModelSelectorLogo,
-  ModelSelectorName,
-  ModelSelectorTrigger,
-} from '@/components/ai-elements/model-selector'
-const CHAT_MODES = [
-  { value: 'ask', label: 'Ask' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'studio', label: 'Studio' },
-  { value: 'agent', label: 'Agent' },
-] as const
+  getProviderCatalogEntry,
+  keychainKeyForProvider,
+  providerRequiresApiKey,
+} from '@/services/providers/registry'
+import { getSecret } from '@/services/pyrola/pyrola-tauri'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
 
-const PROJECTS = [
-  { value: 'pyrola', label: 'pyrola' },
-  { value: 'platform', label: 'platform' },
-  { value: 'marketing', label: 'marketing' },
-] as const
+const fleet = useFleetRegistry()
+const config = usePyrolaConfig()
+const git = useGitBranches()
 
-const MODELS = [
-  { id: 'anthropic/claude-sonnet-4', provider: 'anthropic', label: 'Claude Sonnet 4' },
-  { id: 'openai/gpt-4o', provider: 'openai', label: 'GPT-4o' },
-  { id: 'google/gemini-2.5-pro', provider: 'google', label: 'Gemini 2.5 Pro' },
-] as const
+const session = reactive<{
+  selectedMode: PyrolaChatMode
+  selectedModel: string
+  modeInitialized: boolean
+  modelInitialized: boolean
+}>({
+  selectedMode: 'agent',
+  selectedModel: '',
+  modeInitialized: false,
+  modelInitialized: false,
+})
 
-const selectedMode = ref<(typeof CHAT_MODES)[number]['value']>('agent')
-const selectedProject = ref<(typeof PROJECTS)[number]['value']>('pyrola')
-const selectedModelId = ref<(typeof MODELS)[number]['id']>('anthropic/claude-sonnet-4')
-const modelSelectorOpen = ref(false)
+const modelPicker = reactive<{
+  search: string
+  providerModels: string[]
+  loading: boolean
+}>({
+  search: '',
+  providerModels: [],
+  loading: false,
+})
 
-const selectedModeLabel = () =>
-  CHAT_MODES.find((mode) => mode.value === selectedMode.value)?.label ?? 'Mode'
+let modelsLoadGeneration = 0
 
-const selectedProjectLabel = () =>
-  PROJECTS.find((project) => project.value === selectedProject.value)?.label ?? 'Project'
+const defaultProvider = computed(
+  () => config.effectiveSettings.value['agent.defaultProvider'] ?? '',
+)
 
-const selectedModelLabel = () =>
-  MODELS.find((model) => model.id === selectedModelId.value)?.label ?? 'Model'
+const filteredProviderModels = computed(() => {
+  const query = modelPicker.search.trim().toLowerCase()
+  if (!query) {
+    return modelPicker.providerModels
+  }
+  return modelPicker.providerModels.filter((model) => model.toLowerCase().includes(query))
+})
 
-const handleModeSelect = (mode: (typeof CHAT_MODES)[number]['value']) => {
-  selectedMode.value = mode
+const selectedModeMeta = computed(() => getChatModeMeta(session.selectedMode))
+
+const activeProjectName = computed(
+  () => fleet.activeProject.value?.name ?? 'No project',
+)
+
+const getCustomProvider = (providerId: string): PyrolaCustomProvider | undefined => {
+  const customKey = `providers.custom.${providerId}` as const
+  return config.effectiveSettings.value[customKey] as PyrolaCustomProvider | undefined
 }
 
-const handleProjectSelect = (project: (typeof PROJECTS)[number]['value']) => {
-  selectedProject.value = project
+const getApiKeyRef = (providerId: string): string | undefined => {
+  const custom = getCustomProvider(providerId)
+  if (custom?.apiKeyRef) {
+    return custom.apiKeyRef
+  }
+  const key = `providers.${providerId}.apiKeyRef` as const
+  return config.effectiveSettings.value[key]
 }
 
-const handleModelSelect = (modelId: (typeof MODELS)[number]['id']) => {
-  selectedModelId.value = modelId
-  modelSelectorOpen.value = false
+const loadProviderModels = async (providerId: string): Promise<void> => {
+  const generation = ++modelsLoadGeneration
+
+  if (!providerId) {
+    modelPicker.providerModels = []
+    modelPicker.loading = false
+    return
+  }
+
+  modelPicker.loading = true
+
+  try {
+    const custom = getCustomProvider(providerId)
+    const catalogEntry = getProviderCatalogEntry(providerId)
+    const requiresKey = custom ? false : providerRequiresApiKey(providerId)
+
+    let apiKey = ''
+    const apiKeyRef = getApiKeyRef(providerId)
+    if (apiKeyRef) {
+      apiKey = (await getSecret(keychainKeyForProvider(apiKeyRef))) ?? ''
+    }
+
+    if (requiresKey && !apiKey) {
+      if (generation !== modelsLoadGeneration) {
+        return
+      }
+      modelPicker.providerModels = catalogEntry?.models ?? []
+      return
+    }
+
+    const models = await listProviderModels({
+      providerId: custom ? 'openai' : providerId,
+      catalogProviderId: providerId,
+      apiKey,
+      baseUrl: custom?.baseURL ?? catalogEntry?.defaultBaseUrl,
+    })
+
+    if (generation !== modelsLoadGeneration) {
+      return
+    }
+
+    const merged = [...models]
+    const defaultModel = config.effectiveSettings.value['agent.defaultModel']
+    if (defaultModel && !merged.includes(defaultModel)) {
+      merged.unshift(defaultModel)
+    }
+    if (session.selectedModel && !merged.includes(session.selectedModel)) {
+      merged.unshift(session.selectedModel)
+    }
+    modelPicker.providerModels = merged
+  } catch (error) {
+    if (generation !== modelsLoadGeneration) {
+      return
+    }
+    modelPicker.providerModels = getProviderCatalogEntry(providerId)?.models ?? []
+    toast.error('Could not load models', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  } finally {
+    if (generation === modelsLoadGeneration) {
+      modelPicker.loading = false
+    }
+  }
 }
+
+const handleModeSelect = (mode: PyrolaChatMode): void => {
+  session.selectedMode = mode
+}
+
+const handleProjectSelect = async (projectId: string): Promise<void> => {
+  try {
+    await fleet.setActiveProject(projectId)
+  } catch (error) {
+    toast.error('Could not switch project', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleModelChange = (value: unknown): void => {
+  if (typeof value === 'string' && value.length > 0) {
+    session.selectedModel = value
+  }
+}
+
+const handleModelOpenChange = (open: boolean): void => {
+  if (!open) {
+    modelPicker.search = ''
+  }
+}
+
+watch(
+  () => config.hydrated.value,
+  (hydrated) => {
+    if (!hydrated) {
+      return
+    }
+    if (!session.modeInitialized) {
+      session.selectedMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
+      session.modeInitialized = true
+    }
+    if (!session.modelInitialized) {
+      const model = config.effectiveSettings.value['agent.defaultModel']
+      if (model) {
+        session.selectedModel = model
+      }
+      session.modelInitialized = true
+    }
+  },
+  { immediate: true },
+)
+
+watch(defaultProvider, async (providerId) => {
+  modelPicker.search = ''
+  await loadProviderModels(providerId)
+}, { immediate: true })
 </script>
 
 <template>
   <div class="mx-auto w-full max-w-3xl">
+    <div class="mb-2 flex items-center px-1">
+      <PromptInputActionMenu>
+        <PromptInputActionMenuTrigger
+          size="sm"
+          class="max-w-full"
+          :title="`${activeProjectName} project`"
+        >
+          <FolderIcon class="size-4 shrink-0" />
+          <span class="text-sm">{{ activeProjectName }}</span>
+        </PromptInputActionMenuTrigger>
+        <PromptInputActionMenuContent>
+          <PromptInputActionMenuItem
+            v-for="project in fleet.projects.value"
+            :key="project.id"
+            @select="handleProjectSelect(project.id)"
+          >
+            {{ project.name }}
+          </PromptInputActionMenuItem>
+        </PromptInputActionMenuContent>
+      </PromptInputActionMenu>
+    </div>
     <PromptInput
       accept="image/*"
       class="w-full"
@@ -87,8 +250,8 @@ const handleModelSelect = (modelId: (typeof MODELS)[number]['id']) => {
           placeholder="Plan, build, / for skills, @ for context"
         />
       </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
+      <PromptInputFooter class="gap-2">
+        <PromptInputTools class="shrink-0 gap-2">
           <PromptInputActionMenu>
             <PromptInputActionMenuTrigger />
             <PromptInputActionMenuContent>
@@ -96,65 +259,79 @@ const handleModelSelect = (modelId: (typeof MODELS)[number]['id']) => {
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
           <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger :title="`${selectedModeLabel()} mode`">
-              <CircleUserRoundIcon class="size-4" />
+            <PromptInputActionMenuTrigger
+              size="sm"
+              class="shrink-0"
+              :title="`${selectedModeMeta.label} mode`"
+            >
+              <component :is="selectedModeMeta.icon" class="size-4 shrink-0" />
+              <span class="text-sm">{{ selectedModeMeta.label }}</span>
             </PromptInputActionMenuTrigger>
             <PromptInputActionMenuContent>
               <PromptInputActionMenuItem
                 v-for="mode in CHAT_MODES"
                 :key="mode.value"
+                class="gap-2"
                 @select="handleModeSelect(mode.value)"
               >
+                <component :is="mode.icon" class="size-4 shrink-0" />
                 {{ mode.label }}
               </PromptInputActionMenuItem>
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
-          <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger :title="`${selectedProjectLabel()} project`">
-              <FolderIcon class="size-4" />
-            </PromptInputActionMenuTrigger>
-            <PromptInputActionMenuContent>
-              <PromptInputActionMenuItem
-                v-for="project in PROJECTS"
-                :key="project.value"
-                @select="handleProjectSelect(project.value)"
-              >
-                {{ project.label }}
-              </PromptInputActionMenuItem>
-            </PromptInputActionMenuContent>
-          </PromptInputActionMenu>
         </PromptInputTools>
-        <PromptInputTools>
-          <ModelSelector v-model:open="modelSelectorOpen">
-            <ModelSelectorTrigger as-child>
-              <PromptInputButton
-                variant="ghost"
-                :title="selectedModelLabel()"
-              >
-                <BrainIcon class="size-4" />
-              </PromptInputButton>
-            </ModelSelectorTrigger>
-            <ModelSelectorContent title="Select model">
-              <ModelSelectorInput placeholder="Search models…" />
-              <ModelSelectorList>
-                <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                <ModelSelectorGroup heading="Models">
-                  <ModelSelectorItem
-                    v-for="model in MODELS"
-                    :key="model.id"
-                    :value="model.id"
-                    @select="handleModelSelect(model.id)"
-                  >
-                    <ModelSelectorLogo :provider="model.provider" />
-                    <ModelSelectorName>{{ model.label }}</ModelSelectorName>
-                  </ModelSelectorItem>
-                </ModelSelectorGroup>
-              </ModelSelectorList>
-            </ModelSelectorContent>
-          </ModelSelector>
-          <PromptInputSubmit />
+        <PromptInputTools class="shrink-0 gap-2">
+          <Select
+            :model-value="session.selectedModel"
+            :disabled="!defaultProvider || modelPicker.loading"
+            @update:model-value="handleModelChange"
+            @update:open="handleModelOpenChange"
+          >
+            <SelectTrigger
+              class="h-8 w-auto max-w-56 shrink gap-1.5 border-0 bg-transparent px-2 shadow-none focus:ring-0"
+              :title="session.selectedModel || 'No model'"
+            >
+              <SelectValue :placeholder="defaultProvider ? 'Select model' : 'No model'" />
+            </SelectTrigger>
+            <SelectContent class="w-72 p-0">
+              <div class="border-b border-border/50 p-2" @pointerdown.stop>
+                <Input
+                  v-model="modelPicker.search"
+                  placeholder="Search models…"
+                  class="h-8"
+                  @keydown.stop
+                />
+              </div>
+              <div class="max-h-72 overflow-y-auto p-1">
+                <SelectItem
+                  v-for="model in filteredProviderModels"
+                  :key="model"
+                  :value="model"
+                >
+                  {{ model }}
+                </SelectItem>
+                <p
+                  v-if="!modelPicker.loading && filteredProviderModels.length === 0"
+                  class="px-2 py-4 text-center text-sm text-muted-foreground"
+                >
+                  {{
+                    modelPicker.search.trim()
+                      ? 'No models match your search.'
+                      : 'No models available.'
+                  }}
+                </p>
+              </div>
+            </SelectContent>
+          </Select>
+          <PromptInputSubmit class="ml-1 shrink-0" />
         </PromptInputTools>
       </PromptInputFooter>
     </PromptInput>
+    <div
+      v-if="git.isRepo.value"
+      class="mt-1.5 flex items-center px-1"
+    >
+      <ChatGitBranchSelect />
+    </div>
   </div>
 </template>
