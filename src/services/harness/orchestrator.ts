@@ -280,7 +280,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       stopWhen: stepCountIs(25),
       abortSignal: signal,
       onAbort: async () => {
-        rejectAllPending('stopped')
+        rejectAllPending()
         if (assistantText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
             id: assistantId,
@@ -419,7 +419,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       throw error
     }
   } finally {
-    rejectAllPending('stopped')
+    rejectAllPending()
     onEvent({
       type: 'chat-status-changed',
       projectSlug,

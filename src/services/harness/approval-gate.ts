@@ -30,7 +30,7 @@ export const resolveApproval = (toolCallId: string, approved: boolean): void => 
   entry.resolve(approved)
 }
 
-export const rejectAllPending = (_reason: string): void => {
+export const rejectAllPending = (): void => {
   for (const entry of pending.values()) {
     entry.resolve(false)
   }

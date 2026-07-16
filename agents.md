@@ -110,6 +110,12 @@ async function handleSubmit(): Promise<void> {
 }
 ```
 
+### Parameters
+
+- Omit parameters that are not needed. Do not add unused arguments "for future use" or to document intent at the call site.
+- Do not prefix unused parameters with `_` (for example `_reason`). If a parameter is not used in the function body, remove it from the signature and update call sites.
+- If a parameter is part of the signature, use it in the implementation.
+
 ## Composables
 
 - Name composable files in kebab-case, for example `use-example.ts`.
