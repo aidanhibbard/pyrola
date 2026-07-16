@@ -9,6 +9,7 @@ import {
   updateChatMeta,
 } from '@/services/pyrola/pyrola-tauri'
 import assembleSystemPrompt from '@/services/harness/system-prompt-assembler'
+import countContextBudget from '@/services/context/count-context-budget'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { rejectAllPending } from '@/services/harness/approval-gate'
@@ -187,6 +188,22 @@ export default async (input: OrchestratorInput): Promise<void> => {
     projectRoot,
     mentions,
     agentCatalog: [],
+  })
+
+  const budget = await countContextBudget({
+    modelId,
+    mode,
+    projectName,
+    projectRoot,
+    mentions,
+    messages,
+  })
+  onEvent({
+    type: 'context-budget',
+    modelId,
+    used: budget.used,
+    limit: budget.limit,
+    buckets: budget.buckets,
   })
 
   const model = await createModel({ providerId, modelId, settings })

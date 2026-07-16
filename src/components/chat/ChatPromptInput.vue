@@ -32,9 +32,12 @@ import {
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
+import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
+import useChatStore from '@/composables/use-chat-store'
+import useContextUsage from '@/composables/use-context-usage'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { listProviderModels } from '@/services/providers/list-provider-models'
 import {
@@ -51,11 +54,13 @@ const props = withDefaults(
     status?: ChatStatus
     disabled?: boolean
     showProjectSelect?: boolean
+    showContextUsage?: boolean
   }>(),
   {
     status: 'ready',
     disabled: false,
     showProjectSelect: false,
+    showContextUsage: false,
   },
 )
 
@@ -67,6 +72,8 @@ const emit = defineEmits<{
 const fleet = useFleetRegistry()
 const config = usePyrolaConfig()
 const git = useGitBranches()
+const chatStore = useChatStore()
+const contextUsage = useContextUsage()
 
 const session = reactive<{
   selectedMode: PyrolaChatMode
@@ -245,6 +252,26 @@ const handleSubmit = (payload: PromptInputMessage): void => {
   })
 }
 
+const refreshContextBudget = async (): Promise<void> => {
+  if (!props.showContextUsage) {
+    return
+  }
+
+  const project = fleet.activeProject.value
+  const model = session.selectedModel || chatStore.meta.value?.model || ''
+  if (!project || !model) {
+    return
+  }
+
+  await contextUsage.refresh({
+    modelId: model,
+    mode: session.selectedMode,
+    projectName: project.name,
+    projectRoot: project.rootPath,
+    messages: chatStore.messages.value,
+  })
+}
+
 watch(
   () => config.hydrated.value,
   (hydrated) => {
@@ -270,6 +297,37 @@ watch(defaultProvider, async (providerId) => {
   modelPicker.search = ''
   await loadProviderModels(providerId)
 }, { immediate: true })
+
+watch(
+  () => chatStore.meta.value,
+  (meta) => {
+    if (!meta || !props.showContextUsage) {
+      return
+    }
+    if (meta.model) {
+      session.selectedModel = meta.model
+    }
+    if (meta.mode) {
+      session.selectedMode = meta.mode
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  [
+    () => props.showContextUsage,
+    () => session.selectedModel,
+    () => session.selectedMode,
+    () => chatStore.messages.value.length,
+    () => fleet.activeProject.value?.id,
+    () => chatStore.meta.value?.model,
+  ],
+  () => {
+    void refreshContextBudget()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -394,10 +452,15 @@ watch(defaultProvider, async (providerId) => {
       </PromptInputFooter>
     </PromptInput>
     <div
-      v-if="git.isRepo.value"
-      class="mt-1 flex items-center px-1"
+      v-if="git.isRepo.value || showContextUsage"
+      class="mt-1 flex items-center justify-between gap-2 px-1"
     >
-      <ChatGitBranchSelect />
+      <ChatGitBranchSelect v-if="git.isRepo.value" />
+      <div v-else />
+      <ChatContextUsageBar
+        v-if="showContextUsage"
+        :trigger-disabled="disabled"
+      />
     </div>
   </div>
 </template>

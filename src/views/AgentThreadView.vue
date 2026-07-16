@@ -145,6 +145,7 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
       <ChatPromptInput
         :status="harnessStatus"
         :disabled="!threadReady"
+        show-context-usage
         @submit="handleSubmit"
         @stop="handleStop"
       />

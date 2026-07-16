@@ -26,7 +26,7 @@ export type HarnessEvent =
   | { type: 'side-task-start'; taskId: string; kind: SideTaskKind }
   | { type: 'side-task-complete'; taskId: string; kind: SideTaskKind; result: unknown }
   | { type: 'chat-meta-changed'; projectSlug: string; chatId: string; patch: Partial<ChatMeta> }
-  | { type: 'context-budget'; used: number; limit: number; buckets: ContextBucket[] }
+  | { type: 'context-budget'; modelId: string; used: number; limit: number; buckets: ContextBucket[] }
   | { type: 'terminal-output'; sessionId: string; data: string }
   | { type: 'chat-status-changed'; projectSlug: string; chatId: string; status: 'idle' | 'running' }
   | { type: 'turn-aborted'; reason: 'user-stop' | 'error'; partialSteps: number }

@@ -7,6 +7,7 @@ import type { FileDiff } from '@/types/harness/file-diff'
 import type { ToolRun } from '@/types/harness/tool-run'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import useChatStore from '@/composables/use-chat-store'
+import useContextUsage from '@/composables/use-context-usage'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import runOrchestrator, { mapMetaStatusToChatStatus } from '@/services/harness/orchestrator'
 import { resolveApproval } from '@/services/harness/approval-gate'
@@ -24,6 +25,7 @@ export type { ToolRun } from '@/types/harness/tool-run'
 export default (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
   const config = usePyrolaConfig()
+  const contextUsage = useContextUsage()
 
   const status = ref<ChatStatus>('ready')
   const error = ref<string | null>(null)
@@ -92,6 +94,14 @@ export default (options: AgentHarnessOptions) => {
           diff: event.diff,
         },
       ]
+    }
+    if (event.type === 'context-budget') {
+      contextUsage.setBudget({
+        modelId: event.modelId,
+        used: event.used,
+        limit: event.limit,
+        buckets: event.buckets,
+      })
     }
     if (event.type === 'chat-status-changed') {
       status.value = mapMetaStatusToChatStatus(event.status, false)
