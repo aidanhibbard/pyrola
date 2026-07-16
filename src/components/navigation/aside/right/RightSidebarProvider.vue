@@ -1,24 +1,28 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { ref } from 'vue'
+import { toRef } from 'vue'
 import { cn } from '@/lib/utils'
-import { provideRightSidebarContext, RIGHT_SIDEBAR_WIDTH } from './utils'
+import { provideRightSidebarContext } from './utils'
 
 const props = withDefaults(
   defineProps<{
-    defaultOpen?: boolean
+    open: boolean
     class?: HTMLAttributes['class']
   }>(),
   {
-    defaultOpen: false,
+    open: false,
   },
 )
 
-const open = ref(props.defaultOpen)
+const emit = defineEmits<{
+  'update:open': [value: boolean]
+}>()
 
-const setOpen = (value: boolean) => (open.value = value)
+const open = toRef(props, 'open')
 
-const toggleSidebar = () => (open.value = !open.value)
+const setOpen = (value: boolean) => emit('update:open', value)
+
+const toggleSidebar = () => emit('update:open', !props.open)
 
 provideRightSidebarContext({
   open,
@@ -30,9 +34,6 @@ provideRightSidebarContext({
 <template>
   <div
     data-slot="right-sidebar-wrapper"
-    :style="{
-      '--right-sidebar-width': RIGHT_SIDEBAR_WIDTH,
-    }"
     :class="cn('group/right-sidebar-wrapper flex min-h-svh w-full', props.class)"
   >
     <slot />

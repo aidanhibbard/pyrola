@@ -1,26 +1,39 @@
 <script setup lang="ts">
-import AppSidebar from "@/components/navigation/aside/left/LeftSidebar.vue"
+import { ref } from 'vue'
+import AppSidebar from '@/components/navigation/aside/left/LeftSidebar.vue'
+import { SidebarInset, SidebarProvider } from '@/components/shadcn/ui/sidebar'
+import RightSidebarProvider from '@/components/navigation/aside/right/RightSidebarProvider.vue'
+import RightSidebar from '@/components/navigation/aside/right/RightSidebar.vue'
+import TitleBar from '@/components/navigation/header/TitleBar.vue'
 import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/shadcn/ui/sidebar"
-import RightSidebarProvider from "@/components/navigation/aside/right/RightSidebarProvider.vue"
-import RightSidebar from "@/components/navigation/aside/right/RightSidebar.vue"
-import TitleBar from "@/components/navigation/header/TitleBar.vue"
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/shadcn/ui/resizable'
+
+const rightSidebarOpen = ref(false)
 </script>
 
 <template>
   <SidebarProvider>
     <AppSidebar />
     <SidebarInset>
-      <RightSidebarProvider class="h-svh flex-1">
+      <RightSidebarProvider v-model:open="rightSidebarOpen" class="h-svh flex-1">
         <TitleBar />
-        <div class="flex flex-1 overflow-hidden">
-          <main class="flex-1 overflow-auto pt-(--titlebar-height)" style="--titlebar-height: 40px">
-            <slot />
-          </main>
-          <RightSidebar class="pt-(--titlebar-height)" style="--titlebar-height: 40px" />
-        </div>
+        <ResizablePanelGroup direction="horizontal" class="flex-1 overflow-hidden">
+          <ResizablePanel :min-size="30">
+            <main
+              class="h-full overflow-auto pt-(--titlebar-height)"
+              style="--titlebar-height: 40px"
+            >
+              <slot />
+            </main>
+          </ResizablePanel>
+          <ResizableHandle v-if="rightSidebarOpen" />
+          <ResizablePanel v-if="rightSidebarOpen" :default-size="25" :min-size="15" :max-size="50">
+            <RightSidebar class="pt-(--titlebar-height)" style="--titlebar-height: 40px" />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </RightSidebarProvider>
     </SidebarInset>
   </SidebarProvider>
