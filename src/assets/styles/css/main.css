@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html {
+  background: transparent;
+}
+
+.chat-markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown :where(p, li, h1, h2, h3, h4, h5, h6, blockquote, a) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-markdown code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown table {
+  display: table;
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  overflow: visible;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.chat-markdown [data-stream-markdown='table-inner-wrapper'] {
+  max-width: 100%;
+}

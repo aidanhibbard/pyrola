@@ -20,7 +20,7 @@ const { remove, variant } = useAttachmentContext()
 
 const { variant: _variant, ...restProps } = props
 
-function handleClick(e: Event) {
+const handleClick = (e: Event): void => {
   e.stopPropagation()
   remove?.()
 }
@@ -35,7 +35,7 @@ function handleClick(e: Event) {
         variant === 'grid'
           && [
             'absolute top-2 right-2 size-6 rounded-full p-0',
-            'bg-background/80 backdrop-blur-sm',
+            'bg-background',
             'opacity-0 transition-opacity group-hover:opacity-100',
             'hover:bg-background',
             '[&>svg]:size-3',

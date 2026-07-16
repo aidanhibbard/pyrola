@@ -1,56 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0 / 70%);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0 / 70%);
+  --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
@@ -69,7 +70,7 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0 / 70%);
+  --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -82,9 +83,9 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0 / 70%);
+  --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0 / 70%);
+  --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
@@ -95,21 +96,21 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(0.32 0 0);
+  --input: oklch(0.32 0 0);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0 / 70%);
+  --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(0.32 0 0);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
@@ -117,120 +118,8 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
-}
-
-/*
- * Vibrancy support.
- *
- * By default the background stays transparent so native window vibrancy
- * (applied on the Rust side via the `window-vibrancy` crate) shows through
- * on macOS and Windows. Surfaces like cards, popovers, and the sidebar use
- * translucent `--card` / `--popover` / `--sidebar` tokens (with a
- * `backdrop-blur` applied via `.vibrancy-surface`) so they read as frosted
- * glass on top of the native blur instead of blocking it with an opaque
- * fill.
- *
- * When the user disables the glass toggle, `use-vibrancy` adds
- * `.vibrancy-off` to `<html>`, which restores opaque backgrounds (root +
- * surfaces) so the window doesn't render as blank/transparent once the
- * native effect is cleared.
- *
- * On Linux there is no native vibrancy API, so `use-vibrancy` applies a CSS
- * `backdrop-filter` blur fallback instead via the `.linux-vibrancy` classes.
- */
-html,
-body {
-  background: transparent;
-}
-
-:root {
-  --background: transparent;
-}
-
-.dark {
-  --background: transparent;
-}
-
-html.vibrancy-off:not(.dark) {
-  --background: oklch(1 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --card: oklch(1 0 0);
-  --popover: oklch(1 0 0);
-  --border: oklch(0.922 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-}
-
-html.vibrancy-off.dark {
-  --background: oklch(0.145 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --card: oklch(0.205 0 0);
-  --popover: oklch(0.205 0 0);
-  --border: oklch(0.32 0 0);
-  --sidebar-border: oklch(0.32 0 0);
-}
-
-html.vibrancy-off,
-html.vibrancy-off body {
-  background: var(--background);
-}
-
-html.vibrancy-off [data-slot='sidebar'],
-html.vibrancy-off [data-slot='card'],
-html.vibrancy-off [data-slot='popover-content'],
-html.vibrancy-off [data-slot='dropdown-menu-content'],
-html.vibrancy-off [data-slot='dropdown-menu-sub-content'],
-html.vibrancy-off [data-slot='context-menu-content'],
-html.vibrancy-off [data-slot='context-menu-sub-content'],
-html.vibrancy-off [data-slot='menubar-content'],
-html.vibrancy-off [data-slot='menubar-sub-content'],
-html.vibrancy-off [data-slot='hover-card-content'],
-html.vibrancy-off [data-slot='select-content'],
-html.vibrancy-off [data-slot='command'],
-html.vibrancy-off [data-slot='navigation-menu-content'],
-html.vibrancy-off [data-slot='navigation-menu-viewport'] {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-html.linux-vibrancy body {
-  background: oklch(1 0 0 / 70%);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
-
-html.linux-vibrancy.dark-vibrancy body {
-  background: oklch(0.145 0 0 / 70%);
-}
-
-/*
- * Frosted-glass surfaces.
- *
- * shadcn primitives that render on `--sidebar` / `--card` / `--popover`
- * (sidebar, cards, popovers, dropdowns, menus, command palette, hover
- * cards, context menus, select/combobox content, etc.) now use translucent
- * tokens. Target them by their stable `data-slot` attribute — rather than
- * editing the vendored component files — to add a `backdrop-filter` blur so
- * they read as frosted glass on top of the native window vibrancy instead
- * of just alpha-blending a flat tint. No-op when vibrancy is disabled since
- * the underlying tokens become fully opaque.
- */
-[data-slot='sidebar'],
-[data-slot='card'],
-[data-slot='popover-content'],
-[data-slot='dropdown-menu-content'],
-[data-slot='dropdown-menu-sub-content'],
-[data-slot='context-menu-content'],
-[data-slot='context-menu-sub-content'],
-[data-slot='menubar-content'],
-[data-slot='menubar-sub-content'],
-[data-slot='hover-card-content'],
-[data-slot='select-content'],
-[data-slot='command'],
-[data-slot='navigation-menu-content'],
-[data-slot='navigation-menu-viewport'] {
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }

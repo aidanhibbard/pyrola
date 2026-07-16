@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { cn } from '@/lib/utils'
-import { Shimmer } from '../shimmer'
 import { useTerminalContext } from './context'
 
 interface Props extends /* @vue-ignore */ HTMLAttributes {
@@ -20,7 +19,7 @@ const { isStreaming } = useTerminalContext('TerminalStatus')
     v-bind="$attrs"
   >
     <slot>
-      <Shimmer class="w-16" />
+      <span class="shimmer w-16">&nbsp;</span>
     </slot>
   </div>
 </template>

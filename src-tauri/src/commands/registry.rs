@@ -102,6 +102,25 @@ pub fn registry_add_project(
 }
 
 #[tauri::command]
+pub fn registry_update_project_root(
+  app: AppHandle,
+  project_id: String,
+  root_path: String,
+) -> Result<FleetProject, String> {
+  let mut registry = read_registry(&app)?;
+  let project = registry
+    .projects
+    .iter_mut()
+    .find(|p| p.id == project_id)
+    .ok_or_else(|| "Project not found".to_string())?;
+  project.root_path = root_path;
+  project.last_opened = chrono_now();
+  let updated = project.clone();
+  write_registry(&app, &registry)?;
+  Ok(updated)
+}
+
+#[tauri::command]
 pub fn registry_remove_project(app: AppHandle, project_id: String) -> Result<(), String> {
   let mut registry = read_registry(&app)?;
   registry.projects.retain(|p| p.id != project_id);

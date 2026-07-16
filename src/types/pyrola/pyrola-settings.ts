@@ -1,7 +1,5 @@
 export type PyrolaTheme = 'light' | 'dark' | 'system'
 
-export type PyrolaGlassVariant = 'light' | 'dark'
-
 export type PyrolaChatMode = 'ask' | 'plan' | 'studio' | 'agent'
 
 export type PyrolaCustomProvider = {
@@ -11,17 +9,24 @@ export type PyrolaCustomProvider = {
   name: string
 }
 
+export type PyrolaSearchProvider = 'tavily' | 'brave' | 'custom'
+
 export type PyrolaSettings = {
   version: 1
   'appearance.theme'?: PyrolaTheme
-  'appearance.glass'?: boolean
-  'appearance.glassVariant'?: PyrolaGlassVariant
   'agent.defaultProvider'?: string
   'agent.defaultModel'?: string
   'agent.defaultMode'?: PyrolaChatMode
+  'agent.autoApproveGlobs'?: string[]
   'fleet.maxConcurrentAgents'?: number
   'fleet.trayBackground'?: boolean
   'general.machineLabel'?: string
+  'search.provider'?: PyrolaSearchProvider
+  'search.apiKeyRef'?: string
+  'search.customBaseUrl'?: string
+  'lsp.enabled'?: boolean
+  'chat.autoTitle'?: boolean
+  'chat.autoTitleModel'?: string
   [key: `providers.${string}.apiKeyRef`]: string | undefined
   [key: `providers.custom.${string}`]: PyrolaCustomProvider | undefined
 }

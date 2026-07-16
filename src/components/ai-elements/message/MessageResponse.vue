@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { cn } from '@/lib/utils'
-import { computed, useSlots } from 'vue'
+import { Comment, computed, useSlots } from 'vue'
 import { Markdown } from 'vue-stream-markdown'
 import 'vue-stream-markdown/index.css'
 
@@ -20,13 +20,17 @@ const slotContent = computed<string | undefined>(() => {
   }
   let text = ''
   for (const node of nodes) {
-    if (typeof node.children === 'string')
+    if (node.type === Comment) {
+      continue
+    }
+    if (typeof node.children === 'string') {
       text += node.children
+    }
   }
   return text || undefined
 })
 
-const md = computed(() => (slotContent.value ?? props.content ?? '') as string)
+const md = computed(() => (props.content ?? slotContent.value ?? '') as string)
 </script>
 
 <template>
@@ -34,7 +38,8 @@ const md = computed(() => (slotContent.value ?? props.content ?? '') as string)
     :content="md"
     :class="
       cn(
-        'size-full [&>*:first-child]:mt-0! [&>*:last-child]:mb-0!',
+        'w-full min-w-0 max-w-full overflow-hidden break-words [&_code]:break-words [&_p]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:w-full [&_table]:table-fixed',
+        '[&>*:first-child]:mt-0! [&>*:last-child]:mb-0!',
         props.class,
       )
     "

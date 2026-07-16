@@ -1,21 +1,31 @@
 mod commands;
 
 use commands::{
-  config_exists, delete_secret, get_active_project, get_default_workspace_root, get_secret,
-  get_user_pyrola_dir, get_pyrola_dir, git_checkout_branch, git_list_branches, git_repo_info,
-  has_project_pyrola, http_proxy_request, list_project_files,
-  list_pyrola_files,
-  mcp_list_tools, mcp_logout,
-  mcp_refresh, mcp_start, mcp_status, mcp_stop, read_json_file, read_mcp_config, read_settings,
-  registry_add_project, registry_list_projects, registry_remove_project, registry_set_active_project,
-  reveal_in_folder, set_secret, watch_pyrola_paths, write_json_file, write_mcp_config, write_settings,
-  WatchState,
+  append_chat_line, config_exists, create_chat, delete_chat, delete_secret, fork_chat,
+  fs_apply_patch, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_read_file, fs_stage_preview,
+  fs_stat, fs_write_file, get_active_project, get_default_workspace_root, get_secret,
+  get_user_pyrola_dir, get_pyrola_dir, git_checkout_branch, git_diff, git_list_branches,
+  git_log, git_repo_info, git_status, has_project_pyrola, http_proxy_request, http_proxy_stream,
+  list_chats,
+  list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_request,
+  lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_tools,
+  mcp_logout, mcp_refresh, mcp_start, mcp_status, mcp_stop, pin_chat, read_chat_meta,
+  read_chat_messages, read_json_file, read_mcp_config, read_settings, registry_add_project,
+  registry_list_projects, registry_remove_project, registry_set_active_project,
+  registry_update_project_root, reveal_in_folder,
+  set_secret, shell_kill_pty, shell_resize_pty, shell_run_command, shell_spawn_pty, shell_write_pty, update_chat_meta,
+  watch_pyrola_paths, workspace_glob, workspace_grep, write_json_file, write_mcp_config,
+  write_settings, WatchState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
-    .plugin(tauri_plugin_fs::init())
+  let builder = tauri::Builder::default().plugin(tauri_plugin_fs::init());
+
+  #[cfg(debug_assertions)]
+  let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+  builder
     .manage(WatchState::new())
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -31,24 +41,12 @@ pub fn run() {
         use tauri::Manager;
         if let Some(window) = app.get_webview_window("main") {
           hide_macos_traffic_lights(&window);
-          apply_platform_vibrancy(&window, false);
-        }
-      }
-
-      #[cfg(target_os = "windows")]
-      {
-        use tauri::Manager;
-        if let Some(window) = app.get_webview_window("main") {
-          apply_platform_vibrancy(&window, false);
         }
       }
 
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
-      set_vibrancy_dark,
-      set_vibrancy_light,
-      clear_vibrancy,
       get_user_pyrola_dir,
       get_default_workspace_root,
       has_project_pyrola,
@@ -59,15 +57,17 @@ pub fn run() {
       read_json_file,
       write_json_file,
       config_exists,
-      registry_list_projects,
-      registry_add_project,
-      registry_remove_project,
-      registry_set_active_project,
-      get_active_project,
+  registry_list_projects,
+  registry_add_project,
+  registry_remove_project,
+  registry_set_active_project,
+  registry_update_project_root,
+  get_active_project,
       get_secret,
       set_secret,
       delete_secret,
       http_proxy_request,
+      http_proxy_stream,
       reveal_in_folder,
       git_repo_info,
       git_list_branches,
@@ -82,6 +82,39 @@ pub fn run() {
       mcp_list_tools,
       mcp_status,
       watch_pyrola_paths,
+      create_chat,
+      list_chats,
+      read_chat_meta,
+      read_chat_messages,
+      append_chat_line,
+      update_chat_meta,
+      delete_chat,
+      fork_chat,
+      pin_chat,
+      list_pinned_chats,
+      mcp_call_tool,
+      shell_spawn_pty,
+      shell_write_pty,
+      shell_resize_pty,
+      shell_kill_pty,
+      shell_run_command,
+      fs_read_file,
+      fs_write_file,
+      fs_edit_file,
+      fs_apply_patch,
+      fs_list_dir,
+      fs_list_dir_tree,
+      fs_stat,
+      fs_stage_preview,
+      workspace_grep,
+      workspace_glob,
+      git_status,
+      git_diff,
+      git_log,
+      lsp_status,
+      lsp_request,
+      lsp_ensure_server,
+      lsp_stop_server,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -105,70 +138,4 @@ fn hide_macos_traffic_lights(window: &tauri::WebviewWindow) {
       button.setHidden(true);
     }
   }
-}
-
-#[cfg(target_os = "macos")]
-fn apply_platform_vibrancy(window: &tauri::WebviewWindow, dark: bool) {
-  use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
-
-  let material = if dark {
-    NSVisualEffectMaterial::UnderWindowBackground
-  } else {
-    NSVisualEffectMaterial::HudWindow
-  };
-
-  if let Err(err) = apply_vibrancy(window, material, None, None) {
-    log::warn!("failed to apply macOS vibrancy: {err}");
-  }
-}
-
-#[cfg(target_os = "windows")]
-fn apply_platform_vibrancy(window: &tauri::WebviewWindow, dark: bool) {
-  use window_vibrancy::{apply_acrylic, apply_mica};
-
-  if apply_mica(window, Some(dark)).is_err() {
-    let color = if dark {
-      Some((18, 18, 18, 125))
-    } else {
-      Some((240, 240, 240, 125))
-    };
-    if let Err(err) = apply_acrylic(window, color) {
-      log::warn!("failed to apply Windows vibrancy: {err}");
-    }
-  }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn apply_platform_vibrancy(_window: &tauri::WebviewWindow, _dark: bool) {}
-
-fn clear_platform_vibrancy(window: &tauri::WebviewWindow) {
-  #[cfg(target_os = "macos")]
-  {
-    if let Err(err) = window_vibrancy::clear_vibrancy(window) {
-      log::warn!("failed to clear macOS vibrancy: {err}");
-    }
-  }
-
-  #[cfg(target_os = "windows")]
-  {
-    let _ = window_vibrancy::clear_mica(window);
-    let _ = window_vibrancy::clear_acrylic(window);
-  }
-}
-
-#[tauri::command]
-fn set_vibrancy_dark(window: tauri::WebviewWindow) {
-  clear_platform_vibrancy(&window);
-  apply_platform_vibrancy(&window, true);
-}
-
-#[tauri::command]
-fn set_vibrancy_light(window: tauri::WebviewWindow) {
-  clear_platform_vibrancy(&window);
-  apply_platform_vibrancy(&window, false);
-}
-
-#[tauri::command]
-fn clear_vibrancy(window: tauri::WebviewWindow) {
-  clear_platform_vibrancy(&window);
 }

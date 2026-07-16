@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Bot, Pin, Search, Settings } from '@lucide/vue'
 import { useRouter } from 'vue-router'
-import { MOCK_PINNED_CHATS } from '@/data/mock-fleet-projects'
+import { toast } from 'vue-sonner'
+import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,17 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/shadcn/ui/sidebar'
 
 const { push } = useRouter()
-const pinnedChats = MOCK_PINNED_CHATS
+const { pinnedChats } = useFleetSidebar()
+
+const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
+  try {
+    await push(`/project/${projectSlug}/chat/${chatId}`)
+  } catch (error) {
+    toast.error('Navigation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 </script>
 
 <template>
@@ -46,6 +57,7 @@ const pinnedChats = MOCK_PINNED_CHATS
               v-for="chat in pinnedChats"
               :key="chat.chatId"
               class="flex items-center justify-between gap-2"
+              @click="openChat(chat.projectSlug, chat.chatId)"
             >
               <span class="truncate">{{ chat.title }}</span>
               <span class="shrink-0 text-xs text-muted-foreground">

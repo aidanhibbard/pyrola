@@ -16,6 +16,7 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-rename",
-    "fs:scope-appdata-recursive"
+    "fs:scope-appdata-recursive",
+    "mcp-bridge:default"
   ]
 }

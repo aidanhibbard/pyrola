@@ -273,3 +273,40 @@ pub async fn mcp_status(server_id: String) -> Result<McpServerState, String> {
     .cloned()
     .ok_or_else(|| "Unknown server".to_string())
 }
+
+#[tauri::command]
+pub async fn mcp_call_tool(
+  server_id: String,
+  tool: String,
+  args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+  let process = {
+    let processes = MCP_PROCESSES.lock().await;
+    processes.get(&server_id).cloned()
+  };
+
+  let Some(process) = process else {
+    return Err("Server not running".to_string());
+  };
+
+  let response = json_rpc(
+    &process,
+    "tools/call",
+    serde_json::json!({
+      "name": tool,
+      "arguments": args,
+    }),
+  )
+  .await?;
+
+  if let Some(error) = response.get("error") {
+    let message = error
+      .get("message")
+      .and_then(|m| m.as_str())
+      .unwrap_or("tools/call failed")
+      .to_string();
+    return Err(message);
+  }
+
+  Ok(response.get("result").cloned().unwrap_or(serde_json::Value::Null))
+}

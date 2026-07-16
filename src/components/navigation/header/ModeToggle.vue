@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { Moon, Sun } from '@lucide/vue'
-import { computed } from 'vue'
+import { useColorMode } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
@@ -13,24 +13,12 @@ defineProps<{
 }>()
 
 const config = usePyrolaConfig()
-
-const currentTheme = computed(
-  () => config.effectiveSettings.value['appearance.theme'] ?? 'system',
-)
-
-const nextTheme = (): PyrolaTheme => {
-  if (currentTheme.value === 'light') {
-    return 'dark'
-  }
-  if (currentTheme.value === 'dark') {
-    return 'system'
-  }
-  return 'light'
-}
+const colorMode = useColorMode()
 
 const toggleMode = async (): Promise<void> => {
+  const theme: PyrolaTheme = colorMode.state.value === 'dark' ? 'light' : 'dark'
+
   try {
-    const theme = nextTheme()
     await config.setTheme('personal', theme)
   } catch (error) {
     toast.error('Failed to save theme', {

@@ -2,7 +2,6 @@
 import type { HTMLAttributes } from 'vue'
 import { CardDescription } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { Shimmer } from '../shimmer'
 import { usePlan } from './context'
 
 const props = defineProps<{
@@ -17,9 +16,9 @@ const { isStreaming } = usePlan()
     :class="cn('text-balance', props.class)"
     data-slot="plan-description"
   >
-    <Shimmer v-if="isStreaming">
+    <span v-if="isStreaming" class="shimmer">
       <slot />
-    </Shimmer>
+    </span>
     <slot v-else />
   </CardDescription>
 </template>

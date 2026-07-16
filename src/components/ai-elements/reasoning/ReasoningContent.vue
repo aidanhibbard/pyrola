@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { CollapsibleContent } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import { computed, useSlots } from 'vue'
+import { computed } from 'vue'
 import { Markdown } from 'vue-stream-markdown'
 import 'vue-stream-markdown/index.css'
 
@@ -12,22 +12,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const slots = useSlots()
 
-const slotContent = computed<string | undefined>(() => {
-  const nodes = slots.default?.()
-  if (!Array.isArray(nodes)) {
-    return undefined
-  }
-  let text = ''
-  for (const node of nodes) {
-    if (typeof node.children === 'string')
-      text += node.children
-  }
-  return text || undefined
-})
-
-const md = computed(() => (slotContent.value ?? props.content ?? '') as string)
+const md = computed(() => props.content)
 </script>
 
 <template>
@@ -40,6 +26,11 @@ const md = computed(() => (slotContent.value ?? props.content ?? '') as string)
       props.class,
     )"
   >
-    <Markdown :content="md" />
+    <Markdown
+      v-if="md"
+      :content="md"
+      class="chat-markdown min-w-0 max-w-full overflow-hidden"
+    />
+    <slot />
   </CollapsibleContent>
 </template>

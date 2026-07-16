@@ -24,13 +24,16 @@ log = "0.4"
 tauri = { version = "2.11.3", features = ["macos-private-api"] }
 tauri-plugin-log = "2"
 tauri-plugin-fs = "2"
-window-vibrancy = "0.7"
+tauri-plugin-mcp-bridge = "0.12"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
-reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["sync", "process", "io-util", "rt-multi-thread", "macros"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "process", "io-util", "rt-multi-thread", "macros", "time"] }
 uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 open = "5"
 lazy_static = "1"
+portable-pty = "0.9"
 notify = "7.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]

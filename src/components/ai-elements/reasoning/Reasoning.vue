@@ -31,42 +31,44 @@ const isOpen = useVModel(props, 'open', emit, {
 })
 
 const internalDuration = ref<number | undefined>(props.duration)
+const hasAutoClosed = ref(false)
+const startTime = ref<number | null>(null)
+const wasStreaming = ref(false)
+
+const MS_IN_S = 1000
+const AUTO_CLOSE_DELAY = 1000
+
+const updateDuration = (val: number): void => {
+  internalDuration.value = val
+  emit('update:duration', val)
+}
 
 watch(() => props.duration, (newVal) => {
   internalDuration.value = newVal
 })
 
-function updateDuration(val: number) {
-  internalDuration.value = val
-  emit('update:duration', val)
-}
-
-const hasAutoClosed = ref(false)
-const startTime = ref<number | null>(null)
-
-const MS_IN_S = 1000
-const AUTO_CLOSE_DELAY = 1000
-
-// Track duration when streaming starts and ends
-watch(() => props.isStreaming, (streaming) => {
+watch(() => props.isStreaming, (streaming, _prev, onCleanup) => {
   if (streaming) {
-    // Auto-open when streaming starts
+    wasStreaming.value = true
     isOpen.value = true
 
     if (startTime.value === null && props.duration === undefined) {
       startTime.value = Date.now()
     }
+    return
   }
-  else if (startTime.value !== null) {
+
+  if (!wasStreaming.value) {
+    return
+  }
+
+  if (startTime.value !== null) {
     const calculatedDuration = Math.ceil((Date.now() - startTime.value) / MS_IN_S)
     updateDuration(calculatedDuration)
     startTime.value = null
   }
-}, { immediate: true })
 
-// Auto-close logic
-watch([() => props.isStreaming, isOpen, () => props.defaultOpen, hasAutoClosed], (_, __, onCleanup) => {
-  if (props.defaultOpen && !props.isStreaming && isOpen.value && !hasAutoClosed.value) {
+  if (!hasAutoClosed.value && isOpen.value) {
     const timer = setTimeout(() => {
       isOpen.value = false
       hasAutoClosed.value = true

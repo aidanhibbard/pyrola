@@ -10,6 +10,9 @@ import AgentsSection from '@/components/settings/sections/AgentsSection.vue'
 import PlansSection from '@/components/settings/sections/PlansSection.vue'
 import StudioSection from '@/components/settings/sections/StudioSection.vue'
 import SkillsSection from '@/components/settings/sections/SkillsSection.vue'
+import RulesSection from '@/components/settings/sections/RulesSection.vue'
+import SearchSection from '@/components/settings/sections/SearchSection.vue'
+import LspServersSection from '@/components/settings/sections/LspServersSection.vue'
 import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/ui/tabs'
 import type { SettingsSectionId } from '@/types/settings/settings-section'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
@@ -45,6 +48,12 @@ const sectionComponent = computed(() => {
       return StudioSection
     case 'skills':
       return SkillsSection
+    case 'rules':
+      return RulesSection
+    case 'search':
+      return SearchSection
+    case 'lsp':
+      return LspServersSection
     default:
       return GeneralSection
   }

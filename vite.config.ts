@@ -4,13 +4,23 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
-    tailwindcss()
+    tailwindcss(),
+    viteStaticCopy({
+      targets: [
+        {
+          src: 'node_modules/vscode-material-icons/generated/icons/*.svg',
+          dest: 'file-icons',
+          rename: { stripBase: true },
+        },
+      ],
+    }),
   ],
   resolve: {
     alias: [

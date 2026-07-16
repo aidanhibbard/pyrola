@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { CardTitle } from '@/components/ui/card'
-import { Shimmer } from '../shimmer'
 import { usePlan } from './context'
 
 const { isStreaming } = usePlan()
@@ -8,9 +7,9 @@ const { isStreaming } = usePlan()
 
 <template>
   <CardTitle data-slot="plan-title" v-bind="$attrs">
-    <Shimmer v-if="isStreaming">
+    <span v-if="isStreaming" class="shimmer">
       <slot />
-    </Shimmer>
+    </span>
     <slot v-else />
   </CardTitle>
 </template>

@@ -4,7 +4,6 @@ import { BrainIcon, ChevronDownIcon } from '@lucide/vue'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { computed } from 'vue'
-import { Shimmer } from '../shimmer'
 import { useReasoningContext } from './context'
 
 interface Props {
@@ -37,17 +36,17 @@ const thinkingMessage = computed(() => {
       <BrainIcon class="size-4" />
 
       <template v-if="thinkingMessage === 'thinking'">
-        <Shimmer :duration="1">
-          Thinking...
-        </Shimmer>
+        <span class="shimmer shimmer-duration-1000">
+          Working…
+        </span>
       </template>
 
       <template v-else-if="thinkingMessage === 'default_done'">
-        <p>Thought for a few seconds</p>
+        <p>Worked for a few seconds</p>
       </template>
 
       <template v-else>
-        <p>Thought for {{ duration }} seconds</p>
+        <p>Worked for {{ duration }} seconds</p>
       </template>
 
       <ChevronDownIcon

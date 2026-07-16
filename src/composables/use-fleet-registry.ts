@@ -1,13 +1,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { FleetProject } from '@/types/fleet/fleet-project'
-import { invoke } from '@tauri-apps/api/core'
 import {
   getActiveProjectId,
+  getDefaultWorkspaceRoot,
   hasProjectPyrola,
   registryAddProject,
   registryListProjects,
+  registryRemoveProject,
   registrySetActiveProject,
+  registryUpdateProjectRoot,
 } from '@/services/pyrola/pyrola-tauri'
 
 const projects = ref<FleetProject[]>([])
@@ -29,6 +31,20 @@ const mapProject = (record: {
   lastOpened: record.last_opened,
 })
 
+const normalizeProjectRoots = async (): Promise<void> => {
+  const workspaceRoot = await getDefaultWorkspaceRoot()
+  for (const project of projects.value) {
+    if (project.rootPath === workspaceRoot) {
+      continue
+    }
+    const record = await registryUpdateProjectRoot(project.id, workspaceRoot)
+    const index = projects.value.findIndex((item) => item.id === project.id)
+    if (index >= 0) {
+      projects.value[index] = mapProject(record)
+    }
+  }
+}
+
 export default () => {
   const activeProject = computed(
     () => projects.value.find((p) => p.id === activeProjectId.value) ?? null,
@@ -46,6 +62,7 @@ export default () => {
     const records = await registryListProjects()
     projects.value = records.map(mapProject)
     activeProjectId.value = await getActiveProjectId()
+    await normalizeProjectRoots()
     await refreshHasPyrola()
     loaded.value = true
   }
@@ -56,7 +73,17 @@ export default () => {
     await refreshHasPyrola()
   }
 
+  const removeProject = async (projectId: string): Promise<void> => {
+    await registryRemoveProject(projectId)
+    await refresh()
+    if (projects.value.length === 0) {
+      await ensureDefaultProject()
+    }
+  }
+
   const ensureDefaultProject = async (): Promise<void> => {
+    const workspaceRoot = await getDefaultWorkspaceRoot()
+
     if (projects.value.length > 0) {
       if (!activeProjectId.value) {
         await setActiveProject(projects.value[0]!.id)
@@ -64,8 +91,7 @@ export default () => {
       return
     }
 
-    const cwd = await getDefaultProjectRoot()
-    const project = await registryAddProject('pyrola', cwd)
+    const project = await registryAddProject('pyrola', workspaceRoot)
     projects.value = [mapProject(project)]
     await setActiveProject(project.id)
   }
@@ -91,13 +117,7 @@ export default () => {
     loaded,
     refresh,
     setActiveProject,
+    removeProject,
     ensureDefaultProject,
   }
-}
-
-const getDefaultProjectRoot = async (): Promise<string> => {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    return invoke<string>('get_default_workspace_root')
-  }
-  return '/'
 }

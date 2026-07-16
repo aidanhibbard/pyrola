@@ -9,26 +9,34 @@ export type SettingsSectionId =
   | 'studio'
   | 'rules'
   | 'skills'
+  | 'search'
+  | 'lsp'
 
 export const PERSONAL_SECTIONS: SettingsSectionId[] = [
   'general',
   'appearance',
   'mcp',
   'providers',
+  'search',
+  'lsp',
   'fleet',
   'plans',
   'studio',
   'skills',
   'agents',
+  'rules',
 ]
 
 export const PROJECT_SECTIONS: SettingsSectionId[] = [
   'mcp',
   'providers',
+  'search',
+  'lsp',
   'plans',
   'studio',
   'skills',
   'agents',
+  'rules',
 ]
 
 export const SECTION_LABELS: Record<SettingsSectionId, string> = {
@@ -42,4 +50,6 @@ export const SECTION_LABELS: Record<SettingsSectionId, string> = {
   studio: 'Studio',
   rules: 'Rules',
   skills: 'Skills',
+  search: 'Search',
+  lsp: 'LSP',
 }

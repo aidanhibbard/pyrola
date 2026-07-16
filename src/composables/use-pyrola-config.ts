@@ -1,6 +1,6 @@
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import { toast } from 'vue-sonner'
-import type { PyrolaSettings, PyrolaTheme, PyrolaGlassVariant, PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaSettings, PyrolaTheme, PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import { defaultPyrolaSettings } from '@/schemas/pyrola-settings'
 import {
   isProjectOverride,
@@ -133,10 +133,6 @@ export default () => {
     usingPersonalDefault,
     setTheme: (tab: SettingsTab, theme: PyrolaTheme) =>
       updateSetting(tab, 'appearance.theme', theme),
-    setGlass: (tab: SettingsTab, enabled: boolean) =>
-      updateSetting(tab, 'appearance.glass', enabled),
-    setGlassVariant: (tab: SettingsTab, variant: PyrolaGlassVariant) =>
-      updateSetting(tab, 'appearance.glassVariant', variant),
     setDefaultMode: (mode: PyrolaChatMode) =>
       updateSetting('personal', 'agent.defaultMode', mode),
     setMaxConcurrentAgents: (count: number) =>
