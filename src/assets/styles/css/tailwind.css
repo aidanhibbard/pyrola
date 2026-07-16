@@ -1,8 +1,7 @@
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -121,4 +120,52 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/*
+ * Vibrancy support.
+ *
+ * By default the background stays transparent so native window vibrancy
+ * (applied on the Rust side via the `window-vibrancy` crate) shows through
+ * on macOS and Windows. Surfaces like cards, popovers, and the sidebar keep
+ * their own opaque `--card` / `--popover` / `--sidebar` tokens so content
+ * stays legible regardless of vibrancy state.
+ *
+ * When the user disables the glass toggle, `use-vibrancy` adds
+ * `.vibrancy-off` to `<html>`, which restores an opaque background so the
+ * window doesn't render as blank/transparent once the native effect is
+ * cleared.
+ *
+ * On Linux there is no native vibrancy API, so `use-vibrancy` applies a CSS
+ * `backdrop-filter` blur fallback instead via the `.linux-vibrancy` classes.
+ */
+html,
+body {
+  background: transparent;
+}
+
+:root {
+  --background: transparent;
+}
+
+.dark {
+  --background: transparent;
+}
+
+html.vibrancy-off:not(.dark) {
+  --background: oklch(1 0 0);
+}
+
+html.vibrancy-off.dark {
+  --background: oklch(0.145 0 0);
+}
+
+html.linux-vibrancy body {
+  background: oklch(1 0 0 / 70%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+html.linux-vibrancy.dark-vibrancy body {
+  background: oklch(0.145 0 0 / 70%);
 }

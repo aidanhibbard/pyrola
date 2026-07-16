@@ -18,9 +18,11 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }

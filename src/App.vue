@@ -10,6 +10,10 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/shadcn/ui/resizable'
+import { Toaster } from '@/components/shadcn/ui/sonner'
+import useVibrancy from '@/composables/use-vibrancy'
+
+useVibrancy()
 
 const rightSidebarOpen = ref(false)
 </script>
@@ -36,5 +40,6 @@ const rightSidebarOpen = ref(false)
         </ResizablePanelGroup>
       </RightSidebarProvider>
     </SidebarInset>
+    <Toaster />
   </SidebarProvider>
 </template>

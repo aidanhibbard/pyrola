@@ -9,7 +9,8 @@
         "fullscreen": false,
         "decorations": true,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "transparent": true
       }
     ]
   }

@@ -59,6 +59,13 @@ This is a client-rendered Vite SPA by default, so there is no server/client spli
   - Vue single-file components (for example under `src/components`, `src/views` or `src/pages`)
 - Do not add new `PascalCase.ts` or `camelCase.ts` module names outside those exceptions.
 
+## Imports
+
+- **No dynamic imports.** Use static `import` statements at the top of the file. Do not use `await import()` or dynamic `import()` expressions.
+- All imports must be declared at the module level, before any other code.
+- This applies to all first-party code: composables, services, components, utilities, and stores.
+- **Exception:** Code-splitting for route-level components or heavy third-party libraries that are only needed on specific routes may use dynamic imports, but this should be rare and explicitly justified.
+
 ## Vue SFC Block Order
 
 - Vue single-file components must use `<script setup lang="ts">` for script blocks.
@@ -231,6 +238,22 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 - Wrap async mutations and user actions in `try` / `catch` / `finally` when failure is possible. Show success and failure feedback with `toast` from `vue-sonner` where the app already uses Sonner.
 - Always clear loading state in `finally` so buttons, forms, and controls recover whether the action succeeds or throws.
 - Keep toast messages short, specific, and user-facing.
+
+## Error Handling
+
+- **No empty catch blocks.** Every `catch` must either handle the error (log, notify, recover) or re-throw it. Silent failures hide bugs and make debugging difficult.
+- **Always notify users of errors.** Use `toast.error()` from `vue-sonner` to inform users when an operation fails. Include a brief title and, when available, the error message in the `description` field.
+- **Example pattern:**
+  ```ts
+  try {
+    await someAsyncOperation()
+  } catch (error) {
+    toast.error('Operation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+  ```
+- For non-critical errors (e.g., optional features, background tasks), still log or notify rather than silently swallowing the exception.
 
 ## Logging
 
