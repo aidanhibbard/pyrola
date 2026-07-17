@@ -5,6 +5,8 @@ import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import useFleetRegistry from '@/composables/use-fleet-registry'
+import useWorkbenchStore from '@/composables/use-workbench-store'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import {
   lastPyrolaFileChange,
@@ -27,6 +29,8 @@ const props = defineProps<{
 }>()
 
 const config = usePyrolaConfig()
+const fleet = useFleetRegistry()
+const workbench = useWorkbenchStore()
 const files = ref<ProjectFileEntry[]>([])
 
 const load = async (): Promise<void> => {
@@ -91,10 +95,33 @@ const revealRoot = async (): Promise<void> => {
   await revealInFolder(`${dir}/${props.folderLabel}`)
 }
 
-const openInEditor = (): void => {
-  toast.message('Editor coming soon', {
-    description: 'Open in Editor will be available in the IDE workbench step.',
-  })
+const toRelativePath = (absolutePath: string): string => {
+  const root = config.activeRootPath.value
+  if (root && absolutePath.startsWith(root)) {
+    return absolutePath.slice(root.length).replace(/^\//, '')
+  }
+  return absolutePath
+}
+
+const openInEditor = (file: ProjectFileEntry): void => {
+  const projectId = fleet.activeProjectId.value
+  if (!projectId) {
+    return
+  }
+
+  const relativePath = toRelativePath(file.path)
+
+  if (props.kind === 'plans') {
+    workbench.openPlan(projectId, file.name, relativePath, file.name)
+    return
+  }
+
+  if (props.kind === 'studio') {
+    workbench.openStudio(projectId, file.name, relativePath, file.name)
+    return
+  }
+
+  workbench.openEditor(projectId, relativePath)
 }
 </script>
 
@@ -119,7 +146,7 @@ const openInEditor = (): void => {
             size="icon"
             class="h-8 w-8"
             aria-label="Open in editor"
-            @click="openInEditor"
+            @click="openInEditor(file)"
           >
             <ExternalLink class="h-4 w-4" />
           </Button>

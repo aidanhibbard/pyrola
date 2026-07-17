@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import * as monaco from 'monaco-editor'
 import { fsReadFile } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 
 const props = defineProps<{
+  projectId: string
   path: string | null
 }>()
 
@@ -28,8 +29,12 @@ const layoutEditor = (): void => {
   editor?.layout()
 }
 
+const projectRoot = computed(
+  () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
+)
+
 const loadFile = async (path: string): Promise<void> => {
-  const root = fleet.activeProject.value?.rootPath
+  const root = projectRoot.value
   if (!root || !editor) {
     return
   }

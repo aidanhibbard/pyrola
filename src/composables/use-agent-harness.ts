@@ -43,7 +43,7 @@ export default (options: AgentHarnessOptions) => {
   const handleEvent = (event: HarnessEvent): void => {
     liveEvents.value = [...liveEvents.value, event]
     if (event.type === 'text-delta') {
-      chatStore.appendLocalTextDelta(event.delta, event.messageId)
+      chatStore.appendLocalTextDelta(event.delta, event.messageId, event.stepId)
       status.value = 'streaming'
     }
     if (event.type === 'reasoning-delta') {
@@ -107,6 +107,13 @@ export default (options: AgentHarnessOptions) => {
       status.value = mapMetaStatusToChatStatus(event.status, false)
     }
     if (event.type === 'chat-meta-changed') {
+      if (
+        event.projectSlug === options.projectSlug &&
+        event.chatId === options.chatId &&
+        event.patch.title
+      ) {
+        chatStore.patchMeta({ title: event.patch.title })
+      }
       refreshFleetSidebar().catch((error) => {
         toast.error('Failed to refresh sidebar', {
           description: error instanceof Error ? error.message : 'Unknown error',

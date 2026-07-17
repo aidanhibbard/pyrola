@@ -15,6 +15,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   git_branch: 'List or switch git branches',
   lsp: 'Query language server (definitions, references, etc.)',
   run_terminal: 'Run a shell command in the project',
+  terminal_output: 'Read output from a background agent shell',
+  stop_terminal: 'Stop a background agent shell',
   web_fetch: 'Fetch a URL',
   web_search: 'Search the web',
   load_skill: 'Load a project skill by name',

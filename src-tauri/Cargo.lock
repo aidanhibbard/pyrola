@@ -72,6 +72,7 @@ dependencies = [
  "futures-util",
  "keyring",
  "lazy_static",
+ "libc",
  "log",
  "notify",
  "objc2-app-kit 0.3.2",

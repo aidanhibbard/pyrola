@@ -115,6 +115,7 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     'Tool usage:',
     '- You already have the tool list below. Do not grep the repo just to discover built-in tools or MCP servers.',
     '- For MCP: use get_mcp_tools if the catalog below is stale, then call_mcp_tool with serverId and tool name.',
+    '- For shell commands use the built-in run_terminal tool — never call_mcp_tool for a "terminal" MCP server unless one is listed below.',
     '- Prefer edit_file or write_file for code changes. Do not use run_terminal to edit files.',
     '- apply_patch uses OpenCode format, NOT git diff. Example:',
     '  *** Update File: src/example.ts',
@@ -122,6 +123,20 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     '  -old line',
     '  +new line',
     '- If a tool fails repeatedly, stop retrying the same approach and explain the blocker to the user.',
+    ...(input.mode === 'studio'
+      ? [
+          'Studio shell guidance:',
+          '- Use run_terminal for system reports, profiling, benchmarks, and local runtime monitoring (memory, CPU, processes, logs).',
+          '- For snapshots: run_terminal with blocking commands (ps, top, vm_stat, free, etc.).',
+          '- For sampling over time: run_terminal with is_background true, poll with terminal_output, then stop_terminal when done.',
+          '- Publish findings with write_studio_artifact (charts, tables, markdown reports).',
+        ]
+      : []),
+    ...(input.mode === 'plan' || input.mode === 'ask'
+      ? [
+          '- Use run_terminal to inspect the machine or project environment when planning or answering (git status, disk, memory, running processes).',
+        ]
+      : []),
   ].join('\n')
 
   const base = [

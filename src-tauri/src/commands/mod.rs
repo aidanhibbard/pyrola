@@ -44,7 +44,7 @@ pub use registry::{
   registry_set_active_project, registry_update_project_root,
 };
 pub use shell::{
-  reveal_in_folder, shell_kill_pty, shell_resize_pty, shell_run_command, shell_spawn_pty,
-  shell_write_pty,
+  reveal_in_folder, shell_kill_pty, shell_kill_tracked, shell_resize_pty, shell_run_command,
+  shell_spawn_pty, shell_spawn_tracked, shell_write_pty,
 };
 pub use watch::{watch_pyrola_paths, WatchState};

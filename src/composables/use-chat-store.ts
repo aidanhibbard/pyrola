@@ -23,6 +23,7 @@ const timeline = ref<ChatTimelineItem[]>([])
 const loading = ref(false)
 const activeTurnId = ref<string | null>(null)
 const activeStepId = ref<string | null>(null)
+const pendingStepText = ref('')
 
 const mapMeta = (record: {
   id: string
@@ -75,8 +76,9 @@ const extractText = (parts: MessagePart[]): string =>
     .map((part) => (part.type === 'text' ? part.text : ''))
     .join('')
 
-const createStep = (id: string): AgentStep => ({
+const createStep = (id: string, text = ''): AgentStep => ({
   id,
+  text,
   reasoning: '',
   tools: [],
 })
@@ -181,6 +183,40 @@ const patchStep = (
   return { ...next, steps }
 }
 
+const distributeLegacyStepText = (turn: AgentTurn): AgentTurn => {
+  const paragraphs = turn.text
+    .split(/\n\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+  if (paragraphs.length === 0 || turn.steps.some((step) => step.text.trim().length > 0)) {
+    return turn
+  }
+
+  const toolStepIndexes = turn.steps
+    .map((step, index) => (step.tools.length > 0 ? index : -1))
+    .filter((index) => index >= 0)
+  const assignCount = Math.min(paragraphs.length, toolStepIndexes.length)
+  if (assignCount === 0) {
+    return turn
+  }
+
+  const startAt = toolStepIndexes.length - assignCount
+  const steps = [...turn.steps]
+  for (let index = 0; index < assignCount; index += 1) {
+    const stepIndex = toolStepIndexes[startAt + index]!
+    steps[stepIndex] = {
+      ...steps[stepIndex]!,
+      text: paragraphs[index]!,
+    }
+  }
+
+  return {
+    ...turn,
+    steps,
+    text: paragraphs.slice(assignCount).join('\n\n'),
+  }
+}
+
 export default () => {
   const chatId = computed(() => meta.value?.id ?? null)
 
@@ -210,21 +246,25 @@ export default () => {
         const hasContent =
           pendingTurn.text.length > 0 ||
           pendingTurn.steps.some(
-            (step) => step.reasoning.length > 0 || step.tools.length > 0,
+            (step) =>
+              step.text.length > 0 ||
+              step.reasoning.length > 0 ||
+              step.tools.length > 0,
           )
         if (hasContent) {
-          const reasoning = pendingTurn.steps
+          const normalizedTurn = distributeLegacyStepText(pendingTurn)
+          const reasoning = normalizedTurn.steps
             .map((step) => step.reasoning)
             .join('')
-          nextTimeline.push({ type: 'agent-turn', turn: pendingTurn })
+          nextTimeline.push({ type: 'agent-turn', turn: normalizedTurn })
           nextMessages.push({
-            id: pendingTurn.id,
+            id: normalizedTurn.id,
             role: 'assistant',
             parts: [
               ...(reasoning
                 ? [{ type: 'reasoning' as const, text: reasoning }]
                 : []),
-              { type: 'text' as const, text: pendingTurn.text },
+              { type: 'text' as const, text: normalizedTurn.text },
             ],
           })
         }
@@ -235,6 +275,20 @@ export default () => {
       for (const line of lines) {
         const parsed = chatMessageLineSchema.parse(line)
         const harnessEvent = parsed.harnessEvent
+
+        if (harnessEvent?.type === 'step-text') {
+          const stepId = String(harnessEvent.stepId ?? '')
+          const text = String(harnessEvent.text ?? '')
+          if (!stepId || !text || !pendingTurn) {
+            continue
+          }
+          pendingTurn = patchStep(pendingTurn, stepId, {
+            text:
+              (pendingTurn.steps.find((step) => step.id === stepId)?.text ?? '') +
+              text,
+          })
+          continue
+        }
 
         if (harnessEvent?.type === 'step-boundary') {
           const stepId = String(harnessEvent.stepId ?? '')
@@ -322,7 +376,7 @@ export default () => {
             pendingTurn = {
               id: parsed.id,
               steps: reasoning
-                ? [{ id: parsed.id, reasoning, tools: [] }]
+                ? [{ id: parsed.id, text: '', reasoning, tools: [] }]
                 : [],
               text,
             }
@@ -350,6 +404,7 @@ export default () => {
       timeline.value = nextTimeline
       activeTurnId.value = null
       activeStepId.value = null
+      pendingStepText.value = ''
     } finally {
       loading.value = false
     }
@@ -368,6 +423,7 @@ export default () => {
     timeline.value = []
     activeTurnId.value = null
     activeStepId.value = null
+    pendingStepText.value = ''
     return meta.value
   }
 
@@ -386,6 +442,7 @@ export default () => {
   const startAgentTurn = (turnId: string): void => {
     activeTurnId.value = turnId
     activeStepId.value = null
+    pendingStepText.value = ''
     const turn: AgentTurn = {
       id: turnId,
       steps: [],
@@ -424,7 +481,20 @@ export default () => {
       }
     }
     activeStepId.value = stepId
-    patchActiveTurn(ensureStep(getActiveTurn() ?? current, stepId))
+    const leadingText = pendingStepText.value
+    pendingStepText.value = ''
+    const withStep = ensureStep(getActiveTurn() ?? current, stepId)
+    if (leadingText) {
+      const step =
+        withStep.steps.find((item) => item.id === stepId) ?? createStep(stepId)
+      patchActiveTurn(
+        patchStep(withStep, stepId, {
+          text: step.text + leadingText,
+        }),
+      )
+      return
+    }
+    patchActiveTurn(withStep)
   }
 
   const finishAgentStep = (): void => {
@@ -450,7 +520,11 @@ export default () => {
     return stepId
   }
 
-  const appendLocalTextDelta = (delta: string, messageId?: string): void => {
+  const appendLocalTextDelta = (
+    delta: string,
+    messageId?: string,
+    stepId?: string,
+  ): void => {
     const turnId = messageId ?? activeTurnId.value
     if (!turnId) {
       return
@@ -465,7 +539,21 @@ export default () => {
         steps: [],
         text: '',
       } satisfies AgentTurn)
-    patchActiveTurn({ ...current, id: turnId, text: current.text + delta })
+
+    const targetStepId = stepId ?? activeStepId.value
+    if (targetStepId) {
+      const step =
+        current.steps.find((item) => item.id === targetStepId) ??
+        createStep(targetStepId)
+      patchActiveTurn(
+        patchStep(ensureStep(current, targetStepId), targetStepId, {
+          text: step.text + delta,
+        }),
+      )
+      return
+    }
+
+    pendingStepText.value += delta
   }
 
   const appendLocalReasoningDelta = (delta: string, messageId?: string): void => {
@@ -508,13 +596,30 @@ export default () => {
     finishAgentStep()
     const current = getActiveTurn()
     if (current) {
+      const trailingText = pendingStepText.value
+      pendingStepText.value = ''
       patchActiveTurn({
         ...current,
+        text: trailingText ? current.text + trailingText : current.text,
         steps: current.steps.map((step) => closeRunningTools(step)),
       })
+    } else {
+      pendingStepText.value = ''
     }
     activeTurnId.value = null
     activeStepId.value = null
+  }
+
+  const patchMeta = (patch: Partial<ChatMeta>): void => {
+    if (!meta.value) {
+      return
+    }
+    meta.value = chatMetaSchema.parse({ ...meta.value, ...patch })
+  }
+
+  const reloadMeta = async (projectSlug: string, chatId: string): Promise<void> => {
+    const record = await readChatMeta(projectSlug, chatId)
+    meta.value = mapMeta(record)
   }
 
   return {
@@ -526,6 +631,8 @@ export default () => {
     loadChat,
     createNewChat,
     listProjectChats,
+    patchMeta,
+    reloadMeta,
     appendLocalMessage,
     startAgentTurn,
     startAgentStep,

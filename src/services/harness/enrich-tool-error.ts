@@ -17,7 +17,7 @@ const ERROR_HINTS: Array<{ pattern: RegExp; hint: string }> = [
   },
   {
     pattern: /command timed out/i,
-    hint: 'The shell command exceeded the timeout. Try a simpler command or use a dedicated tool instead.',
+    hint: 'The shell command exceeded the timeout. For dev servers and watchers, use is_background: true on run_terminal and poll with terminal_output.',
   },
   {
     pattern: /command failed/i,

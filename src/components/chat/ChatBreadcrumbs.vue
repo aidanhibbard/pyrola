@@ -47,22 +47,22 @@ const chatTitle = computed(() => {
 </script>
 
 <template>
-  <Breadcrumb v-if="isChatRoute" class="min-w-0">
-    <BreadcrumbList class="min-w-0 flex-nowrap">
-      <BreadcrumbItem class="min-w-0">
+  <Breadcrumb v-if="isChatRoute" class="min-w-0 flex-1">
+    <BreadcrumbList class="flex min-w-0 items-center gap-1.5">
+      <BreadcrumbItem class="shrink-0">
         <BreadcrumbLink as-child>
           <RouterLink
             :to="{ name: 'home' }"
-            class="max-w-40 truncate"
+            class="block max-w-[10rem] truncate sm:max-w-[12rem]"
             :title="projectName"
           >
             {{ projectName }}
           </RouterLink>
         </BreadcrumbLink>
       </BreadcrumbItem>
-      <BreadcrumbSeparator />
-      <BreadcrumbItem class="min-w-0">
-        <BreadcrumbPage class="max-w-56 truncate" :title="chatTitle">
+      <BreadcrumbSeparator class="shrink-0" />
+      <BreadcrumbItem class="min-w-0 flex-1 overflow-hidden">
+        <BreadcrumbPage class="block truncate" :title="chatTitle">
           {{ chatTitle }}
         </BreadcrumbPage>
       </BreadcrumbItem>

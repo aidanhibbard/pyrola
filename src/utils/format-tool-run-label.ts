@@ -13,6 +13,8 @@ const TOOL_LABELS: Record<string, string> = {
   git_log: 'Viewed git log',
   git_branch: 'Checked branch',
   run_terminal: 'Ran command',
+  terminal_output: 'Read shell output',
+  stop_terminal: 'Stopped shell',
   web_fetch: 'Fetched URL',
   web_search: 'Searched web',
   call_mcp_tool: 'Called MCP tool',

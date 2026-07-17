@@ -52,7 +52,7 @@ const streamRevision = computed(() => {
     turn.steps
       .map(
         (step) =>
-          `${step.reasoning.length}:${step.tools.length}:${step.tools
+          `${step.text.length}:${step.reasoning.length}:${step.tools.length}:${step.tools
             .map((tool) => `${tool.toolCallId}:${tool.status}`)
             .join('|')}`,
       )

@@ -15,6 +15,11 @@ import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { rejectAllPending } from '@/services/harness/approval-gate'
 import runSideTask from '@/services/harness/run-side-task'
 import enrichToolError from '@/services/harness/enrich-tool-error'
+import deriveChatTitle, { isDefaultChatTitle } from '@/utils/derive-chat-title'
+import {
+  killShellsForChat,
+  setAgentShellEventEmitter,
+} from '@/services/harness/agent-shell-registry'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -92,6 +97,28 @@ const persistStepBoundary = async (
   })
 }
 
+const persistStepText = async (
+  projectSlug: string,
+  chatId: string,
+  stepId: string,
+  text: string,
+): Promise<void> => {
+  if (!text.trim()) {
+    return
+  }
+  await persistLine(projectSlug, chatId, {
+    id: `${stepId}-text`,
+    role: 'assistant',
+    parts: [],
+    createdAt: nowIso(),
+    harnessEvent: {
+      type: 'step-text',
+      stepId,
+      text,
+    },
+  })
+}
+
 const filterToolsForMode = (
   mode: PyrolaChatMode,
   tools: ReturnType<typeof buildTools>,
@@ -140,6 +167,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
     assistantId: inputAssistantId,
   } = input
 
+  setAgentShellEventEmitter(onEvent)
+
   const existingUser = [...messages]
     .reverse()
     .find(
@@ -167,19 +196,36 @@ export default async (input: OrchestratorInput): Promise<void> => {
   })
   await updateChatMeta(projectSlug, chatId, { status: 'running' })
 
-  runSideTask({
+  const isFirstUserMessage =
+    messages.filter((message) => message.role === 'user').length === 1
+
+  const emitTitleChange = (title: string): void => {
+    onEvent({
+      type: 'chat-meta-changed',
+      projectSlug,
+      chatId,
+      patch: { title },
+    })
+  }
+
+  if (isFirstUserMessage) {
+    const fallbackTitle = deriveChatTitle(userText)
+    if (fallbackTitle) {
+      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
+      emitTitleChange(fallbackTitle)
+    }
+  }
+
+  void runSideTask({
     projectSlug,
     chatId,
     prompt: userText,
     providerId,
     settings,
-  }).then(() => {
-    onEvent({
-      type: 'chat-meta-changed',
-      projectSlug,
-      chatId,
-      patch: {},
-    })
+  }).then((generatedTitle) => {
+    if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
+      emitTitleChange(generatedTitle)
+    }
   })
 
   const system = await assembleSystemPrompt({
@@ -209,6 +255,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
   const model = await createModel({ providerId, modelId, settings })
   const allTools = buildTools({
     projectRoot,
+    projectSlug,
+    chatId,
     settings,
     onPendingApproval: (toolCallId, name, diff) => {
       onEvent({ type: 'tool-pending-approval', toolCallId, name, diff })
@@ -219,26 +267,47 @@ export default async (input: OrchestratorInput): Promise<void> => {
 
   const modelMessages = await convertToModelMessages(messages)
 
-  let assistantText = ''
+  let trailingText = ''
   let assistantReasoning = ''
   const assistantId = inputAssistantId ?? crypto.randomUUID()
   let stepCount = 0
   let streamError: Error | null = null
   let consecutiveToolErrors = 0
-  let currentStepId = crypto.randomUUID()
+  let currentStepId = ''
+  let currentStepText = ''
+  let stepOpen = false
   const startedToolIds = new Set<string>()
   const completedToolIds = new Set<string>()
 
   const beginStep = async (): Promise<void> => {
+    if (stepOpen) {
+      await finishStep()
+    }
     currentStepId = crypto.randomUUID()
+    currentStepText = ''
+    stepOpen = true
     onEvent({ type: 'step-start', stepId: currentStepId })
     await persistStepBoundary(projectSlug, chatId, currentStepId, 'start')
   }
 
   const finishStep = async (): Promise<void> => {
+    if (!stepOpen) {
+      return
+    }
+    if (currentStepText.trim()) {
+      await persistStepText(projectSlug, chatId, currentStepId, currentStepText)
+    }
     onEvent({ type: 'step-finish', stepId: currentStepId })
     await persistStepBoundary(projectSlug, chatId, currentStepId, 'finish')
     stepCount += 1
+    currentStepText = ''
+    stepOpen = false
+  }
+
+  const ensureStepOpen = async (): Promise<void> => {
+    if (!stepOpen) {
+      await beginStep()
+    }
   }
 
   const emitToolStart = async (
@@ -298,7 +367,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
       abortSignal: signal,
       onAbort: async () => {
         rejectAllPending()
-        if (assistantText || assistantReasoning) {
+        await killShellsForChat(chatId)
+        if (trailingText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
             id: assistantId,
             role: 'assistant',
@@ -306,7 +376,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
               ...(assistantReasoning
                 ? [{ type: 'reasoning', text: assistantReasoning }]
                 : []),
-              { type: 'text', text: assistantText },
+              ...(trailingText ? [{ type: 'text', text: trailingText }] : []),
             ],
             createdAt: nowIso(),
             aborted: true,
@@ -336,6 +406,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       }
 
       if (part.type === 'reasoning-delta') {
+        await ensureStepOpen()
         assistantReasoning += part.text
         onEvent({
           type: 'reasoning-delta',
@@ -346,16 +417,27 @@ export default async (input: OrchestratorInput): Promise<void> => {
       }
 
       if (part.type === 'text-delta') {
-        assistantText += part.text
-        onEvent({
-          type: 'text-delta',
-          delta: part.text,
-          messageId: assistantId,
-        })
+        if (stepOpen) {
+          currentStepText += part.text
+          onEvent({
+            type: 'text-delta',
+            delta: part.text,
+            messageId: assistantId,
+            stepId: currentStepId,
+          })
+        } else {
+          trailingText += part.text
+          onEvent({
+            type: 'text-delta',
+            delta: part.text,
+            messageId: assistantId,
+          })
+        }
         continue
       }
 
       if (part.type === 'tool-call') {
+        await ensureStepOpen()
         await emitToolStart(part.toolCallId, part.toolName, part.input)
         continue
       }
@@ -375,6 +457,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       if (part.type === 'tool-error') {
         const message = enrichToolError(resolveToolErrorMessage(part.error))
         consecutiveToolErrors += 1
+        await ensureStepOpen()
         await emitToolStart(part.toolCallId, part.toolName, part.input)
         await emitToolResult(
           part.toolCallId,
@@ -397,11 +480,15 @@ export default async (input: OrchestratorInput): Promise<void> => {
       }
     }
 
-    if (!assistantText && !signal.aborted && !streamError) {
+    if (stepOpen && !signal.aborted) {
+      await finishStep()
+    }
+
+    if (!trailingText && !signal.aborted && !streamError) {
       try {
         const finalText = await result.text
         if (finalText) {
-          assistantText = finalText
+          trailingText = finalText
           onEvent({ type: 'text-delta', delta: finalText })
         }
       } catch (error) {
@@ -413,7 +500,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       throw streamError
     }
 
-    if (!signal.aborted && (assistantText || assistantReasoning)) {
+    if (!signal.aborted && (trailingText || assistantReasoning)) {
       await persistLine(projectSlug, chatId, {
         id: assistantId,
         role: 'assistant',
@@ -421,7 +508,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
           ...(assistantReasoning
             ? [{ type: 'reasoning', text: assistantReasoning }]
             : []),
-          { type: 'text', text: assistantText },
+          ...(trailingText ? [{ type: 'text', text: trailingText }] : []),
         ],
         createdAt: nowIso(),
       })
@@ -437,6 +524,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     }
   } finally {
     rejectAllPending()
+    setAgentShellEventEmitter(null)
     onEvent({
       type: 'chat-status-changed',
       projectSlug,

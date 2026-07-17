@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ChatStatus } from 'ai'
+import type { AgentStep } from '@/types/chat/agent-step'
 import type { AgentTurn } from '@/types/chat/agent-turn'
 import AiElementsMessageMessageResponse from '@/components/ai-elements/message/MessageResponse.vue'
-import AiElementsReasoningReasoning from '@/components/ai-elements/reasoning/Reasoning.vue'
-import AiElementsReasoningReasoningContent from '@/components/ai-elements/reasoning/ReasoningContent.vue'
-import AiElementsReasoningReasoningTrigger from '@/components/ai-elements/reasoning/ReasoningTrigger.vue'
-import ChatToolRun from '@/components/chat/ChatToolRun.vue'
+import ChatAgentStepRoll from '@/components/chat/ChatAgentStepRoll.vue'
 
 const props = defineProps<{
   turn: AgentTurn
@@ -21,46 +19,41 @@ const isTextStreaming = computed(
   () => isStreaming.value && props.turn.text.length > 0,
 )
 
-const hasStepActivity = computed(() =>
-  props.turn.steps.some(
-    (step) => step.reasoning.length > 0 || step.tools.length > 0,
+const visibleSteps = computed(() =>
+  props.turn.steps.filter(
+    (step) =>
+      step.text.trim().length > 0 ||
+      step.reasoning.trim().length > 0 ||
+      step.tools.length > 0,
   ),
 )
 
-const combinedReasoning = computed(() =>
-  props.turn.steps
-    .map((step) => step.reasoning.trim())
-    .filter((reasoning) => reasoning.length > 0)
-    .join('\n\n'),
-)
+const stepText = (step: AgentStep): string => step.text.trim()
 
-const isThinking = computed(
-  () => isStreaming.value && props.turn.text.length === 0 && hasStepActivity.value,
-)
+const isStepStreaming = (index: number): boolean => {
+  if (!isStreaming.value) {
+    return false
+  }
+  return index === visibleSteps.value.length - 1 && props.turn.text.length === 0
+}
 </script>
 
 <template>
-  <div class="flex w-full min-w-0 max-w-full flex-col gap-2">
-    <AiElementsReasoningReasoning
-      v-if="hasStepActivity"
-      :is-streaming="isThinking"
-      :default-open="isThinking"
+  <div class="flex w-full min-w-0 max-w-full flex-col gap-4">
+    <template
+      v-for="(step, index) in visibleSteps"
+      :key="step.id"
     >
-      <AiElementsReasoningReasoningTrigger />
-      <AiElementsReasoningReasoningContent :content="combinedReasoning">
-        <div
-          v-for="step in turn.steps"
-          :key="step.id"
-          class="mt-3 flex flex-col gap-0.5"
-        >
-          <ChatToolRun
-            v-for="tool in step.tools"
-            :key="tool.toolCallId"
-            :run="tool"
-          />
-        </div>
-      </AiElementsReasoningReasoningContent>
-    </AiElementsReasoningReasoning>
+      <AiElementsMessageMessageResponse
+        v-if="stepText(step)"
+        :content="stepText(step)"
+        class="chat-markdown text-sm"
+      />
+      <ChatAgentStepRoll
+        :step="step"
+        :is-streaming="isStepStreaming(index)"
+      />
+    </template>
 
     <AiElementsMessageMessageResponse
       v-if="turn.text"

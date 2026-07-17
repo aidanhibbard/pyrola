@@ -10,7 +10,7 @@ export type TodoItem = {
 }
 
 export type HarnessEvent =
-  | { type: 'text-delta'; delta: string; messageId?: string }
+  | { type: 'text-delta'; delta: string; messageId?: string; stepId?: string }
   | { type: 'reasoning-delta'; delta: string; messageId?: string }
   | { type: 'tool-start'; toolCallId: string; name: string; args: unknown }
   | { type: 'tool-pending-approval'; toolCallId: string; name: string; diff: FileDiff[] }
@@ -27,7 +27,8 @@ export type HarnessEvent =
   | { type: 'side-task-complete'; taskId: string; kind: SideTaskKind; result: unknown }
   | { type: 'chat-meta-changed'; projectSlug: string; chatId: string; patch: Partial<ChatMeta> }
   | { type: 'context-budget'; modelId: string; used: number; limit: number; buckets: ContextBucket[] }
-  | { type: 'terminal-output'; sessionId: string; data: string }
+  | { type: 'terminal-output'; shellId: string; stream: 'stdout' | 'stderr'; data: string }
+  | { type: 'shell-complete'; shellId: string; exitCode: number }
   | { type: 'chat-status-changed'; projectSlug: string; chatId: string; status: 'idle' | 'running' }
   | { type: 'turn-aborted'; reason: 'user-stop' | 'error'; partialSteps: number }
   | { type: 'question-request'; toolCallId: string; question: string; options?: string[] }

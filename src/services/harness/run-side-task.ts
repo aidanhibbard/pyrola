@@ -12,10 +12,10 @@ export type ChatTitleTaskInput = {
   settings: PyrolaSettings
 }
 
-export default async (input: ChatTitleTaskInput): Promise<void> => {
+export default async (input: ChatTitleTaskInput): Promise<string | null> => {
   try {
     if (input.settings['chat.autoTitle'] === false) {
-      return
+      return null
     }
 
     const modelId =
@@ -37,12 +37,14 @@ export default async (input: ChatTitleTaskInput): Promise<void> => {
 
     const title = result.text.trim().replace(/^["']|["']$/g, '').slice(0, 80)
     if (!title) {
-      return
+      return null
     }
 
     await updateChatMeta(input.projectSlug, input.chatId, { title })
     await refreshFleetSidebar()
+    return title
   } catch {
     // Title generation is best-effort and should not block the main agent turn.
+    return null
   }
 }

@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/shadcn/ui/input'
 import { SidebarMenuSubButton } from '@/components/shadcn/ui/sidebar'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import {
   deleteChat,
   forkChat,
@@ -118,6 +119,7 @@ const handleDelete = async (): Promise<void> => {
 
   deleting.value = true
   try {
+    await killShellsForChat(props.chat.id)
     await deleteChat(props.projectSlug, props.chat.id)
     await refreshFleetSidebar()
     deleteOpen.value = false

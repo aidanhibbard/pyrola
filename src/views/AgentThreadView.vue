@@ -138,8 +138,8 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
       class="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-(--titlebar-height) -translate-y-full items-center"
       style="--titlebar-height: 40px"
     >
-      <div class="pointer-events-auto mx-auto w-full min-w-0 max-w-3xl px-4">
-        <ChatChatBreadcrumbs class="min-w-0" />
+      <div class="pointer-events-auto mx-auto flex w-full min-w-0 max-w-3xl px-4">
+        <ChatChatBreadcrumbs class="min-w-0 flex-1" />
       </div>
     </div>
     <ChatThread

@@ -7,6 +7,7 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import WorkbenchFileTreeNode from '@/components/workbench/FileTreeNode.vue'
 
 const props = defineProps<{
+  projectId: string
   selectedPath?: string | null
 }>()
 
@@ -26,7 +27,14 @@ const tree = ref<TreeNode | null>(null)
 const expandedPaths = ref(new Set<string>(['.']))
 const selectedPath = ref(props.selectedPath ?? '')
 
-const projectLabel = computed(() => fleet.activeProject.value?.name ?? 'Project')
+const projectLabel = computed(() => {
+  const project = fleet.projects.value.find((p) => p.id === props.projectId)
+  return project?.name ?? 'Project'
+})
+
+const projectRoot = computed(
+  () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
+)
 
 const findNodeKind = (
   nodes: TreeNode[] | undefined,
@@ -48,7 +56,7 @@ const findNodeKind = (
 }
 
 const loadTree = async (): Promise<void> => {
-  const root = fleet.activeProject.value?.rootPath
+  const root = projectRoot.value
   if (!root) {
     tree.value = null
     return
@@ -77,7 +85,7 @@ onMounted(() => {
 })
 
 watch(
-  () => fleet.activeProject.value?.rootPath,
+  projectRoot,
   () => {
     loadTree().catch((error) => {
       toast.error('Failed to load file tree', {

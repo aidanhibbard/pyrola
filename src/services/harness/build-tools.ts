@@ -19,7 +19,6 @@ import {
   mcpCallTool,
   mcpStatus,
   readMcpConfig,
-  shellRunCommand,
   workspaceGlob,
   workspaceGrep,
 } from '@/services/pyrola/pyrola-tauri'
@@ -32,11 +31,27 @@ import {
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import createPlan from '@/services/plans/write-plan'
+import parsePlan from '@/services/plans/parse-plan'
+import { updatePlanTodos } from '@/services/plans/write-plan'
+import useWorkbenchStore from '@/composables/use-workbench-store'
+import type { PlanTodoItem } from '@/types/workbench/workbench-tab'
+import {
+  createAgentShell,
+  getAgentShell,
+  killAgentShell,
+  tailShellOutput,
+  waitForShellExit,
+} from '@/services/harness/agent-shell-registry'
+import type { HarnessEvent } from '@/types/harness/harness-event'
 
 export type HarnessToolContext = {
   projectRoot: string
+  projectSlug: string
+  chatId: string
   settings: PyrolaSettings
   onPendingApproval: (toolCallId: string, name: string, diff: FileDiff[]) => void
+  onHarnessEvent?: (event: HarnessEvent) => void
   signal?: AbortSignal
 }
 
@@ -56,43 +71,90 @@ const mapDiffs = (raw: FileDiffRecord[]): FileDiff[] =>
     })),
   }))
 
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000
+const DEFAULT_BLOCKING_TIMEOUT_MS = 120_000
 
-const runShellCommand = async (
+const runTerminalCommand = async (
   ctx: HarnessToolContext,
-  command: string,
-): Promise<{
-  command: string
-  stdout: string
-  stderr: string
-  exitCode: number
-  timedOut: boolean
-}> => {
+  args: {
+    command: string
+    is_background?: boolean
+    timeout_ms?: number
+    description?: string
+  },
+): Promise<Record<string, unknown>> => {
   if (ctx.signal?.aborted) {
     throw new Error('Command aborted')
   }
 
-  const result = await shellRunCommand({
+  const shell = await createAgentShell({
+    chatId: ctx.chatId,
     projectRoot: ctx.projectRoot,
-    command,
-    timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS,
+    command: args.command,
   })
 
-  if (result.timedOut) {
-    throw new Error(`Command timed out after ${DEFAULT_COMMAND_TIMEOUT_MS}ms: ${command}`)
+  if (args.is_background) {
+    return {
+      shellId: shell.shellId,
+      status: 'running',
+      command: args.command,
+      description: args.description ?? null,
+    }
   }
 
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`
-    throw new Error(`Command failed (${result.exitCode}): ${detail}`)
+  const timeoutMs = args.timeout_ms ?? DEFAULT_BLOCKING_TIMEOUT_MS
+  const waitResult = await waitForShellExit(shell.shellId, timeoutMs)
+  const current = getAgentShell(shell.shellId)
+  const stdout = current?.stdout ?? ''
+  const stderr = current?.stderr ?? ''
+
+  if (waitResult.timedOut) {
+    await killAgentShell(shell.shellId)
+    throw new Error(`Command timed out after ${timeoutMs}ms: ${args.command}`)
+  }
+
+  if (waitResult.exitCode !== 0) {
+    const detail = stderr.trim() || stdout.trim() || `exit code ${waitResult.exitCode}`
+    throw new Error(`Command failed (${waitResult.exitCode}): ${detail}`)
   }
 
   return {
-    command,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode,
-    timedOut: result.timedOut,
+    shellId: shell.shellId,
+    command: args.command,
+    stdout,
+    stderr,
+    exitCode: waitResult.exitCode,
+    timedOut: false,
+    description: args.description ?? null,
+  }
+}
+
+const readTerminalOutput = async (
+  shellId: string,
+  block?: boolean,
+  tail?: number,
+): Promise<Record<string, unknown>> => {
+  const shell = getAgentShell(shellId)
+  if (!shell) {
+    throw new Error(`Shell not found: ${shellId}`)
+  }
+
+  if (block && shell.status === 'running') {
+    await waitForShellExit(shellId, DEFAULT_BLOCKING_TIMEOUT_MS)
+  }
+
+  const current = getAgentShell(shellId)
+  if (!current) {
+    throw new Error(`Shell not found: ${shellId}`)
+  }
+
+  const output = tailShellOutput(current, tail)
+
+  return {
+    shellId,
+    status: current.status,
+    stdout: output.stdout,
+    stderr: output.stderr,
+    exitCode: current.exitCode,
   }
 }
 
@@ -313,29 +375,96 @@ export default (ctx: HarnessToolContext) => ({
   create_plan: tool({
     description: 'Create a plan file',
     inputSchema: z.object({ title: z.string(), body: z.string() }),
-    execute: async ({ title }): Promise<{ error: true }> => {
-      throw new Error(`create_plan is not implemented yet (${title})`)
+    execute: async ({ title, body }) => {
+      const plan = createPlan({ title, body, sourceChatId: ctx.chatId })
+      await fsWriteFile({ projectRoot: ctx.projectRoot, path: plan.path, content: plan.content })
+      const workbench = useWorkbenchStore()
+      const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
+      if (projectId) {
+        workbench.openPlan(projectId, plan.planId, plan.path, title)
+      }
+      return { planId: plan.planId, path: plan.path }
     },
   }),
   update_plan_todo: tool({
     description: 'Update plan todos',
-    inputSchema: z.object({ todos: z.array(z.record(z.unknown())) }),
-    execute: async ({ todos }): Promise<{ error: true }> => {
-      throw new Error(`update_plan_todo is not implemented yet (${todos.length} todos)`)
+    inputSchema: z.object({
+      planPath: z.string(),
+      todos: z.array(
+        z.object({
+          id: z.string(),
+          content: z.string(),
+          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+        }),
+      ),
+    }),
+    execute: async ({ planPath, todos }) => {
+      const existing = await fsReadFile({ projectRoot: ctx.projectRoot, path: planPath })
+      const parsed = parsePlan(existing.content)
+      const nextContent = updatePlanTodos(existing.content, todos as PlanTodoItem[])
+      await fsWriteFile({ projectRoot: ctx.projectRoot, path: planPath, content: nextContent })
+      const workbench = useWorkbenchStore()
+      const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
+      if (projectId) {
+        workbench.openPlan(projectId, parsed.frontmatter.id, planPath, parsed.frontmatter.title)
+        workbench.refreshPlanStudioTabs()
+      }
+      return { planPath, todos }
     },
   }),
   write_studio_artifact: tool({
     description: 'Write a studio artifact',
     inputSchema: z.object({ slug: z.string(), content: z.string() }),
-    execute: async ({ slug }): Promise<{ error: true }> => {
-      throw new Error(`write_studio_artifact is not implemented yet (${slug})`)
+    execute: async ({ slug, content }) => {
+      const path = `.pyrola/studio/${slug}/index.md`
+      await fsWriteFile({ projectRoot: ctx.projectRoot, path, content })
+      const workbench = useWorkbenchStore()
+      const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
+      if (projectId) {
+        workbench.openStudio(projectId, slug, path, slug)
+      }
+      return { slug, path }
     },
   }),
   run_terminal: tool({
     description:
-      'Run a shell command in the project root. Returns stdout on success. Do not use for file edits — use edit_file or write_file instead.',
-    inputSchema: z.object({ command: z.string() }),
-    execute: async ({ command }) => runShellCommand(ctx, command),
+      'Run a shell command on the user machine (project cwd). Use for system reports, profiling, benchmarks, process/memory inspection, dev servers, and local agent monitoring — not only repo tasks. Default is blocking until exit. For long-running sampling (memory over a minute, log tailing, npm run dev), set is_background to true and poll with terminal_output. Append | cat for pagers. Do not use for file edits.',
+    inputSchema: z.object({
+      command: z.string(),
+      is_background: z.boolean().optional(),
+      timeout_ms: z.number().optional(),
+      description: z.string().optional(),
+    }),
+    execute: async ({ command, is_background, timeout_ms, description }) =>
+      runTerminalCommand(ctx, {
+        command,
+        is_background,
+        timeout_ms,
+        description,
+      }),
+  }),
+  terminal_output: tool({
+    description:
+      'Read stdout/stderr from a background agent shell by shell_id. Use block true to wait until the shell exits.',
+    inputSchema: z.object({
+      shell_id: z.string(),
+      block: z.boolean().optional(),
+      tail: z.number().optional(),
+    }),
+    execute: async ({ shell_id, block, tail }) => readTerminalOutput(shell_id, block, tail),
+  }),
+  stop_terminal: tool({
+    description: 'Stop a background agent shell by shell_id.',
+    inputSchema: z.object({
+      shell_id: z.string(),
+    }),
+    execute: async ({ shell_id }) => {
+      const shell = await killAgentShell(shell_id)
+      return {
+        shellId: shell.shellId,
+        exitCode: shell.exitCode,
+      }
+    },
   }),
   lsp: tool({
     description: 'LSP query (goToDefinition, hover, findReferences, symbols)',

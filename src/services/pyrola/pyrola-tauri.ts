@@ -421,6 +421,15 @@ export const shellRunCommand = (args: {
   timeoutMs?: number
 }): Promise<ShellRunResult> => call('shell_run_command', args)
 
+export const shellSpawnTracked = (args: {
+  shellId: string
+  projectRoot: string
+  command: string
+}): Promise<void> => call('shell_spawn_tracked', args)
+
+export const shellKillTracked = (shellId: string): Promise<number> =>
+  call('shell_kill_tracked', { shellId })
+
 export const lspStatus = (): Promise<Array<{ id: string; running: boolean; error?: string | null }>> =>
   call('lsp_status')
 
