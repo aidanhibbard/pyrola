@@ -43,6 +43,9 @@ import {
   tailShellOutput,
   waitForShellExit,
 } from '@/services/harness/agent-shell-registry'
+import { loadSkill } from '@/services/skills/skill-registry'
+import isStudioHtmlContent from '@/services/studio/is-studio-html-content'
+import validateStudioSlug from '@/services/studio/validate-studio-slug'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 
 export type HarnessToolContext = {
@@ -357,9 +360,20 @@ export default (ctx: HarnessToolContext) => ({
     }),
   }),
   load_skill: tool({
-    description: 'Load a skill by name',
+    description: 'Load the full instructions for a skill by name',
     inputSchema: z.object({ name: z.string() }),
-    execute: async ({ name }) => ({ name, loaded: true }),
+    execute: async ({ name }) => {
+      const result = await loadSkill(name, ctx.projectRoot)
+      if ('error' in result) {
+        return result
+      }
+      return {
+        name: result.name,
+        skillDirectory: result.skillDirectory,
+        content: result.content,
+        truncated: result.truncated,
+      }
+    },
   }),
   spawn_subagent: tool({
     description: 'Spawn a blocking subagent',
@@ -413,17 +427,46 @@ export default (ctx: HarnessToolContext) => ({
     },
   }),
   write_studio_artifact: tool({
-    description: 'Write a studio artifact',
-    inputSchema: z.object({ slug: z.string(), content: z.string() }),
-    execute: async ({ slug, content }) => {
+    description:
+      'Publish a Comark studio artifact to .pyrola/studio/<slug>/index.md. Load skill studio first. Optional data sidecar writes data.json.',
+    inputSchema: z.object({
+      slug: z.string(),
+      content: z.string(),
+      data: z.record(z.unknown()).optional(),
+    }),
+    execute: async ({ slug, content, data: sidecar }) => {
+      const slugError = validateStudioSlug(slug)
+      if (slugError) {
+        return { error: slugError }
+      }
+      if (isStudioHtmlContent(content)) {
+        return {
+          error:
+            'Studio artifacts must be Comark markdown, not HTML. Call load_skill("studio") for block syntax.',
+        }
+      }
+
       const path = `.pyrola/studio/${slug}/index.md`
       await fsWriteFile({ projectRoot: ctx.projectRoot, path, content })
+      if (sidecar) {
+        await fsWriteFile({
+          projectRoot: ctx.projectRoot,
+          path: `.pyrola/studio/${slug}/data.json`,
+          content: `${JSON.stringify(sidecar, null, 2)}\n`,
+        })
+      }
+
       const workbench = useWorkbenchStore()
       const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
+      const parsedTitle = content.match(/^---[\s\S]*?title:\s*(.+)$/m)?.[1]?.trim()
       if (projectId) {
-        workbench.openStudio(projectId, slug, path, slug)
+        workbench.openStudio(projectId, slug, path, parsedTitle ?? slug)
       }
-      return { slug, path }
+      return {
+        slug,
+        path,
+        dataPath: sidecar ? `.pyrola/studio/${slug}/data.json` : null,
+      }
     },
   }),
   run_terminal: tool({

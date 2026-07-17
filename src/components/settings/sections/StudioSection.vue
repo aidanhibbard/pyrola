@@ -13,6 +13,6 @@ defineProps<{
     kind="studio"
     folder-label="studio"
     title="Studio"
-    empty-message="No studio artifacts yet — add index.md files under .pyrola/studio/<slug>/"
+    empty-message="No studio artifacts in this project yet. Studio mode writes to .pyrola/studio/<slug>/index.md when you publish an artifact."
   />
 </template>

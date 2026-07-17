@@ -132,6 +132,10 @@ const openStudio = (
       tab.type === 'studio' && (tab.payload as StudioPayload).artifactSlug === artifactSlug,
   )
   if (existing) {
+    updateTab(existing.id, {
+      label: label ?? artifactSlug,
+      payload: { artifactSlug, path } satisfies StudioPayload,
+    })
     focusTab(existing.id)
     return
   }

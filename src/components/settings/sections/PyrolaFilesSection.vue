@@ -103,8 +103,19 @@ const toRelativePath = (absolutePath: string): string => {
   return absolutePath
 }
 
+const resolveProjectIdForSettings = (): string | null => {
+  const root = config.activeRootPath.value
+  if (props.tab === 'project' && root) {
+    const match = fleet.projects.value.find((project) => project.rootPath === root)
+    if (match) {
+      return match.id
+    }
+  }
+  return fleet.activeProjectId.value
+}
+
 const openInEditor = (file: ProjectFileEntry): void => {
-  const projectId = fleet.activeProjectId.value
+  const projectId = resolveProjectIdForSettings()
   if (!projectId) {
     return
   }
@@ -117,7 +128,12 @@ const openInEditor = (file: ProjectFileEntry): void => {
   }
 
   if (props.kind === 'studio') {
-    workbench.openStudio(projectId, file.name, relativePath, file.name)
+    workbench.openStudio(
+      projectId,
+      file.name,
+      relativePath,
+      file.description ?? file.name,
+    )
     return
   }
 
@@ -139,7 +155,15 @@ const openInEditor = (file: ProjectFileEntry): void => {
         :key="file.path"
         class="flex items-center justify-between rounded-lg border border-border/50 px-4 py-2"
       >
-        <p class="font-medium">{{ file.name }}</p>
+        <div>
+          <p class="font-medium">{{ file.description ?? file.name }}</p>
+          <p
+            v-if="kind === 'studio' && file.description && file.description !== file.name"
+            class="text-xs text-muted-foreground"
+          >
+            {{ file.name }}
+          </p>
+        </div>
         <div class="flex items-center gap-0.5">
           <Button
             variant="ghost"

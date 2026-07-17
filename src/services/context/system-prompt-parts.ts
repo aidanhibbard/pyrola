@@ -5,6 +5,7 @@ import gitRepoInfo from '@/services/git/git-repo-info'
 import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import { listSkillIndex } from '@/services/skills/skill-registry'
 import { mcpStatus, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
 
 export type SystemPromptInput = {
@@ -100,7 +101,16 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
       }))
     : input.agentCatalog
 
-  const { mentions, skills } = formatMentionBlocks(input.mentions)
+  const { mentions, skills: mentionSkills } = formatMentionBlocks(input.mentions)
+
+  const skillIndex = await listSkillIndex(input.mode, input.projectRoot).catch(() => [])
+  const skillIndexBlock =
+    skillIndex.length > 0
+      ? skillIndex.map((skill) => `- ${skill.name}: ${skill.description}`).join('\n')
+      : ''
+  const skills = [skillIndexBlock ? `Available skills:\n${skillIndexBlock}` : '', mentionSkills]
+    .filter(Boolean)
+    .join('\n\n')
 
   const agentsBlock = agentCatalog
     .map((agent) => `- ${agent.name}: ${agent.description}`)
@@ -125,11 +135,9 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     '- If a tool fails repeatedly, stop retrying the same approach and explain the blocker to the user.',
     ...(input.mode === 'studio'
       ? [
-          'Studio shell guidance:',
-          '- Use run_terminal for system reports, profiling, benchmarks, and local runtime monitoring (memory, CPU, processes, logs).',
-          '- For snapshots: run_terminal with blocking commands (ps, top, vm_stat, free, etc.).',
-          '- For sampling over time: run_terminal with is_background true, poll with terminal_output, then stop_terminal when done.',
-          '- Publish findings with write_studio_artifact (charts, tables, markdown reports).',
+          'When publishing a studio artifact, call load_skill("studio") first.',
+          '- Data may come from the user, MCP, shell, or inline YAML in the artifact.',
+          '- Publish with write_studio_artifact (Comark markdown only, never HTML).',
         ]
       : []),
     ...(input.mode === 'plan' || input.mode === 'ask'

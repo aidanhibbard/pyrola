@@ -91,7 +91,18 @@ vi.mock('@/services/harness/agent-shell-registry', () => ({
   tailShellOutput,
   waitForShellExit,
   killShellsForChat: vi.fn<() => Promise<void>>(),
-  setAgentShellEventEmitter: vi.fn(),
+  setAgentShellEventEmitter: vi.fn<(handler: unknown) => void>(),
+}))
+
+const openStudio = vi.fn<(projectId: string, slug: string, path: string, label?: string) => void>()
+const resolveProjectIdByRoot = vi.fn<(root: string) => string | null>(() => 'project-1')
+
+vi.mock('@/composables/use-workbench-store', () => ({
+  default: () => ({
+    openStudio,
+    resolveProjectIdByRoot,
+    refreshPlanStudioTabs: vi.fn<() => void>(),
+  }),
 }))
 
 const sampleDiff: FileDiff = {
@@ -302,5 +313,88 @@ describe('build-tools run_terminal', () => {
 
     expect(killAgentShell).toHaveBeenCalledWith('shell-1')
     expect(result).toEqual({ shellId: 'shell-1', exitCode: 0 })
+  })
+})
+
+describe('build-tools write_studio_artifact', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fsWriteFile.mockResolvedValue(sampleDiff)
+    openStudio.mockReset()
+    resolveProjectIdByRoot.mockReturnValue('project-1')
+  })
+
+  const ctx = {
+    projectRoot: '/project',
+    projectSlug: 'project',
+    chatId: 'chat-1',
+    settings: { version: 1 } as PyrolaSettings,
+    onPendingApproval: vi.fn<(toolCallId: string, name: string, diff: FileDiff[]) => void>(),
+  }
+
+  const runTool = async (
+    execute: unknown,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<unknown> => {
+    const runner = execute as (
+      value: Record<string, unknown>,
+      options: { toolCallId: string },
+    ) => Promise<unknown>
+    return runner(input, { toolCallId })
+  }
+
+  it('writes index.md and optional data.json', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const content = `---
+title: Brief
+---
+
+## Hello
+`
+    await runTool(
+      tools.write_studio_artifact.execute,
+      { slug: 'launch-brief', content, data: { metrics: [1, 2] } },
+      'tc-studio-1',
+    )
+
+    expect(fsWriteFile).toHaveBeenCalledWith({
+      projectRoot: '/project',
+      path: '.pyrola/studio/launch-brief/index.md',
+      content,
+    })
+    expect(fsWriteFile).toHaveBeenCalledWith({
+      projectRoot: '/project',
+      path: '.pyrola/studio/launch-brief/data.json',
+      content: `${JSON.stringify({ metrics: [1, 2] }, null, 2)}\n`,
+    })
+    expect(openStudio).toHaveBeenCalled()
+  })
+
+  it('rejects HTML content', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.write_studio_artifact.execute,
+      { slug: 'bad', content: '<html><body>x</body></html>' },
+      'tc-studio-2',
+    )
+
+    expect(result).toMatchObject({ error: expect.stringContaining('HTML') })
+    expect(fsWriteFile).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid slugs', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.write_studio_artifact.execute,
+      { slug: '../escape', content: '# Hello' },
+      'tc-studio-3',
+    )
+
+    expect(result).toMatchObject({ error: expect.stringMatching(/slug/i) })
+    expect(fsWriteFile).not.toHaveBeenCalled()
   })
 })

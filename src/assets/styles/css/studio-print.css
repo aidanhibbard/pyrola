@@ -1,0 +1,27 @@
+@media print {
+  html.studio-print body * {
+    visibility: hidden;
+  }
+
+  html.studio-print .studio-artifact-root,
+  html.studio-print .studio-artifact-root * {
+    visibility: visible;
+  }
+
+  html.studio-print .studio-artifact-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  html.studio-print .studio-renderer svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  html.studio-print .studio-renderer > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

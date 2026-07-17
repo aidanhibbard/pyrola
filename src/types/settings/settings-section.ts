@@ -21,7 +21,6 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
   'lsp',
   'fleet',
   'plans',
-  'studio',
   'skills',
   'agents',
   'rules',
