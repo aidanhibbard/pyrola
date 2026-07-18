@@ -1,12 +1,15 @@
-import type { BundledLanguage, BundledTheme, HighlighterGeneric, ThemedToken } from 'shiki'
+import type { BundledLanguage, HighlighterGeneric, ThemedToken } from 'shiki'
 import { createHighlighter } from 'shiki'
+import {
+  PYROLA_CODE_THEME_DARK,
+  PYROLA_CODE_THEME_LIGHT,
+  pyrolaCodeThemes,
+} from './pyrola-code-theme'
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 export const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1
 export const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2
-export function isUnderline(fontStyle: number | undefined) {
-  return fontStyle && fontStyle & 4
-}
+export const isUnderline = (fontStyle: number | undefined) => fontStyle && fontStyle & 4
 
 export interface TokenizedCode {
   tokens: ThemedToken[][]
@@ -17,7 +20,7 @@ export interface TokenizedCode {
 // Highlighter cache (singleton per language)
 const highlighterCache = new Map<
   string,
-  Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>
+  Promise<HighlighterGeneric<BundledLanguage, string>>
 >()
 
 // Token cache
@@ -26,29 +29,31 @@ const tokensCache = new Map<string, TokenizedCode>()
 // Subscribers for async token updates
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>()
 
-function getTokensCacheKey(code: string, language: BundledLanguage) {
+const getTokensCacheKey = (code: string, language: BundledLanguage) => {
   const start = code.slice(0, 100)
   const end = code.length > 100 ? code.slice(-100) : ''
   return `${language}:${code.length}:${start}:${end}`
 }
 
-function getHighlighter(language: BundledLanguage): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> {
+const getHighlighter = (
+  language: BundledLanguage,
+): Promise<HighlighterGeneric<BundledLanguage, string>> => {
   const cached = highlighterCache.get(language)
   if (cached) {
     return cached
   }
 
   const highlighterPromise = createHighlighter({
-    themes: ['github-light', 'github-dark'],
+    themes: [...pyrolaCodeThemes],
     langs: [language],
-  })
+  }) as unknown as Promise<HighlighterGeneric<BundledLanguage, string>>
 
   highlighterCache.set(language, highlighterPromise)
   return highlighterPromise
 }
 
 // Create raw tokens for immediate display while highlighting loads
-export function createRawTokens(code: string): TokenizedCode {
+export const createRawTokens = (code: string): TokenizedCode => {
   return {
     tokens: code.split('\n').map(line =>
       line === ''
@@ -66,11 +71,11 @@ export function createRawTokens(code: string): TokenizedCode {
 }
 
 // Synchronous highlight with callback for async results
-export function highlightCode(
+export const highlightCode = (
   code: string,
   language: BundledLanguage,
   callback?: (result: TokenizedCode) => void,
-): TokenizedCode | null {
+): TokenizedCode | null => {
   const tokensCacheKey = getTokensCacheKey(code, language)
 
   // Return cached result if available
@@ -96,8 +101,8 @@ export function highlightCode(
       const result = highlighter.codeToTokens(code, {
         lang: langToUse,
         themes: {
-          light: 'github-light',
-          dark: 'github-dark',
+          light: PYROLA_CODE_THEME_LIGHT,
+          dark: PYROLA_CODE_THEME_DARK,
         },
       })
 
@@ -119,8 +124,7 @@ export function highlightCode(
         subscribers.delete(tokensCacheKey)
       }
     })
-    .catch((error) => {
-      console.error('Failed to highlight code:', error)
+    .catch(() => {
       subscribers.delete(tokensCacheKey)
     })
 

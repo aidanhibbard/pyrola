@@ -4,10 +4,10 @@ import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
 import {
+  mcpListStatuses,
   mcpLogout,
   mcpRefresh,
   mcpStart,
-  mcpStatus,
   mcpStop,
   readMcpConfig,
   writeMcpConfig,
@@ -19,10 +19,14 @@ const isStdioServer = (
   config: McpServerConfig,
 ): config is { command: string; args?: string[] } => 'command' in config
 
+const isActiveStatus = (status: string): boolean =>
+  status === 'connected' || status === 'starting' || status === 'refreshing'
+
 const personalMcp = ref<McpConfig>({ servers: {} })
 const projectMcp = ref<McpConfig>({ servers: {} })
 const serverStates = ref<Record<string, McpServerState>>({})
 const loadingServers = ref<Record<string, boolean>>({})
+let refreshGeneration = 0
 
 export default () => {
   const setServerLoading = (serverId: string, loading: boolean): void => {
@@ -55,29 +59,85 @@ export default () => {
     }
   }
 
-  const refreshStates = async (): Promise<void> => {
-    const effective = listEffectiveMcpServers(personalMcp.value, projectMcp.value)
-    const previousIds = new Set(Object.keys(serverStates.value))
-    const nextStates: Record<string, McpServerState> = {}
+  const mergeServerState = (
+    serverId: string,
+    freshState: McpServerState | undefined,
+    existing: McpServerState | undefined,
+  ): McpServerState => {
+    if (freshState) {
+      return freshState
+    }
 
-    for (const server of effective) {
-      previousIds.delete(server.id)
-      try {
-        nextStates[server.id] = await mcpStatus(server.id)
-      } catch {
-        nextStates[server.id] = {
-          serverId: server.id,
-          status: 'stopped',
-          tools: [],
-        }
+    const existingStatus = existing?.status ?? 'stopped'
+    if (isActiveStatus(existingStatus)) {
+      return existing ?? {
+        serverId,
+        status: existingStatus,
+        tools: [],
       }
     }
 
-    for (const removedId of previousIds) {
-      await mcpStop(removedId)
+    return {
+      serverId,
+      status: 'stopped',
+      tools: [],
+    }
+  }
+
+  const refreshStates = async (): Promise<void> => {
+    const generation = ++refreshGeneration
+    const effective = listEffectiveMcpServers(personalMcp.value, projectMcp.value)
+    const previousIds = new Set(Object.keys(serverStates.value))
+
+    let bulkStatuses: Record<string, McpServerState> = {}
+    try {
+      bulkStatuses = await mcpListStatuses()
+    } catch (error) {
+      if (generation !== refreshGeneration) {
+        return
+      }
+      toast.error('Failed to refresh MCP server status', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+      return
     }
 
-    serverStates.value = nextStates
+    if (generation !== refreshGeneration) {
+      return
+    }
+
+    const merged: Record<string, McpServerState> = { ...serverStates.value }
+
+    for (const server of effective) {
+      previousIds.delete(server.id)
+      merged[server.id] = mergeServerState(
+        server.id,
+        bulkStatuses[server.id],
+        serverStates.value[server.id],
+      )
+    }
+
+    if (generation !== refreshGeneration) {
+      return
+    }
+
+    for (const removedId of previousIds) {
+      try {
+        await mcpStop(removedId)
+      } catch {
+        // Best-effort cleanup for servers removed from config.
+      }
+      if (generation !== refreshGeneration) {
+        return
+      }
+      delete merged[removedId]
+    }
+
+    if (generation !== refreshGeneration) {
+      return
+    }
+
+    serverStates.value = merged
   }
 
   const saveScopedConfig = async (
@@ -107,7 +167,10 @@ export default () => {
     await withServerLoading(serverId, async () => {
       try {
         const state = await mcpStart(serverId, config.command, config.args ?? [])
-        serverStates.value[serverId] = state
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: state,
+        }
         if (!options?.quiet) {
           toast.success(`${serverId} connected — ${state.tools.length} tools`)
         }
@@ -126,10 +189,13 @@ export default () => {
     await withServerLoading(serverId, async () => {
       try {
         await mcpStop(serverId)
-        serverStates.value[serverId] = {
-          serverId,
-          status: 'stopped',
-          tools: [],
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: {
+            serverId,
+            status: 'stopped',
+            tools: [],
+          },
         }
         if (!options?.quiet) {
           toast.success(`${serverId} stopped`)
@@ -149,7 +215,10 @@ export default () => {
     await withServerLoading(serverId, async () => {
       try {
         const state = await mcpRefresh(serverId)
-        serverStates.value[serverId] = state
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: state,
+        }
         if (!options?.quiet) {
           toast.success(`${serverId} refreshed — ${state.tools.length} tools`)
         }
@@ -186,10 +255,13 @@ export default () => {
   const logoutServer = async (serverId: string): Promise<void> => {
     try {
       await mcpLogout(serverId)
-      serverStates.value[serverId] = {
-        serverId,
-        status: 'auth_required',
-        tools: [],
+      serverStates.value = {
+        ...serverStates.value,
+        [serverId]: {
+          serverId,
+          status: 'auth_required',
+          tools: [],
+        },
       }
     } catch (error) {
       toast.error('Failed to log out', {

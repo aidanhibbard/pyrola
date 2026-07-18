@@ -5,7 +5,23 @@ import {
   discoverProjectSkillIndex,
   loadProjectSkill,
 } from '@/services/skills/discover-project-skills'
+import { discoverUserSkillIndex, loadUserSkill } from '@/services/skills/discover-user-skills'
 import { MAX_SKILL_CONTENT_CHARS } from '@/services/skills/strip-skill-frontmatter'
+
+export const listUserAndProjectSkillIndex = async (
+  projectRoot: string,
+): Promise<SkillIndexEntry[]> => {
+  const user = await discoverUserSkillIndex()
+  const project = await discoverProjectSkillIndex(projectRoot)
+  const byName = new Map<string, SkillIndexEntry>()
+  for (const skill of user) {
+    byName.set(skill.name.toLowerCase(), skill)
+  }
+  for (const skill of project) {
+    byName.set(skill.name.toLowerCase(), skill)
+  }
+  return [...byName.values()]
+}
 
 export const listSkillIndex = async (
   mode: PyrolaChatMode,
@@ -34,13 +50,14 @@ export const loadSkill = async (
 
   const internal = loadInternalSkill(normalized)
   const project = internal ? null : await loadProjectSkill(projectRoot, normalized)
-  const resolved = internal ?? project
+  const user = internal || project ? null : await loadUserSkill(normalized)
+  const resolved = internal ?? project ?? user
 
   if (!resolved) {
     return { error: `Skill '${name}' not found` }
   }
 
-  const scope = internal ? 'internal' : 'project'
+  const scope = internal ? 'internal' : project ? 'project' : 'user'
   let content = resolved.content
   let truncated = false
   if (content.length > MAX_SKILL_CONTENT_CHARS) {

@@ -21,6 +21,7 @@ export const pyrolaSettingsSchema = z
   .object({
     version: z.literal(1),
     'appearance.theme': themeSchema.optional(),
+    'appearance.fontSize': z.number().int().min(10).max(20).optional(),
     'agent.defaultMode': chatModeSchema.optional(),
     'agent.autoApproveGlobs': z.array(z.string()).optional(),
     'fleet.maxConcurrentAgents': z.number().int().min(1).max(16).optional(),
@@ -43,6 +44,7 @@ export const pyrolaSettingsSchema = z
 export const defaultPyrolaSettings = (): PyrolaSettings => ({
   version: 1,
   'appearance.theme': 'system',
+  'appearance.fontSize': 13,
   'agent.defaultMode': 'agent',
   'agent.autoApproveGlobs': ['src/**', 'src-tauri/**'],
   'fleet.maxConcurrentAgents': 4,

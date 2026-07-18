@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as monaco from 'monaco-editor'
+import {
+  applyMonacoTheme,
+  MONACO_EDITOR_OPTIONS,
+  observeMonacoTheme,
+} from '@/utils/monaco-theme'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +26,7 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let resizeObserver: ResizeObserver | null = null
 let contentDisposable: monaco.IDisposable | null = null
 let isApplyingExternalValue = false
+let stopThemeObserver: (() => void) | null = null
 
 const layoutEditor = (): void => {
   editor?.layout()
@@ -44,13 +50,16 @@ onMounted(() => {
     return
   }
 
+  applyMonacoTheme(monaco)
+  stopThemeObserver = observeMonacoTheme(monaco)
+
   editor = monaco.editor.create(containerRef.value, {
+    ...MONACO_EDITOR_OPTIONS,
     automaticLayout: true,
     language: 'markdown',
     minimap: { enabled: false },
     readOnly: props.readOnly,
     scrollBeyondLastLine: false,
-    theme: 'vs-dark',
     wordWrap: 'on',
   })
 
@@ -86,6 +95,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  stopThemeObserver?.()
+  stopThemeObserver = null
   contentDisposable?.dispose()
   contentDisposable = null
   resizeObserver?.disconnect()

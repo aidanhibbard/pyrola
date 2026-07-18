@@ -53,7 +53,7 @@ watch(
 </script>
 
 <template>
-  <SidebarGroup class="px-0">
+  <SidebarGroup>
     <NavigationAsideLeftProjectsSectionHeader />
     <div
       v-if="searchOpen"

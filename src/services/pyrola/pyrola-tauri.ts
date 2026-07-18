@@ -180,6 +180,9 @@ export const mcpLogout = (serverId: string): Promise<void> => call('mcp_logout',
 export const mcpStatus = (serverId: string): Promise<McpServerState> =>
   call('mcp_status', { serverId })
 
+export const mcpListStatuses = (): Promise<Record<string, McpServerState>> =>
+  call('mcp_list_statuses')
+
 export type HttpProxyRequest = {
   url: string
   method: string
@@ -540,8 +543,9 @@ export const lspRequest = (
 
 export const lspEnsureServer = (
   extension: string,
+  projectRoot?: string | null,
 ): Promise<{ id: string; running: boolean; error?: string | null }> =>
-  call('lsp_ensure_server', { extension })
+  call('lsp_ensure_server', { extension, projectRoot: projectRoot ?? null })
 
 export const lspStopServer = (serverId: string): Promise<void> =>
   call('lsp_stop_server', { serverId })

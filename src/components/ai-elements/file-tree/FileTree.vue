@@ -9,10 +9,12 @@ interface Props extends /* @vue-ignore */ HTMLAttributes {
   expanded?: Set<string>
   defaultExpanded?: Set<string>
   selectedPath?: string
+  unstyled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   defaultExpanded: () => new Set(),
+  unstyled: false,
 })
 
 const emit = defineEmits<{
@@ -71,8 +73,9 @@ provide(FileTreeKey, {
     role="tree"
     v-bind="$attrs"
   >
-    <div class="p-2">
+    <div v-if="!unstyled" class="p-2">
       <slot />
     </div>
+    <slot v-else />
   </div>
 </template>

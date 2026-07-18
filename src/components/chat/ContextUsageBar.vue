@@ -81,9 +81,6 @@ const formatBucketTokens = (tokens: number): string =>
         :class="statusClass"
         :disabled="triggerDisabled || contextUsage.pending.value"
       >
-        <span class="font-medium tabular-nums">
-          {{ percentLabel }}
-        </span>
         <svg
           aria-hidden="true"
           class="size-5 shrink-0"
@@ -121,7 +118,7 @@ const formatBucketTokens = (tokens: number): string =>
           <p class="font-medium">
             Context usage
           </p>
-          <p class="font-mono text-muted-foreground">
+          <p class="text-muted-foreground">
             {{ usedLabel }} / {{ limitLabel }}
           </p>
         </div>
@@ -158,7 +155,7 @@ const formatBucketTokens = (tokens: number): string =>
               />
               <span class="truncate">{{ bucket.label }}</span>
             </span>
-            <span class="shrink-0 font-mono tabular-nums text-foreground">
+            <span class="shrink-0 tabular-nums text-foreground">
               {{ formatBucketTokens(bucket.tokens) }}
             </span>
           </li>

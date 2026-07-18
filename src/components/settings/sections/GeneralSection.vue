@@ -71,7 +71,7 @@ const shortcuts = [
             :key="shortcut.keys"
             class="flex justify-between gap-4"
           >
-            <span class="font-mono">{{ shortcut.keys }}</span>
+            <span>{{ shortcut.keys }}</span>
             <span class="text-muted-foreground">{{ shortcut.action }}</span>
           </div>
         </div>

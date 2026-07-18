@@ -43,6 +43,34 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --animate-sidebar-collapsible-down: sidebar-collapsible-down 150ms ease-out;
+  --animate-sidebar-collapsible-up: sidebar-collapsible-up 150ms ease-out;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@keyframes sidebar-collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+
+  to {
+    height: var(--reka-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-collapsible-up {
+  from {
+    height: var(--reka-collapsible-content-height);
+    opacity: 1;
+  }
+
+  to {
+    height: 0;
+    opacity: 0;
+  }
 }
 
 :root {
@@ -119,7 +147,11 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    @apply font-sans;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans text-[13px] antialiased tracking-[0.01em];
   }
 }

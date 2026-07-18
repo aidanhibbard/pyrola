@@ -65,6 +65,7 @@ const loadThread = async (): Promise<void> => {
   }
 
   threadReady.value = false
+  await fleet.setActiveProject(project.value.id)
   await chatStore.loadChat(projectSlug.value, chatId.value)
   initHarness()
   await fleetSidebar.refreshAll()

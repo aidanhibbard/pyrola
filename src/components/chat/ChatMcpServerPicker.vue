@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ChevronDownIcon, ServerIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
@@ -10,6 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/shadcn/ui/dropdown-menu'
+import { toast } from 'vue-sonner'
 import useMcpServers from '@/composables/use-mcp-servers'
 import type { McpServerConfig } from '@/types/pyrola/mcp-config'
 
@@ -91,6 +92,16 @@ const handleOpenChange = async (open: boolean): Promise<void> => {
     await refreshStates()
   }
 }
+
+onMounted(async () => {
+  try {
+    await refreshStates()
+  } catch (error) {
+    toast.error('Failed to refresh MCP server status', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
 
 const toggleServerPower = async (
   serverId: string,

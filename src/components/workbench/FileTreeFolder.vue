@@ -14,9 +14,7 @@ import { Input } from '@/components/shadcn/ui/input'
 import { cn } from '@/lib/utils'
 import { computed, nextTick, provide, ref, watch } from 'vue'
 import { FileTreeFolderKey, useFileTreeContext } from '@/components/ai-elements/file-tree/context'
-import FileTreeIcon from '@/components/ai-elements/file-tree/FileTreeIcon.vue'
 import FileTreeName from '@/components/ai-elements/file-tree/FileTreeName.vue'
-import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import WorkbenchFileTreeContextMenuContent from '@/components/workbench/FileTreeContextMenuContent.vue'
 
 interface Props extends /* @vue-ignore */ HTMLAttributes {
@@ -86,9 +84,15 @@ const handleRenameKeydown = (event: KeyboardEvent): void => {
 }
 
 const handleRenameBlur = (): void => {
-  if (isRenaming.value) {
-    emit('renameConfirm', props.path, renameValue.value)
+  if (!isRenaming.value) {
+    return
   }
+  const trimmed = renameValue.value.trim()
+  if (!trimmed || trimmed === props.name) {
+    emit('renameCancel')
+    return
+  }
+  emit('renameConfirm', props.path, renameValue.value)
 }
 </script>
 
@@ -106,7 +110,7 @@ const handleRenameBlur = (): void => {
             <button
               :class="
                 cn(
-                  'flex w-full items-center gap-1 rounded px-2 py-1 text-left transition-colors hover:bg-muted/50',
+                  'flex w-full items-center gap-1 rounded px-2 py-1 text-left font-sans text-[13px] transition-colors hover:bg-muted/50',
                   isSelected && 'bg-muted',
                 )
               "
@@ -120,23 +124,17 @@ const handleRenameBlur = (): void => {
                   )
                 "
               />
-              <FileTreeIcon>
-                <WorkbenchFileEntryIcon
-                  :name="props.name"
-                  is-directory
-                  :is-open="isExpanded"
-                />
-              </FileTreeIcon>
               <Input
                 v-if="isRenaming"
                 ref="renameInputRef"
                 v-model="renameValue"
+                data-rename-input
                 class="h-6 min-w-0 flex-1 px-1 py-0 text-sm"
                 @keydown="handleRenameKeydown"
                 @blur="handleRenameBlur"
                 @click.stop
               />
-              <FileTreeName v-else>{{ props.name }}</FileTreeName>
+              <FileTreeName v-else class="font-sans text-[13px]">{{ props.name }}</FileTreeName>
             </button>
           </CollapsibleTrigger>
         </ContextMenuTrigger>
@@ -147,7 +145,7 @@ const handleRenameBlur = (): void => {
         />
       </ContextMenu>
       <CollapsibleContent>
-        <div class="ml-4 border-l pl-2">
+        <div class="ml-4 border-l border-border/20 pl-2">
           <slot />
         </div>
       </CollapsibleContent>

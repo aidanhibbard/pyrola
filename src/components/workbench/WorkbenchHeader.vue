@@ -108,11 +108,11 @@ const handleDragEnd = (): void => {
           :key="tab.id"
           type="button"
           draggable="true"
-          class="group flex h-7 max-w-[140px] shrink-0 items-center gap-1 rounded-md px-2 text-xs transition-colors"
+          class="group flex h-7 max-w-[140px] shrink-0 items-center gap-1 rounded-sm px-2 text-xs transition-colors"
           :class="
             activeTabId === tab.id
               ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+              : 'text-muted-foreground/50 hover:bg-accent/30 hover:text-muted-foreground/80'
           "
           @click="workbench.focusTab(tab.id)"
           @auxclick="handleMiddleClick($event, tab.id)"

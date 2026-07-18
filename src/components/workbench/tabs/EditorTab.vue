@@ -51,6 +51,7 @@ import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdow
 import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
 import useCommandPalette from '@/composables/use-command-palette'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
 import type { EditorPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
@@ -63,6 +64,7 @@ const props = defineProps<{
 
 const workbench = useWorkbenchStore()
 const commandPalette = useCommandPalette()
+const config = usePyrolaConfig()
 
 const monacoRef = ref<InstanceType<typeof WorkbenchMonacoEditor> | null>(null)
 const editorMode = ref<EditorMode>('edit')
@@ -77,7 +79,16 @@ const pathHistory = ref<string[]>([])
 const historyIndex = ref(-1)
 
 const diffView = ref(false)
-const lspEnabled = ref(true)
+const lspEnabled = computed({
+  get: () => config.effectiveSettings.value['lsp.enabled'] ?? false,
+  set: (value: boolean) => {
+    config.updateSetting('personal', 'lsp.enabled', value).catch((error) => {
+      toast.error('Failed to update LSP setting', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  },
+})
 const lineNumbers = ref(true)
 const wordWrap = ref(true)
 const autoSave = ref(false)
@@ -392,7 +403,7 @@ watch(
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <div
           v-if="!isEmpty"
-          class="group flex h-7 shrink-0 items-center justify-between border-b border-border/50 px-2"
+          class="group flex h-7 shrink-0 items-center justify-between border-b border-border/20 px-2"
         >
           <div class="flex min-w-0 flex-1 items-center gap-0.5">
             <Tooltip>
@@ -532,6 +543,9 @@ watch(
               :path="selectedPath"
               :open-paths="openPaths"
               :lsp-enabled="lspEnabled"
+              :line-numbers="lineNumbers"
+              :word-wrap="wordWrap"
+              :diff-view="diffView"
               @dirty-change="handleDirtyChange"
               @saved="handleSaved"
             />
@@ -556,7 +570,7 @@ watch(
       v-if="fileTreeOpen"
       :default-size="25"
       :min-size="15"
-      :max-size="40"
+      :max-size="55"
       class="min-h-0 min-w-0 overflow-hidden"
     >
       <WorkbenchFileTree

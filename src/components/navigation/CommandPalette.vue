@@ -141,9 +141,10 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
 
 <template>
   <CommandDialog v-model:open="open">
+    <CommandInput placeholder="Search projects, chats, and actions…" />
     <Tabs
       :model-value="activeTab"
-      class="px-2 pt-2"
+      class="px-2 pt-2 pb-1"
       @update:model-value="(value) => { activeTab = value as CommandPaletteTab }"
     >
       <TabsList class="grid w-full grid-cols-5">
@@ -156,7 +157,6 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
         </TabsTrigger>
       </TabsList>
     </Tabs>
-    <CommandInput placeholder="Search projects, chats, and actions…" />
     <CommandList>
       <CommandEmpty>No results found.</CommandEmpty>
       <CommandGroup>

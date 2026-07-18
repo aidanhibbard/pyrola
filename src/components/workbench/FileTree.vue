@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { FilePlus, FolderPlus, RefreshCw } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
@@ -287,6 +287,9 @@ const handleRefresh = async (): Promise<void> => {
 }
 
 const handleSelect = (path: string): void => {
+  if (renamingPath.value) {
+    handleRenameCancel()
+  }
   if (findNodeKind(tree.value?.children, path) === 'directory') {
     return
   }
@@ -298,12 +301,28 @@ const handleExpandedChange = (expanded: Set<string>): void => {
   expandedPaths.value = expanded
 }
 
+const handlePointerDownOutsideRename = (event: PointerEvent): void => {
+  if (!renamingPath.value) {
+    return
+  }
+  const target = event.target
+  if (target instanceof Element && target.closest('[data-rename-input]')) {
+    return
+  }
+  handleRenameCancel()
+}
+
 onMounted(() => {
+  document.addEventListener('pointerdown', handlePointerDownOutsideRename)
   loadTree().catch((error) => {
     toast.error('Failed to load file tree', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   })
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handlePointerDownOutsideRename)
 })
 
 watch(
@@ -332,12 +351,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden text-sm">
-    <div class="flex h-7 shrink-0 items-center justify-end border-b border-border/50 px-2">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden font-sans text-[13px]">
+    <div class="flex h-7 shrink-0 items-center justify-end border-b border-border/20 px-2">
       <slot name="toolbar" />
     </div>
-    <div class="flex items-center justify-between px-2 py-1.5">
-      <span class="truncate text-xs font-medium text-foreground">
+    <div class="flex items-center justify-between px-2 py-1">
+      <span class="truncate text-[13px] font-medium text-foreground">
         {{ projectLabel }}
       </span>
       <div class="flex shrink-0 items-center gap-0.5">
@@ -385,10 +404,11 @@ defineExpose({
         </Tooltip>
       </div>
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto p-2">
+    <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <FileTree
         v-if="tree?.children"
-        class="border-0 bg-transparent p-0"
+        unstyled
+        class="border-0 bg-transparent p-0 font-sans text-[13px]"
         :expanded="expandedPaths"
         :selected-path="selectedPath"
         :default-expanded="expandedPaths"

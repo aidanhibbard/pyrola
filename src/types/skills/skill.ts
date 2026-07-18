@@ -1,4 +1,4 @@
-export type SkillScope = 'internal' | 'project'
+export type SkillScope = 'internal' | 'project' | 'user'
 
 export type SkillIndexEntry = {
   name: string

@@ -33,7 +33,7 @@ const handleSearchClick = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="flex h-8 items-center justify-between gap-1 px-2">
+  <div class="flex h-8 items-center justify-between gap-1 px-0">
     <SidebarGroupLabel class="h-auto px-0">
       Projects
     </SidebarGroupLabel>

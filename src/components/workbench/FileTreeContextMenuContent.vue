@@ -104,13 +104,6 @@ const handleOpenInTerminalSelect = async (): Promise<void> => {
       <Pencil />
       Rename
     </ContextMenuItem>
-    <ContextMenuItem
-      variant="destructive"
-      @select="handleDeleteSelect"
-    >
-      <Trash2 />
-      Delete
-    </ContextMenuItem>
     <ContextMenuSeparator />
     <ContextMenuItem @select="handleCutSelect">
       <Scissors />
@@ -170,6 +163,14 @@ const handleOpenInTerminalSelect = async (): Promise<void> => {
     >
       <FilePlus />
       Open in editor
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem
+      variant="destructive"
+      @select="handleDeleteSelect"
+    >
+      <Trash2 />
+      Delete
     </ContextMenuItem>
   </ContextMenuContent>
 </template>

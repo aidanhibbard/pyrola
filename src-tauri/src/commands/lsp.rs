@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
@@ -20,6 +20,14 @@ pub struct LspServerStatus {
   pub id: String,
   pub running: bool,
   pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LspDiagnosticsEvent {
+  uri: String,
+  diagnostics: serde_json::Value,
+  server_id: String,
 }
 
 #[derive(Clone)]
@@ -79,6 +87,19 @@ fn builtin_lsp_servers() -> HashMap<String, LspServerEntry> {
         ],
         env: HashMap::new(),
         initialization: serde_json::json!({}),
+      },
+    ),
+    (
+      "vue".to_string(),
+      LspServerEntry {
+        command: vec!["vue-language-server".to_string(), "--stdio".to_string()],
+        extensions: vec![".vue".to_string()],
+        env: HashMap::new(),
+        initialization: serde_json::json!({
+          "vue": {
+            "complete": { "codelenses": true }
+          }
+        }),
       },
     ),
     (
@@ -435,7 +456,106 @@ async fn respond_to_server_request(
   write_lsp_message(&mut guard.stdin, &message).await
 }
 
-fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String) {
+fn typescript_tsdk_path(workspace_root: &str) -> String {
+  Path::new(workspace_root)
+    .join("node_modules/typescript/lib")
+    .to_string_lossy()
+    .replace('\\', "/")
+}
+
+/// Resolve an LSP binary, preferring the project-local `node_modules/.bin`
+/// copy so Volar / typescript-language-server run from the project's pinned
+/// versions before falling back to the global PATH.
+fn resolve_lsp_binary(workspace_root: &str, program: &str) -> String {
+  let local = Path::new(workspace_root)
+    .join("node_modules/.bin")
+    .join(program);
+  if local.is_file() {
+    return local.to_string_lossy().replace('\\', "/");
+  }
+  program.to_string()
+}
+
+/// Build initialization options for an LSP server. For the typescript server,
+/// inject `@vue/typescript-plugin` when it is installed in the project so that
+/// `.vue` imports resolve correctly (matching Cursor/Volar behavior).
+fn build_initialization_options(
+  server_id: &str,
+  base: &serde_json::Value,
+  workspace_root: &str,
+) -> serde_json::Value {
+  let mut base = if base.is_null() {
+    serde_json::json!({})
+  } else {
+    base.clone()
+  };
+
+  if server_id == "typescript" {
+    let plugin_path = Path::new(workspace_root)
+      .join("node_modules/@vue/typescript-plugin");
+    if plugin_path.is_dir() {
+      let location = plugin_path.to_string_lossy().replace('\\', "/");
+      let plugins = serde_json::json!({
+        "plugins": [{
+          "name": "@vue/typescript-plugin",
+          "location": location,
+          "languages": ["vue"],
+          "configNamespace": "typescript",
+        }]
+      });
+      if let Some(obj) = base.as_object_mut() {
+        if !obj.contains_key("plugins") {
+          obj.insert("plugins".to_string(), plugins.get("plugins").cloned().unwrap_or(serde_json::Value::Null));
+        }
+      } else {
+        base = plugins;
+      }
+    }
+  }
+
+  base
+}
+
+fn workspace_configuration_response(
+  message: &serde_json::Value,
+  workspace_root: &str,
+) -> serde_json::Value {
+  let items = message
+    .get("params")
+    .and_then(|params| params.get("items"))
+    .and_then(|items| items.as_array());
+
+  let Some(items) = items else {
+    return serde_json::json!([]);
+  };
+
+  let tsdk = typescript_tsdk_path(workspace_root);
+  let typescript_config = serde_json::json!({
+    "tsdk": tsdk,
+    "preferences": {
+      "importModuleSpecifier": "relative",
+      "quotePreference": "single",
+    }
+  });
+
+  let configs = items
+    .iter()
+    .map(|item| {
+      let section = item
+        .get("section")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+      match section {
+        "typescript" | "javascript" => typescript_config.clone(),
+        _ => serde_json::json!({}),
+      }
+    })
+    .collect::<Vec<_>>();
+
+  serde_json::json!(configs)
+}
+
+fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String, app: AppHandle) {
   tokio::spawn(async move {
     let stdout = {
       let mut guard = process.lock().await;
@@ -459,14 +579,47 @@ fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String) {
           .get("method")
           .and_then(|value| value.as_str())
           .unwrap_or_default();
+        let workspace_root = {
+          let guard = process.lock().await;
+          guard.workspace_root.clone()
+        };
         let result = match method {
           "window/workDoneProgress/create" => serde_json::json!(null),
           "client/registerCapability" => serde_json::json!(null),
-          "workspace/configuration" => serde_json::json!([]),
+          "workspace/configuration" => {
+            workspace_configuration_response(&message, &workspace_root)
+          }
           _ => serde_json::json!(null),
         };
         let _ = respond_to_server_request(&process, &id, result).await;
         continue;
+      }
+
+      if message.get("id").is_none() {
+        if let Some(method) = message.get("method").and_then(|value| value.as_str()) {
+          if method == "textDocument/publishDiagnostics" {
+            let params = message
+              .get("params")
+              .cloned()
+              .unwrap_or(serde_json::Value::Null);
+            let uri = params
+              .get("uri")
+              .and_then(|value| value.as_str())
+              .unwrap_or_default()
+              .to_string();
+            let diagnostics = params
+              .get("diagnostics")
+              .cloned()
+              .unwrap_or_else(|| serde_json::json!([]));
+            let payload = LspDiagnosticsEvent {
+              uri,
+              diagnostics,
+              server_id: server_id.clone(),
+            };
+            let _ = app.emit("lsp://diagnostics", payload);
+          }
+          continue;
+        }
       }
 
       if let Some(id) = message.get("id").and_then(|value| value.as_u64()) {
@@ -517,6 +670,7 @@ async fn ensure_document_open(
   process: &Mutex<LspProcess>,
   workspace_root: &str,
   path: &str,
+  content: Option<&str>,
 ) -> Result<String, String> {
   let absolute = resolve_workspace_path(workspace_root, path)?;
   let uri = path_to_uri(&absolute);
@@ -530,7 +684,11 @@ async fn ensure_document_open(
     return Ok(uri);
   }
 
-  let content = std::fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
+  let document_content = if let Some(content) = content {
+    content.to_string()
+  } else {
+    std::fs::read_to_string(&absolute).map_err(|error| error.to_string())?
+  };
   let extension = absolute
     .extension()
     .and_then(|value| value.to_str())
@@ -547,7 +705,7 @@ async fn ensure_document_open(
         "uri": uri,
         "languageId": language_id,
         "version": version,
-        "text": content,
+        "text": document_content,
       }
     }),
   )
@@ -575,7 +733,7 @@ async fn sync_document_change_with_content(
   path: &str,
   content: &str,
 ) -> Result<String, String> {
-  let uri = ensure_document_open(process, workspace_root, path).await?;
+  let uri = ensure_document_open(process, workspace_root, path, Some(content)).await?;
 
   let version = {
     let mut guard = process.lock().await;
@@ -633,6 +791,7 @@ async fn start_server(
   server_id: String,
   entry: LspServerEntry,
   workspace_root: String,
+  app: AppHandle,
 ) -> Result<Arc<Mutex<LspProcess>>, String> {
   let program = entry
     .command
@@ -641,7 +800,8 @@ async fn start_server(
     .ok_or_else(|| "LSP command missing".to_string())?;
   let args = entry.command.iter().skip(1).cloned().collect::<Vec<_>>();
 
-  let mut command = Command::new(program);
+  let resolved_program = resolve_lsp_binary(&workspace_root, &program);
+  let mut command = Command::new(resolved_program);
   command
     .args(args)
     .current_dir(&workspace_root)
@@ -669,15 +829,11 @@ async fn start_server(
     next_id: Mutex::new(0),
   }));
 
-  spawn_reader(process.clone(), server_id.clone());
+  spawn_reader(process.clone(), server_id.clone(), app);
   spawn_keepalive(server_id.clone(), process.clone());
 
   let root_uri = path_to_uri(&canonical_project_root(&workspace_root)?);
-  let init_options = if entry.initialization.is_null() {
-    serde_json::json!({})
-  } else {
-    entry.initialization.clone()
-  };
+  let init_options = build_initialization_options(&server_id, &entry.initialization, &workspace_root);
 
   json_rpc_request(
     &process,
@@ -693,6 +849,11 @@ async fn start_server(
             "didSave": false,
             "willSave": false,
             "willSaveWaitUntil": false
+          },
+          "publishDiagnostics": {},
+          "diagnostic": {
+            "dynamicRegistration": false,
+            "relatedDocumentSupport": false
           }
         }
       },
@@ -766,18 +927,27 @@ async fn stop_server_internal(server_id: &str) -> Result<(), String> {
 async fn ensure_running_server(
   app: &AppHandle,
   extension: &str,
+  project_root: Option<String>,
 ) -> Result<LspServerStatus, String> {
   let servers = load_effective_servers(app).await?;
   let (server_id, entry) = find_server_for_extension(&servers, extension)
     .ok_or_else(|| format!("No LSP server configured for extension: {extension}"))?;
 
+  let workspace_root = project_root
+    .or_else(|| active_project_root(app))
+    .or_else(|| Some(super::paths::get_default_workspace_root()))
+    .ok_or_else(|| "No active workspace for LSP".to_string())?;
+
   if let Some(managed) = LSP_SERVERS.lock().await.get(&server_id).cloned() {
-    let should_restart = {
+    let (should_restart, current_root) = {
       let restart = managed.restart.lock().await;
-      *restart
+      let guard = managed.process.lock().await;
+      (*restart, guard.workspace_root.clone())
     };
 
-    if !should_restart {
+    if current_root != workspace_root {
+      stop_server_internal(&server_id).await.ok();
+    } else if !should_restart {
       let running = {
         let mut guard = managed.process.lock().await;
         guard.child.try_wait().ok().flatten().is_none()
@@ -790,16 +960,12 @@ async fn ensure_running_server(
           error: None,
         });
       }
+    } else {
+      stop_server_internal(&server_id).await.ok();
     }
-
-    stop_server_internal(&server_id).await.ok();
   }
 
-  let workspace_root = active_project_root(app)
-    .or_else(|| Some(super::paths::get_default_workspace_root()))
-    .ok_or_else(|| "No active workspace for LSP".to_string())?;
-
-  start_server(server_id.clone(), entry, workspace_root).await?;
+  start_server(server_id.clone(), entry, workspace_root, app.clone()).await?;
 
   Ok(LspServerStatus {
     id: server_id,
@@ -867,7 +1033,8 @@ pub async fn lsp_request(
       .get("path")
       .and_then(|value| value.as_str())
       .ok_or_else(|| "path required for textDocument/didOpen".to_string())?;
-    let uri = ensure_document_open(&process, &workspace_root, path).await?;
+    let content = params.get("content").and_then(|value| value.as_str());
+    let uri = ensure_document_open(&process, &workspace_root, path, content).await?;
     return Ok(serde_json::json!({ "uri": uri }));
   }
 
@@ -901,7 +1068,8 @@ pub async fn lsp_request(
     .and_then(|value| value.as_str())
     .map(str::to_string)
   {
-    let uri = ensure_document_open(&process, &workspace_root, &path).await?;
+    let content = lsp_params.get("content").and_then(|value| value.as_str());
+    let uri = ensure_document_open(&process, &workspace_root, &path, content).await?;
     if let Some(object) = lsp_params.as_object_mut() {
       object.remove("path");
       if method.starts_with("textDocument/") && !object.contains_key("textDocument") {
@@ -919,8 +1087,12 @@ pub async fn lsp_request(
 }
 
 #[tauri::command]
-pub async fn lsp_ensure_server(app: AppHandle, extension: String) -> Result<LspServerStatus, String> {
-  ensure_running_server(&app, &extension).await
+pub async fn lsp_ensure_server(
+  app: AppHandle,
+  extension: String,
+  project_root: Option<String>,
+) -> Result<LspServerStatus, String> {
+  ensure_running_server(&app, &extension, project_root).await
 }
 
 #[tauri::command]

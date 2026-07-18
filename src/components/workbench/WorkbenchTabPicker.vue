@@ -13,6 +13,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/shadcn/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 
@@ -66,19 +71,23 @@ const handleOpen = (type: (typeof items)[number]['id']): void => {
 
 <template>
   <DropdownMenu v-model:open="open">
-    <DropdownMenuTrigger as-child>
-      <slot>
-        <Button
-          variant="ghost"
-          size="icon"
-          :class="props.triggerClass"
-          :aria-label="props.tooltip"
-          :title="props.tooltip"
-        >
-          <span class="text-lg leading-none">+</span>
-        </Button>
-      </slot>
-    </DropdownMenuTrigger>
+    <Tooltip>
+      <TooltipTrigger as-child>
+        <DropdownMenuTrigger as-child>
+          <slot>
+            <Button
+              variant="ghost"
+              size="icon"
+              :class="props.triggerClass"
+              :aria-label="props.tooltip"
+            >
+              <span class="text-lg leading-none">+</span>
+            </Button>
+          </slot>
+        </DropdownMenuTrigger>
+      </TooltipTrigger>
+      <TooltipContent>{{ props.tooltip }}</TooltipContent>
+    </Tooltip>
     <DropdownMenuContent align="start" class="w-40">
       <DropdownMenuItem
         v-for="item in items"

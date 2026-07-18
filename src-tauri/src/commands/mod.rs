@@ -34,7 +34,8 @@ pub use http::{http_proxy_request, http_proxy_stream};
 pub use keychain::{delete_secret, get_secret, set_secret};
 pub use lsp::{lsp_ensure_server, lsp_request, lsp_status, lsp_stop_server};
 pub use mcp::{
-  mcp_call_tool, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start, mcp_status, mcp_stop,
+  mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,
+  mcp_status, mcp_stop,
 };
 pub use paths::{
   get_default_workspace_root, get_pyrola_dir, get_user_pyrola_dir, has_project_pyrola,

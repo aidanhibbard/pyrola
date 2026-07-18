@@ -69,7 +69,7 @@ whenever(
             v-if="rightSidebarOpen"
             :default-size="35"
             :min-size="20"
-            :max-size="55"
+            :max-size="65"
             class="min-h-0 min-w-0 overflow-hidden"
           >
             <RightSidebar class="relative pt-(--titlebar-height)" style="--titlebar-height: 40px">

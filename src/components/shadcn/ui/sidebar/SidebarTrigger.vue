@@ -3,6 +3,11 @@ import type { HTMLAttributes } from "vue"
 import { PanelLeft } from "@lucide/vue"
 import { cn } from "@/lib/utils"
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { useSidebar } from "./utils"
 
 const props = defineProps<{
@@ -13,15 +18,20 @@ const { toggleSidebar } = useSidebar()
 </script>
 
 <template>
-  <Button
-    data-sidebar="trigger"
-    data-slot="sidebar-trigger"
-    variant="ghost"
-    size="icon"
-    :class="cn('h-7 w-7', props.class)"
-    @click="toggleSidebar"
-  >
-    <PanelLeft />
-    <span class="sr-only">Toggle Sidebar</span>
-  </Button>
+  <Tooltip>
+    <TooltipTrigger as-child>
+      <Button
+        data-sidebar="trigger"
+        data-slot="sidebar-trigger"
+        variant="ghost"
+        size="icon"
+        :class="cn('h-7 w-7', props.class)"
+        aria-label="Toggle left sidebar"
+        @click="toggleSidebar"
+      >
+        <PanelLeft />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent>Toggle left sidebar</TooltipContent>
+  </Tooltip>
 </template>

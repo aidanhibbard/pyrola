@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, ref } from 'vue'
 import { CheckIcon, ChevronDownIcon, SparklesIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
@@ -13,23 +13,20 @@ import {
 import useChatSkills from '@/composables/use-chat-skills'
 import useChatPromptBridge from '@/composables/use-chat-prompt-bridge'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { SkillIndexEntry } from '@/types/skills/skill'
 
-const props = withDefaults(
-  defineProps<{
-    mode?: PyrolaChatMode
-  }>(),
-  {
-    mode: 'agent',
-  },
-)
+defineProps<{
+  mode?: PyrolaChatMode
+}>()
 
 const menuOpen = ref(false)
 const searchQuery = ref('')
 const chatPromptBridge = useChatPromptBridge()
 
-const { skills, pending, refresh } = useChatSkills({
-  mode: toRef(props, 'mode'),
-})
+const { skills, pending, refresh } = useChatSkills()
+
+const scopeLabel = (skill: SkillIndexEntry): string =>
+  skill.scope === 'user' ? 'User' : 'Project'
 
 const filteredSkills = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -95,8 +92,8 @@ const handleSkillSelect = (name: string): void => {
           <div class="flex w-full items-center gap-2">
             <CheckIcon class="size-3.5 shrink-0 opacity-0" />
             <span class="truncate font-medium">/{{ skill.name }}</span>
-            <Badge variant="outline" class="ml-auto shrink-0 capitalize">
-              {{ skill.scope }}
+            <Badge variant="outline" class="ml-auto shrink-0">
+              {{ scopeLabel(skill) }}
             </Badge>
           </div>
           <p
@@ -113,7 +110,7 @@ const handleSkillSelect = (name: string): void => {
           {{
             searchQuery.trim()
               ? 'No skills match your search.'
-              : 'No skills available for this mode.'
+              : 'No user or project skills available.'
           }}
         </p>
         <p

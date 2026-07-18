@@ -48,7 +48,7 @@ const isEditing = computed(
 )
 
 const handleEditClick = (): void => {
-  if (!props.editable) {
+  if (!props.editable || isEditing.value) {
     return
   }
   if (chatStore.hasTimelineContentAfterMessage(props.message.id)) {
@@ -93,7 +93,13 @@ const handleConfirmOpenChange = (open: boolean): void => {
         </Tooltip>
         <Bubble
           variant="default"
-          :class="isEditing ? 'ring-1 ring-primary/40' : ''"
+          :class="[
+            isEditing ? 'ring-1 ring-primary/40' : '',
+            editable && !isEditing
+              ? 'cursor-pointer hover:ring-1 hover:ring-border/60'
+              : '',
+          ]"
+          @click="handleEditClick"
         >
           <BubbleContent class="break-words text-sm whitespace-pre-wrap">
             {{ text }}

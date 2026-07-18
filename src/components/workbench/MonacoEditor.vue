@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
+import { listen } from '@tauri-apps/api/event'
 import { toast } from 'vue-sonner'
 import * as monaco from 'monaco-editor'
 import {
@@ -11,20 +12,38 @@ import {
   lspRequest,
 } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 import {
   fileExtension,
   LSP_MARKER_OWNER,
   lspDiagnosticsToMarkers,
+  normalizeFileUri,
   parseLspCompletionItems,
   parseLspDiagnostics,
   parseLspHoverContents,
+  workspacePathToFileUri,
 } from '@/utils/monaco-lsp'
+import {
+  applyMonacoTheme,
+  MONACO_EDITOR_FONT_SIZE_DEFAULT,
+  observeMonacoTheme,
+  resolveMonacoEditorOptions,
+} from '@/utils/monaco-theme'
+
+type LspDiagnosticsEvent = {
+  uri: string
+  diagnostics: unknown
+  serverId: string
+}
 
 const props = defineProps<{
   projectId: string
   path: string | null
   openPaths?: string[]
   lspEnabled?: boolean
+  lineNumbers?: boolean
+  wordWrap?: boolean
+  diffView?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +61,7 @@ const LSP_LANGUAGES = [
 ] as const
 
 const fleet = useFleetRegistry()
+const config = usePyrolaConfig()
 const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
 
@@ -49,6 +69,8 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let resizeObserver: ResizeObserver | null = null
 let contentChangeDisposable: monaco.IDisposable | null = null
 let lspProviderDisposables: monaco.IDisposable[] = []
+let unlistenDiagnostics: (() => void) | null = null
+let stopThemeObserver: (() => void) | null = null
 const models = new Map<string, monaco.editor.ITextModel>()
 const pathByModel = new Map<monaco.editor.ITextModel, string>()
 const lspServerByPath = new Map<string, string>()
@@ -56,6 +78,18 @@ const dirtyByPath = new Map<string, boolean>()
 const registeredLspLanguages = new Set<string>()
 
 const lspActive = computed(() => props.lspEnabled !== false && isTauri())
+
+const editorFontSize = computed(
+  () => config.effectiveSettings.value['appearance.fontSize'] ?? MONACO_EDITOR_FONT_SIZE_DEFAULT,
+)
+
+const lineNumbersOption = computed((): 'on' | 'off' =>
+  props.lineNumbers !== false ? 'on' : 'off',
+)
+
+const wordWrapOption = computed((): 'on' | 'off' =>
+  props.wordWrap !== false ? 'on' : 'off',
+)
 
 const formatError = (error: unknown): string => {
   if (error instanceof Error) {
@@ -105,6 +139,88 @@ const layoutEditor = (): void => {
   editor?.layout()
 }
 
+const hasEditorDimensions = (element: HTMLElement): boolean =>
+  element.clientWidth > 0 && element.clientHeight > 0
+
+const initializeEditor = (): boolean => {
+  if (!containerRef.value || editor) {
+    return editor !== null
+  }
+
+  if (!hasEditorDimensions(containerRef.value)) {
+    return false
+  }
+
+  try {
+    applyMonacoTheme(monaco)
+
+    stopThemeObserver?.()
+    stopThemeObserver = observeMonacoTheme(monaco, layoutEditor)
+
+    // Silence Monaco's built-in TypeScript worker diagnostics. The bundled
+    // tsserver worker does not understand Vue SFC or Vite CSS module imports,
+    // so it produces false positives (e.g. "Cannot find module './App.vue'")
+    // that Cursor/Volar do not show. Accurate diagnostics come from the
+    // external LSP (Volar) when `lsp.enabled` is on.
+    const tsLang = monaco.languages.typescript as unknown as {
+      typescriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
+      javascriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
+    }
+    tsLang.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+    })
+    tsLang.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+    })
+
+    editor = monaco.editor.create(containerRef.value, {
+      ...resolveMonacoEditorOptions(editorFontSize.value),
+      automaticLayout: true,
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      lineNumbers: lineNumbersOption.value,
+      wordWrap: wordWrapOption.value,
+    })
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      save().catch((error) => {
+        toast.error('Failed to save file', {
+          description: formatError(error),
+        })
+      })
+    })
+
+    if (props.path) {
+      attachModel(props.path).catch((error) => {
+        toast.error('Failed to load file', {
+          description: formatError(error),
+        })
+      })
+    }
+
+    return true
+  } catch (error) {
+    toast.error('Failed to initialize editor', {
+      description: formatError(error),
+    })
+    return false
+  }
+}
+
+const tryInitializeEditor = (): void => {
+  initializeEditor()
+}
+
+const syncEditorViewOptions = (): void => {
+  editor?.updateOptions({
+    fontSize: editorFontSize.value,
+    lineNumbers: lineNumbersOption.value,
+    wordWrap: wordWrapOption.value,
+  })
+}
+
 const projectRoot = computed(
   () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
 )
@@ -144,6 +260,42 @@ const applyDiagnostics = (
   monaco.editor.setModelMarkers(model, LSP_MARKER_OWNER, markers)
 }
 
+const findModelForFileUri = (uri: string): monaco.editor.ITextModel | null => {
+  const root = projectRoot.value
+  if (!root) {
+    return null
+  }
+
+  const targetPath = normalizeFileUri(uri)
+  for (const [path, model] of models.entries()) {
+    const modelPath = normalizeFileUri(workspacePathToFileUri(root, path))
+    if (modelPath === targetPath) {
+      return model
+    }
+  }
+
+  return null
+}
+
+const handlePushDiagnostics = (payload: LspDiagnosticsEvent): void => {
+  if (!lspActive.value) {
+    return
+  }
+
+  const model = findModelForFileUri(payload.uri)
+  if (!model) {
+    return
+  }
+
+  const path = pathByModel.get(model)
+  const serverId = path ? getLspServerId(path) : null
+  if (!serverId || serverId !== payload.serverId) {
+    return
+  }
+
+  applyDiagnostics(model, { diagnostics: payload.diagnostics })
+}
+
 const refreshDiagnostics = async (
   path: string,
   model: monaco.editor.ITextModel,
@@ -155,17 +307,20 @@ const refreshDiagnostics = async (
 
   try {
     await syncDocumentToLsp(path, model.getValue())
-    const result = await lspRequest(serverId, 'diagnostics', { path })
+    const result = await lspRequest(serverId, 'diagnostics', {
+      path,
+      content: model.getValue(),
+    })
     applyDiagnostics(model, result)
   } catch {
-    // Background diagnostics should fail silently.
+    clearLspMarkers(model)
   }
 }
 
 const debouncedRefreshDiagnostics = useDebounceFn(
   (path: string, model: monaco.editor.ITextModel) => {
     refreshDiagnostics(path, model).catch(() => {
-      // Silent no-op for debounced background diagnostics.
+      clearLspMarkers(model)
     })
   },
   500,
@@ -206,7 +361,13 @@ const setupLspForPath = async (
   }
 
   try {
-    const server = await lspEnsureServer(extension)
+    const root = projectRoot.value
+    if (!root) {
+      clearLspMarkers(model)
+      return
+    }
+
+    const server = await lspEnsureServer(extension, root)
     if (!server.running) {
       lspServerByPath.delete(path)
       clearLspMarkers(model)
@@ -214,7 +375,10 @@ const setupLspForPath = async (
     }
 
     lspServerByPath.set(path, server.id)
-    await lspRequest(server.id, 'textDocument/didOpen', { path })
+    await lspRequest(server.id, 'textDocument/didOpen', {
+      path,
+      content: model.getValue(),
+    })
     await refreshDiagnostics(path, model)
   } catch {
     lspServerByPath.delete(path)
@@ -426,32 +590,28 @@ onMounted(() => {
 
   registerLspProviders()
 
-  editor = monaco.editor.create(containerRef.value, {
-    automaticLayout: true,
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    theme: 'vs-dark',
-    wordWrap: 'on',
-  })
-
-  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-    save().catch((error) => {
-      toast.error('Failed to save file', {
-        description: formatError(error),
-      })
+  if (isTauri()) {
+    listen<LspDiagnosticsEvent>('lsp://diagnostics', (event) => {
+      handlePushDiagnostics(event.payload)
     })
-  })
-
-  if (props.path) {
-    attachModel(props.path).catch((error) => {
-      toast.error('Failed to load file', {
-        description: formatError(error),
+      .then((unlisten) => {
+        unlistenDiagnostics = unlisten
       })
-    })
+      .catch((error) => {
+        toast.error('Failed to subscribe to LSP diagnostics', {
+          description: formatError(error),
+        })
+      })
   }
+
+  tryInitializeEditor()
 
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
+      if (!editor) {
+        tryInitializeEditor()
+        return
+      }
       layoutEditor()
     })
     resizeObserver.observe(containerRef.value)
@@ -483,6 +643,10 @@ watch(
   { deep: true },
 )
 
+watch([editorFontSize, lineNumbersOption, wordWrapOption], () => {
+  syncEditorViewOptions()
+})
+
 watch(lspActive, async (enabled) => {
   const path = props.path
   const model = path ? models.get(path) : null
@@ -501,6 +665,12 @@ watch(lspActive, async (enabled) => {
 onBeforeUnmount(() => {
   contentChangeDisposable?.dispose()
   contentChangeDisposable = null
+
+  unlistenDiagnostics?.()
+  unlistenDiagnostics = null
+
+  stopThemeObserver?.()
+  stopThemeObserver = null
 
   for (const disposable of lspProviderDisposables) {
     disposable.dispose()

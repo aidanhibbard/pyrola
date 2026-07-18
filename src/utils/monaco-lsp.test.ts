@@ -55,6 +55,20 @@ describe('monaco-lsp', () => {
     expect(diagnostics[0]?.message).toBe('Expected semicolon')
   })
 
+  it('parses publishDiagnostics payloads', () => {
+    const diagnostics = parseLspDiagnostics({
+      diagnostics: [
+        {
+          message: 'Cannot find module',
+          severity: 1,
+        },
+      ],
+    })
+
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]?.message).toBe('Cannot find module')
+  })
+
   it('maps diagnostics to monaco markers', () => {
     const markers = lspDiagnosticsToMarkers(
       [
@@ -66,10 +80,15 @@ describe('monaco-lsp', () => {
             end: { line: 0, character: 3 },
           },
         },
+        {
+          message: 'Consider refactoring',
+          severity: 3,
+        },
       ],
       monacoStub,
     )
 
+    expect(markers).toHaveLength(1)
     expect(markers[0]?.severity).toBe(4)
     expect(markers[0]?.startLineNumber).toBe(1)
   })

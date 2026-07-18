@@ -70,9 +70,33 @@ const readRange = (value: unknown): LspRange | null => {
 
 export const fileExtension = (path: string): string => path.split('.').pop() ?? ''
 
+export const workspacePathToFileUri = (projectRoot: string, path: string): string => {
+  const root = projectRoot.replace(/\\/g, '/').replace(/\/$/, '')
+  const relative = path.replace(/^\//, '')
+  let absolute = `${root}/${relative}`
+  if (!absolute.startsWith('/')) {
+    absolute = `/${absolute}`
+  }
+  return `file://${absolute}`
+}
+
+export const normalizeFileUri = (uri: string): string => {
+  try {
+    return decodeURIComponent(new URL(uri).pathname)
+  } catch {
+    return decodeURIComponent(uri.replace(/^file:\/\//, ''))
+  }
+}
+
 export const parseLspDiagnostics = (result: unknown): LspDiagnostic[] => {
   if (!isRecord(result)) {
     return Array.isArray(result) ? parseLspDiagnostics({ items: result }) : []
+  }
+
+  if (Array.isArray(result.diagnostics)) {
+    return result.diagnostics
+      .map((item) => parseDiagnosticItem(item))
+      .filter((item): item is LspDiagnostic => item !== null)
   }
 
   if (Array.isArray(result.items)) {
@@ -146,16 +170,18 @@ export const lspDiagnosticsToMarkers = (
   diagnostics: LspDiagnostic[],
   monacoApi: typeof monaco,
 ): monaco.editor.IMarkerData[] =>
-  diagnostics.map((diagnostic) => {
-    const line = diagnostic.range?.start.line ?? 0
-    return {
-      severity: lspSeverityToMonaco(diagnostic.severity, monacoApi),
-      message: diagnostic.message,
-      source: diagnostic.source,
-      code: diagnostic.code?.toString(),
-      ...lspRangeToMonaco(diagnostic.range, monacoApi, line + 1),
-    }
-  })
+  diagnostics
+    .filter((diagnostic) => diagnostic.severity === 1 || diagnostic.severity === 2)
+    .map((diagnostic) => {
+      const line = diagnostic.range?.start.line ?? 0
+      return {
+        severity: lspSeverityToMonaco(diagnostic.severity, monacoApi),
+        message: diagnostic.message,
+        source: diagnostic.source,
+        code: diagnostic.code?.toString(),
+        ...lspRangeToMonaco(diagnostic.range, monacoApi, line + 1),
+      }
+    })
 
 const readMarkedString = (value: LspMarkedString): string => {
   if (typeof value === 'string') {

@@ -11,6 +11,11 @@ import {
 } from '@/components/shadcn/ui/collapsible'
 import { Button } from '@/components/shadcn/ui/button'
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -189,12 +194,14 @@ const handleOpenTerminal = async (): Promise<void> => {
         <ContextMenuTrigger as-child>
           <CollapsibleTrigger as-child>
             <SidebarMenuButton :tooltip="project.displayName">
-              <Folder
-                class="size-4 shrink-0 group-data-[state=open]/collapsible:hidden"
-              />
-              <FolderOpen
-                class="hidden size-4 shrink-0 group-data-[state=open]/collapsible:block"
-              />
+              <span class="relative inline-flex size-4 shrink-0">
+                <Folder
+                  class="size-4 shrink-0 opacity-100 transition-all duration-150 group-data-[state=open]/collapsible:scale-90 group-data-[state=open]/collapsible:rotate-6 group-data-[state=open]/collapsible:opacity-0"
+                />
+                <FolderOpen
+                  class="pointer-events-none absolute inset-0 size-4 shrink-0 scale-90 -rotate-6 opacity-0 transition-all duration-150 group-data-[state=open]/collapsible:scale-100 group-data-[state=open]/collapsible:rotate-0 group-data-[state=open]/collapsible:opacity-100"
+                />
+              </span>
               <span class="min-w-0 flex-1 truncate">{{ project.displayName }}</span>
             </SidebarMenuButton>
           </CollapsibleTrigger>
@@ -218,21 +225,27 @@ const handleOpenTerminal = async (): Promise<void> => {
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      <SidebarMenuAction as-child>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="size-6"
-          :disabled="startingChat"
-          :aria-label="`New chat in ${project.displayName}`"
-          :title="`New chat in ${project.displayName}`"
-          @click.stop="handleStartChat"
-        >
-          <Plus class="size-3.5" />
-        </Button>
-      </SidebarMenuAction>
-      <CollapsibleContent>
-        <div class="min-w-0 max-h-42 overflow-x-hidden overflow-y-auto pl-3.5">
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <SidebarMenuAction as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-6"
+              :disabled="startingChat"
+              :aria-label="`New chat in ${project.displayName}`"
+              @click.stop="handleStartChat"
+            >
+              <Plus class="size-3.5" />
+            </Button>
+          </SidebarMenuAction>
+        </TooltipTrigger>
+        <TooltipContent>{{ `New chat in ${project.displayName}` }}</TooltipContent>
+      </Tooltip>
+      <CollapsibleContent
+        class="overflow-hidden data-[state=closed]:animate-sidebar-collapsible-up data-[state=open]:animate-sidebar-collapsible-down"
+      >
+        <div class="min-w-0 max-h-42 scroll-fade-b scrollbar-none overflow-x-hidden overflow-y-auto pl-3.5">
           <SidebarMenuSub class="mx-0 gap-0.5">
             <SidebarMenuSubItem
               v-for="chat in project.chats"

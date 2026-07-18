@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { ChevronDown, ChevronRight, Loader2, LogIn, LogOut, Play, RefreshCw, Server, Square, Trash2 } from '@lucide/vue'
+import { computed, onMounted, ref } from 'vue'
+import { ChevronDown, ChevronRight, Loader2, LogIn, LogOut, Play, Plus, RefreshCw, Server, Square, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -49,6 +49,7 @@ const {
   addServer,
   deleteServer,
   listScopedMcpServers,
+  refreshStates,
 } = useMcpServers()
 
 const expanded = ref<Record<string, boolean>>({})
@@ -147,6 +148,16 @@ const submitNewServer = async (): Promise<void> => {
   toast.success('Server saved')
 }
 
+onMounted(async () => {
+  try {
+    await refreshStates()
+  } catch (error) {
+    toast.error('Failed to refresh MCP server status', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 const refreshAll = async (): Promise<void> => {
   if (refreshingAll.value) {
     return
@@ -165,18 +176,38 @@ const refreshAll = async (): Promise<void> => {
 <template>
   <SettingsSectionScroll title="MCP">
     <template #actions>
-      <Button
-        v-if="scopedServers.length > 0"
-        variant="outline"
-        size="sm"
-        :disabled="refreshingAll"
-        @click="refreshAll"
-      >
-        <Loader2 v-if="refreshingAll" class="mr-2 h-4 w-4 animate-spin" />
-        <RefreshCw v-else class="mr-2 h-4 w-4" />
-        Refresh all
-      </Button>
-      <Button size="sm" @click="addOpen = true">+ Add server</Button>
+      <div class="flex items-center gap-0.5">
+        <Tooltip v-if="scopedServers.length > 0">
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8"
+              aria-label="Refresh all"
+              :disabled="refreshingAll"
+              @click="refreshAll"
+            >
+              <Loader2 v-if="refreshingAll" class="h-4 w-4 animate-spin" />
+              <RefreshCw v-else class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh all</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8"
+              aria-label="Add server"
+              @click="addOpen = true"
+            >
+              <Plus class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Add server</TooltipContent>
+        </Tooltip>
+      </div>
     </template>
 
     <Empty

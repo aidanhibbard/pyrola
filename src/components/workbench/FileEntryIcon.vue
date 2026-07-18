@@ -18,6 +18,7 @@ const icon = computed(() =>
 
 <template>
   <img
+    v-if="icon"
     :src="icon.src"
     alt=""
     class="size-4 shrink-0"

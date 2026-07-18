@@ -71,9 +71,15 @@ const handleRenameKeydown = (event: KeyboardEvent): void => {
 }
 
 const handleRenameBlur = (): void => {
-  if (isRenaming.value) {
-    emit('renameConfirm', props.node.path, renameValue.value)
+  if (!isRenaming.value) {
+    return
   }
+  const trimmed = renameValue.value.trim()
+  if (!trimmed || trimmed === props.node.name) {
+    emit('renameCancel')
+    return
+  }
+  emit('renameConfirm', props.node.path, renameValue.value)
 }
 </script>
 
@@ -100,6 +106,7 @@ const handleRenameBlur = (): void => {
       <FileTreeFile
         :path="node.path"
         :name="node.name"
+        class="font-sans text-[13px]"
       >
         <template #default>
           <WorkbenchFileEntryIcon :name="node.name" />
@@ -107,6 +114,7 @@ const handleRenameBlur = (): void => {
             v-if="isRenaming"
             ref="renameInputRef"
             v-model="renameValue"
+            data-rename-input
             class="h-6 min-w-0 flex-1 px-1 py-0 text-sm"
             @keydown="handleRenameKeydown"
             @blur="handleRenameBlur"
@@ -114,7 +122,7 @@ const handleRenameBlur = (): void => {
           />
           <span
             v-else
-            class="truncate"
+            class="truncate font-sans text-[13px]"
           >{{ node.name }}</span>
         </template>
       </FileTreeFile>

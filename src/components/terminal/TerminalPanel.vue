@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import '@xterm/xterm/css/xterm.css'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { toast } from 'vue-sonner'
 import {
@@ -12,15 +12,49 @@ import {
   shellWritePty,
 } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import useWorkbenchStore from '@/composables/use-workbench-store'
+
+const TERMINAL_FONT_FAMILY = "'JetBrains Mono', 'SF Mono', ui-monospace, monospace"
+const TERMINAL_FONT_SIZE = 13
+
+const props = defineProps<{
+  projectId?: string
+}>()
 
 const fleet = useFleetRegistry()
+const workbench = useWorkbenchStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let sessionId: string | null = null
 let unlisten: (() => void) | null = null
+let resizeObserver: ResizeObserver | null = null
+let pendingSizeObserver: ResizeObserver | null = null
 let ptyErrorShown = false
+let initialized = false
+let initFailed = false
+
+const readCssVariable = (name: string): string => {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+const buildTerminalTheme = (): ITheme => {
+  const background = readCssVariable('--background')
+  const foreground = readCssVariable('--foreground')
+  const accent = readCssVariable('--accent')
+  const accentForeground = readCssVariable('--accent-foreground')
+
+  return {
+    background,
+    foreground,
+    cursor: foreground,
+    cursorAccent: background,
+    selectionBackground: accent,
+    selectionForeground: accentForeground,
+    selectionInactiveBackground: readCssVariable('--muted'),
+  }
+}
 
 const notifyPtyError = (title: string, error: unknown): void => {
   if (ptyErrorShown) {
@@ -32,63 +66,153 @@ const notifyPtyError = (title: string, error: unknown): void => {
   })
 }
 
+const resolveProjectRoot = (): string | null => {
+  if (props.projectId) {
+    return workbench.getProject(props.projectId)?.rootPath ?? null
+  }
+  return fleet.activeProject.value?.rootPath ?? null
+}
+
+const hasContainerSize = (element: HTMLDivElement): boolean => {
+  return element.clientWidth > 0 && element.clientHeight > 0
+}
+
+const cleanupPendingSizeObserver = (): void => {
+  pendingSizeObserver?.disconnect()
+  pendingSizeObserver = null
+}
+
+const reportInitFailure = (error: unknown): void => {
+  if (initFailed) {
+    return
+  }
+  initFailed = true
+  cleanupPendingSizeObserver()
+  toast.error('Failed to start terminal', {
+    description: error instanceof Error ? error.message : 'Unknown error',
+  })
+}
+
 const initTerminal = async (): Promise<void> => {
-  const root = fleet.activeProject.value?.rootPath
-  if (!containerRef.value || !root) {
+  if (initialized || terminal || initFailed) {
     return
   }
 
-  terminal = new Terminal({
-    cursorBlink: true,
-    fontSize: 13,
-    theme: {
-      background: 'transparent',
-    },
-  })
-  fitAddon = new FitAddon()
-  terminal.loadAddon(fitAddon)
-  terminal.open(containerRef.value)
-  fitAddon.fit()
+  const container = containerRef.value
+  if (!container) {
+    return
+  }
 
-  const { sessionId: id } = await shellSpawnPty({
-    projectRoot: root,
-    cols: terminal.cols,
-    rows: terminal.rows,
-  })
-  sessionId = id
-
-  unlisten = await listen<string>(`pty-output-${id}`, (event) => {
-    terminal?.write(event.payload)
-  })
-
-  terminal.onData((data) => {
-    if (sessionId) {
-      shellWritePty(sessionId, data).catch((error) => {
-        notifyPtyError('Terminal input failed', error)
-      })
+  const root = resolveProjectRoot()
+  if (!root) {
+    if (fleet.loaded.value) {
+      throw new Error('Project root path is unavailable')
     }
-  })
+    return
+  }
 
-  const resizeObserver = new ResizeObserver(() => {
-    fitAddon?.fit()
-    if (terminal && sessionId) {
-      shellResizePty(sessionId, terminal.cols, terminal.rows).catch((error) => {
-        notifyPtyError('Terminal resize failed', error)
-      })
-    }
-  })
-  resizeObserver.observe(containerRef.value)
+  if (!hasContainerSize(container)) {
+    return
+  }
+
+  try {
+    terminal = new Terminal({
+      cursorBlink: true,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontSize: TERMINAL_FONT_SIZE,
+      theme: buildTerminalTheme(),
+    })
+    fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.open(container)
+    fitAddon.fit()
+
+    const { sessionId: id } = await shellSpawnPty({
+      projectRoot: root,
+      cols: terminal.cols,
+      rows: terminal.rows,
+    })
+    sessionId = id
+
+    unlisten = await listen<string>(`pty-output-${id}`, (event) => {
+      terminal?.write(event.payload)
+    })
+
+    terminal.onData((data) => {
+      if (sessionId) {
+        shellWritePty(sessionId, data).catch((error) => {
+          notifyPtyError('Terminal input failed', error)
+        })
+      }
+    })
+
+    resizeObserver = new ResizeObserver(() => {
+      fitAddon?.fit()
+      if (terminal && sessionId) {
+        shellResizePty(sessionId, terminal.cols, terminal.rows).catch((error) => {
+          notifyPtyError('Terminal resize failed', error)
+        })
+      }
+    })
+    resizeObserver.observe(container)
+
+    initialized = true
+    cleanupPendingSizeObserver()
+  } catch (error) {
+    terminal?.dispose()
+    terminal = null
+    fitAddon = null
+    reportInitFailure(error)
+    throw error
+  }
 }
 
-onMounted(() => {
-  initTerminal().catch((error) => {
-    toast.error('Failed to start terminal', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+const ensureInitWhenReady = (): void => {
+  if (initialized || terminal || initFailed) {
+    return
+  }
+
+  const container = containerRef.value
+  if (!container) {
+    return
+  }
+
+  if (resolveProjectRoot() && hasContainerSize(container)) {
+    initTerminal().catch((error) => {
+      reportInitFailure(error)
+    })
+    return
+  }
+
+  if (pendingSizeObserver) {
+    return
+  }
+
+  pendingSizeObserver = new ResizeObserver(() => {
+    if (!containerRef.value || !hasContainerSize(containerRef.value)) {
+      return
+    }
+    initTerminal().catch((error) => {
+      reportInitFailure(error)
     })
   })
+  pendingSizeObserver.observe(container)
+}
+
+onMounted(async () => {
+  await nextTick()
+  ensureInitWhenReady()
 })
 
+watch(
+  () => [fleet.loaded.value, fleet.projects.value, fleet.activeProjectId.value, props.projectId] as const,
+  () => {
+    ensureInitWhenReady()
+  },
+)
+
 onBeforeUnmount(() => {
+  cleanupPendingSizeObserver()
   if (unlisten) {
     unlisten()
   }
@@ -97,12 +221,13 @@ onBeforeUnmount(() => {
       notifyPtyError('Failed to close terminal', error)
     })
   }
+  resizeObserver?.disconnect()
   terminal?.dispose()
 })
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col border-t border-border/50 bg-black/90">
+  <div class="flex h-full min-h-0 flex-col border-t border-border/50 bg-background">
     <div class="px-2 py-1 text-xs text-muted-foreground">
       Terminal
     </div>
