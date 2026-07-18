@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-dialog'
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -108,6 +109,23 @@ export const getActiveProjectId = (): Promise<string | null> => call('get_active
 export const revealInFolder = (path: string): Promise<void> =>
   call('reveal_in_folder', { path })
 
+export const openFolderPicker = async (): Promise<string | null> => {
+  if (!isTauri()) {
+    throw new Error('Pyrola desktop APIs are only available in the Tauri app')
+  }
+
+  const selected = await open({
+    directory: true,
+    multiple: false,
+  })
+
+  if (selected === null) {
+    return null
+  }
+
+  return Array.isArray(selected) ? (selected[0] ?? null) : selected
+}
+
 export type ProjectFileEntry = {
   name: string
   path: string
@@ -216,6 +234,13 @@ export const appendChatLine = (
   chatId: string,
   line: Record<string, unknown>,
 ): Promise<void> => call('append_chat_line', { projectSlug, chatId, line })
+
+export const truncateChatLog = (args: {
+  projectSlug: string
+  chatId: string
+  beforeMessageId?: string
+  keepThroughLastUser?: boolean
+}): Promise<void> => call('truncate_chat_log', args)
 
 export const updateChatMeta = (
   projectSlug: string,

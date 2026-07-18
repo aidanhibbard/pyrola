@@ -5,8 +5,31 @@ import {
   FolderPlus,
   Search,
 } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import { SidebarGroupLabel } from '@/components/shadcn/ui/sidebar'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
+import useAddProject from '@/composables/use-add-project'
+import useProjectsExpansion from '@/composables/use-projects-expansion'
+import useProjectsSection from '@/composables/use-projects-section'
+
+const { addingProject, addProjectFromPicker } = useAddProject()
+const { runningOnly, toggleRunningFilter, openSearch } = useProjectsSection()
+const { expansionMode, toggleCollapseAll } = useProjectsExpansion()
+
+const handleSearchClick = async (): Promise<void> => {
+  try {
+    await openSearch()
+  } catch (error) {
+    toast.error('Could not open search', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 </script>
 
 <template>
@@ -15,42 +38,66 @@ import { SidebarGroupLabel } from '@/components/shadcn/ui/sidebar'
       Projects
     </SidebarGroupLabel>
     <div class="flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-6"
-        title="Filter projects and chats"
-      >
-        <Search class="size-3.5" />
-        <span class="sr-only">Search projects and chats</span>
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-6"
-        title="Filter by running status"
-      >
-        <Filter class="size-3.5" />
-        <span class="sr-only">Filter by status</span>
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-6"
-        title="Add project"
-      >
-        <FolderPlus class="size-3.5" />
-        <span class="sr-only">Add project</span>
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-6"
-        title="Collapse all projects"
-      >
-        <ChevronsDownUp class="size-3.5" />
-        <span class="sr-only">Collapse all projects</span>
-      </Button>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6"
+            aria-label="Search projects and chats"
+            @click="handleSearchClick"
+          >
+            <Search class="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Search projects and chats</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6"
+            :class="runningOnly ? 'bg-accent text-accent-foreground' : ''"
+            aria-label="Filter by running status"
+            @click="toggleRunningFilter"
+          >
+            <Filter class="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Filter by running status</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6"
+            :disabled="addingProject"
+            aria-label="Add project"
+            @click="addProjectFromPicker"
+          >
+            <FolderPlus class="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Add project</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6"
+            :aria-label="expansionMode === 'all-collapsed' ? 'Expand all projects' : 'Collapse all projects'"
+            @click="toggleCollapseAll"
+          >
+            <ChevronsDownUp class="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {{ expansionMode === 'all-collapsed' ? 'Expand all projects' : 'Collapse all projects' }}
+        </TooltipContent>
+      </Tooltip>
     </div>
   </div>
 </template>

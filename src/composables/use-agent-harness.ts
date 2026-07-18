@@ -1,7 +1,8 @@
 import { toast } from 'vue-sonner'
-import { computed, ref, shallowRef } from 'vue'
+import { ref, shallowRef } from 'vue'
 import type { ChatStatus } from 'ai'
 import type { HarnessEvent } from '@/types/harness/harness-event'
+import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { FileDiff } from '@/types/harness/file-diff'
 import type { ToolRun } from '@/types/harness/tool-run'
@@ -12,6 +13,8 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import runOrchestrator, { mapMetaStatusToChatStatus } from '@/services/harness/orchestrator'
 import { resolveApproval } from '@/services/harness/approval-gate'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import parseModelRef from '@/utils/parse-model-ref'
+import listConfiguredProviders from '@/services/providers/list-configured-providers'
 
 export type AgentHarnessOptions = {
   projectSlug: string
@@ -21,6 +24,7 @@ export type AgentHarnessOptions = {
 }
 
 export type { ToolRun } from '@/types/harness/tool-run'
+export type { SubagentEntry } from '@/types/harness/subagent-entry'
 
 export default (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
@@ -33,12 +37,9 @@ export default (options: AgentHarnessOptions) => {
     Array<{ toolCallId: string; name: string; diff: FileDiff[] }>
   >([])
   const toolRuns = shallowRef<ToolRun[]>([])
+  const subagents = shallowRef<SubagentEntry[]>([])
   const abortController = ref<AbortController | null>(null)
   const liveEvents = ref<HarnessEvent[]>([])
-
-  const providerId = computed(
-    () => config.effectiveSettings.value['agent.defaultProvider'] ?? '',
-  )
 
   const handleEvent = (event: HarnessEvent): void => {
     liveEvents.value = [...liveEvents.value, event]
@@ -73,11 +74,59 @@ export default (options: AgentHarnessOptions) => {
         status: event.isError ? 'error' : 'done',
         args: existing?.args,
         result: event.result,
+        artifact: event.artifact ?? existing?.artifact,
+        diffs: event.diffs ?? existing?.diffs,
       }
       toolRuns.value = toolRuns.value.map((item) =>
         item.toolCallId === event.toolCallId ? run : item,
       )
       chatStore.upsertLocalToolRun(run)
+    }
+    if (event.type === 'todo-update') {
+      chatStore.appendLocalTodoUpdate(event.todos)
+    }
+    if (event.type === 'subagent-start') {
+      const entry: SubagentEntry = {
+        subagentId: event.subagentId,
+        name: event.name,
+        blocking: event.blocking,
+        status: 'running',
+        events: [],
+      }
+      subagents.value = [
+        ...subagents.value.filter((item) => item.subagentId !== event.subagentId),
+        entry,
+      ]
+      chatStore.upsertLocalSubagentStart({
+        subagentId: event.subagentId,
+        name: event.name,
+        blocking: event.blocking,
+      })
+    }
+    if (event.type === 'subagent-event') {
+      const running = [...subagents.value].reverse().find((item) => item.status === 'running')
+      if (running) {
+        subagents.value = subagents.value.map((item) =>
+          item.subagentId === running.subagentId
+            ? { ...item, events: [...item.events, event.event] }
+            : item,
+        )
+      }
+    }
+    if (event.type === 'subagent-result') {
+      subagents.value = subagents.value.map((item) =>
+        item.subagentId === event.subagentId
+          ? { ...item, status: 'done', summary: event.summary }
+          : item,
+      )
+      chatStore.completeLocalSubagent(event.subagentId, event.summary)
+    }
+    if (event.type === 'question-request') {
+      chatStore.setPendingQuestion({
+        toolCallId: event.toolCallId,
+        question: event.question,
+        options: event.options,
+      })
     }
     if (event.type === 'step-start') {
       chatStore.startAgentStep(event.stepId)
@@ -122,7 +171,12 @@ export default (options: AgentHarnessOptions) => {
     }
     if (event.type === 'turn-aborted') {
       status.value = 'ready'
+      chatStore.clearPendingQuestion()
     }
+  }
+
+  const submitAnswer = (toolCallId: string, answer: string): void => {
+    chatStore.submitAnswer(toolCallId, answer)
   }
 
   const send = async (args: {
@@ -130,6 +184,8 @@ export default (options: AgentHarnessOptions) => {
     mode: PyrolaChatMode
     model: string
     mentions?: ContextMention[]
+    skipUserMessage?: boolean
+    skipUserPersist?: boolean
   }): Promise<void> => {
     if (status.value === 'streaming' || status.value === 'submitted') {
       return
@@ -145,22 +201,31 @@ export default (options: AgentHarnessOptions) => {
       return
     }
 
-    if (!providerId.value) {
+    if (listConfiguredProviders(config.effectiveSettings.value).length === 0) {
       toast.error('No provider configured', {
-        description: 'Set a default provider in Settings.',
+        description: 'Add a provider in Settings.',
       })
+      return
+    }
+
+    const parsedModel = parseModelRef(args.model)
+    if (!parsedModel) {
+      toast.error('Select a valid model before sending')
       return
     }
 
     error.value = null
     status.value = 'submitted'
     toolRuns.value = []
+    subagents.value = []
 
-    chatStore.appendLocalMessage({
-      id: crypto.randomUUID(),
-      role: 'user',
-      parts: [{ type: 'text', text: args.text }],
-    })
+    if (!args.skipUserMessage) {
+      chatStore.appendLocalMessage({
+        id: crypto.randomUUID(),
+        role: 'user',
+        parts: [{ type: 'text', text: args.text }],
+      })
+    }
 
     const turnId = crypto.randomUUID()
     chatStore.startAgentTurn(turnId)
@@ -175,8 +240,8 @@ export default (options: AgentHarnessOptions) => {
         projectRoot: options.projectRoot,
         projectName: options.projectName,
         mode: args.mode,
-        modelId: args.model,
-        providerId: providerId.value,
+        modelId: parsedModel.modelId,
+        providerId: parsedModel.providerId,
         settings: config.effectiveSettings.value,
         messages: chatStore.messages.value,
         userText: args.text,
@@ -184,6 +249,7 @@ export default (options: AgentHarnessOptions) => {
         signal: controller.signal,
         onEvent: handleEvent,
         assistantId: turnId,
+        skipUserPersist: args.skipUserPersist,
       })
       status.value = 'ready'
       chatStore.finishAgentTurn()
@@ -201,6 +267,81 @@ export default (options: AgentHarnessOptions) => {
       })
     } finally {
       abortController.value = null
+    }
+  }
+
+  const submitEditMessage = async (args: {
+    newContent: string
+    mode: PyrolaChatMode
+    model: string
+  }): Promise<void> => {
+    const messageId = chatStore.editingMessageId.value
+    if (!messageId) {
+      return
+    }
+
+    const text = args.newContent.trim()
+    if (!text) {
+      return
+    }
+
+    try {
+      await chatStore.truncateBeforeMessage(
+        options.projectSlug,
+        options.chatId,
+        messageId,
+      )
+      chatStore.cancelEditMessage()
+      await send({
+        text,
+        mode: args.mode,
+        model: args.model,
+      })
+    } catch (error) {
+      toast.error('Failed to edit message', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  }
+
+  const resetToLastQuestion = async (args: {
+    mode: PyrolaChatMode
+    model: string
+  }): Promise<void> => {
+    if (status.value === 'streaming' || status.value === 'submitted') {
+      return
+    }
+
+    const lastUser = chatStore.getLastUserMessage()
+    if (!lastUser) {
+      return
+    }
+
+    const text = lastUser.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .join('')
+      .trim()
+    if (!text) {
+      return
+    }
+
+    try {
+      await chatStore.truncateAfterLastUserMessage(
+        options.projectSlug,
+        options.chatId,
+      )
+      await send({
+        text,
+        mode: args.mode,
+        model: args.model,
+        skipUserMessage: true,
+        skipUserPersist: true,
+      })
+    } catch (error) {
+      toast.error('Failed to reset conversation', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
 
@@ -228,10 +369,14 @@ export default (options: AgentHarnessOptions) => {
     error,
     pendingApprovals,
     toolRuns,
+    subagents,
     liveEvents,
     send,
+    submitEditMessage,
+    resetToLastQuestion,
     stop,
     approve,
     reject,
+    submitAnswer,
   }
 }

@@ -9,7 +9,6 @@ const TOOL_CATEGORY: Record<string, 'file' | 'search' | 'git' | 'command' | 'too
   list_dir: 'file',
   glob_files: 'search',
   grep: 'search',
-  web_search: 'search',
   git_status: 'git',
   git_diff: 'git',
   git_log: 'git',

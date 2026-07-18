@@ -18,7 +18,6 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   terminal_output: 'Read output from a background agent shell',
   stop_terminal: 'Stop a background agent shell',
   web_fetch: 'Fetch a URL',
-  web_search: 'Search the web',
   load_skill: 'Load a project skill by name',
   ask_user: 'Ask the user a clarifying question',
   call_mcp_tool: 'Invoke a tool on a configured MCP server',
@@ -26,7 +25,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   create_plan: 'Create a plan document',
   update_plan_todo: 'Update a plan todo item',
   write_studio_artifact: 'Write a studio artifact',
-  spawn_subagent: 'Run a blocking subagent',
+  spawn_subagent: 'Spawn sub-agent',
 }
 
 export const formatToolCatalogForMode = (mode: PyrolaChatMode): string => {

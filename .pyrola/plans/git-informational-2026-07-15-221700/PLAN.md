@@ -10,16 +10,16 @@ dependsOn:
 todos:
   - id: git-read-tools
     content: Read-only git tools only (status, diff, log, branch) — no git_commit/git_push tools
-    status: pending
+    status: completed
   - id: changes-panel
     content: Changes workbench tab — informational status + per-turn file summaries, no commit UI
-    status: pending
+    status: completed
   - id: branch-context-bar
     content: Show current branch in chat context bar (display only)
-    status: pending
+    status: completed
   - id: no-coauthor
     content: Never add Co-authored-by or co-contributor metadata to commits
-    status: pending
+    status: completed
 ---
 
 ## Summary

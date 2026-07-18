@@ -92,7 +92,7 @@ const setTrayBackground = async (value: boolean): Promise<void> => {
         />
       </div>
       <p class="text-sm text-muted-foreground">
-        Keep agents running when window is closed (tray). Tray support ships in a later step.
+        Keep agents running when the window is closed.
       </p>
     </div>
 

@@ -1,6 +1,7 @@
 import type { ChatStatus, UIMessage } from 'ai'
 import { convertToModelMessages, smoothStream, stepCountIs, streamText } from 'ai'
-import type { HarnessEvent } from '@/types/harness/harness-event'
+import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
+import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import createModel from '@/services/providers/create-model'
@@ -13,8 +14,12 @@ import countContextBudget from '@/services/context/count-context-budget'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { rejectAllPending } from '@/services/harness/approval-gate'
+import { rejectAllPendingQuestions } from '@/services/harness/question-gate'
 import runSideTask from '@/services/harness/run-side-task'
 import enrichToolError from '@/services/harness/enrich-tool-error'
+import deriveToolArtifact from '@/services/harness/derive-tool-artifact'
+import { fileDiffListSchema } from '@/schemas/file-diff'
+import type { FileDiff } from '@/types/harness/file-diff'
 import deriveChatTitle, { isDefaultChatTitle } from '@/utils/derive-chat-title'
 import {
   killShellsForChat,
@@ -36,6 +41,7 @@ export type OrchestratorInput = {
   signal: AbortSignal
   onEvent: (event: HarnessEvent) => void
   assistantId?: string
+  skipUserPersist?: boolean
 }
 
 const MAX_OUTPUT_TOKENS = 8192
@@ -51,6 +57,21 @@ const persistLine = async (
   await appendChatLine(projectSlug, chatId, line)
 }
 
+const deriveToolDiffs = (result: unknown): FileDiff[] | undefined => {
+  if (!result || typeof result !== 'object') {
+    return undefined
+  }
+  const record = result as Record<string, unknown>
+  if (!Array.isArray(record.diffs)) {
+    return undefined
+  }
+  const parsed = fileDiffListSchema.safeParse(record.diffs)
+  if (!parsed.success) {
+    return undefined
+  }
+  return parsed.data
+}
+
 const persistToolRun = async (
   projectSlug: string,
   chatId: string,
@@ -60,6 +81,8 @@ const persistToolRun = async (
   stepId: string,
   args?: unknown,
   result?: unknown,
+  artifact?: ChatArtifact,
+  diffs?: FileDiff[],
 ): Promise<void> => {
   await persistLine(projectSlug, chatId, {
     id: toolCallId,
@@ -74,6 +97,8 @@ const persistToolRun = async (
       stepId,
       args,
       result,
+      ...(artifact ? { artifact } : {}),
+      ...(diffs ? { diffs } : {}),
     },
   })
 }
@@ -94,6 +119,57 @@ const persistStepBoundary = async (
       stepId,
       action,
     },
+  })
+}
+
+const parseTodoUpdate = (name: string, result: unknown): TodoItem[] | null => {
+  if (name !== 'create_plan' && name !== 'update_plan_todo') {
+    return null
+  }
+  if (!result || typeof result !== 'object' || !('todos' in result)) {
+    return null
+  }
+  const todos = (result as { todos: unknown }).todos
+  if (!Array.isArray(todos)) {
+    return null
+  }
+  return todos as TodoItem[]
+}
+
+const persistTodoUpdate = async (
+  projectSlug: string,
+  chatId: string,
+  todos: TodoItem[],
+): Promise<void> => {
+  await persistLine(projectSlug, chatId, {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    parts: [],
+    createdAt: nowIso(),
+    harnessEvent: {
+      type: 'todo-update',
+      todos,
+    },
+  })
+}
+
+const persistSubagentHarnessEvent = async (
+  projectSlug: string,
+  chatId: string,
+  event:
+    | Extract<HarnessEvent, { type: 'subagent-start' }>
+    | Extract<HarnessEvent, { type: 'subagent-result' }>,
+): Promise<void> => {
+  const lineId =
+    event.type === 'subagent-start'
+      ? event.subagentId
+      : `${event.subagentId}-result`
+  await persistLine(projectSlug, chatId, {
+    id: lineId,
+    role: 'assistant',
+    parts: [],
+    createdAt: nowIso(),
+    harnessEvent: event,
   })
 }
 
@@ -165,6 +241,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     signal,
     onEvent,
     assistantId: inputAssistantId,
+    skipUserPersist = false,
   } = input
 
   setAgentShellEventEmitter(onEvent)
@@ -186,7 +263,9 @@ export default async (input: OrchestratorInput): Promise<void> => {
     createdAt: nowIso(),
   }
 
-  await persistLine(projectSlug, chatId, userLine)
+  if (!skipUserPersist) {
+    await persistLine(projectSlug, chatId, userLine)
+  }
 
   onEvent({
     type: 'chat-status-changed',
@@ -220,7 +299,6 @@ export default async (input: OrchestratorInput): Promise<void> => {
     projectSlug,
     chatId,
     prompt: userText,
-    providerId,
     settings,
   }).then((generatedTitle) => {
     if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
@@ -253,6 +331,15 @@ export default async (input: OrchestratorInput): Promise<void> => {
   })
 
   const model = await createModel({ providerId, modelId, settings })
+
+  const handleHarnessEvent = (event: HarnessEvent): void => {
+    if (event.type === 'subagent-start' || event.type === 'subagent-result') {
+      void persistSubagentHarnessEvent(projectSlug, chatId, event)
+    }
+    // subagent-event lines are live-only (like text-delta) and are not persisted.
+    onEvent(event)
+  }
+
   const allTools = buildTools({
     projectRoot,
     projectSlug,
@@ -261,6 +348,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     onPendingApproval: (toolCallId, name, diff) => {
       onEvent({ type: 'tool-pending-approval', toolCallId, name, diff })
     },
+    onHarnessEvent: handleHarnessEvent,
     signal,
   })
   const tools = filterToolsForMode(mode, allTools)
@@ -342,7 +430,16 @@ export default async (input: OrchestratorInput): Promise<void> => {
       return
     }
     completedToolIds.add(toolCallId)
-    onEvent({ type: 'tool-result', toolCallId, result, isError })
+    const artifact = deriveToolArtifact(name, result, args, isError)
+    const diffs = isError ? undefined : deriveToolDiffs(result)
+    onEvent({
+      type: 'tool-result',
+      toolCallId,
+      result,
+      isError,
+      ...(artifact ? { artifact } : {}),
+      ...(diffs ? { diffs } : {}),
+    })
     await persistToolRun(
       projectSlug,
       chatId,
@@ -352,7 +449,16 @@ export default async (input: OrchestratorInput): Promise<void> => {
       currentStepId,
       args,
       result,
+      artifact,
+      diffs,
     )
+    if (!isError) {
+      const todos = parseTodoUpdate(name, result)
+      if (todos) {
+        onEvent({ type: 'todo-update', todos })
+        await persistTodoUpdate(projectSlug, chatId, todos)
+      }
+    }
   }
 
   try {
@@ -367,6 +473,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
       abortSignal: signal,
       onAbort: async () => {
         rejectAllPending()
+        rejectAllPendingQuestions()
         await killShellsForChat(chatId)
         if (trailingText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
@@ -524,6 +631,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     }
   } finally {
     rejectAllPending()
+    rejectAllPendingQuestions()
     setAgentShellEventEmitter(null)
     onEvent({
       type: 'chat-status-changed',

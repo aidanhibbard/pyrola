@@ -8,16 +8,33 @@ import type {
   StudioPayload,
   TerminalPayload,
   WorkbenchTab,
+  WorkbenchTabType,
 } from '@/types/workbench/workbench-tab'
+import type { PyrolaDuplicateTabBehavior } from '@/types/pyrola/pyrola-settings'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
 import { shellKillPty, shellWritePty } from '@/services/pyrola/pyrola-tauri'
+
+type DuplicateTabResolution = 'existing' | 'new'
+
+type PromptableTabType = Exclude<WorkbenchTabType, 'plan' | 'studio'>
+
+type ResolveWorkbenchTabOpenParams = {
+  projectId: string
+  type: PromptableTabType
+  predicate: (tab: WorkbenchTab) => boolean
+}
 
 const tabs = ref<WorkbenchTab[]>([])
 const activeTabId = ref<string | null>(null)
 const rightSidebarOpen = ref(false)
 const terminalSessions = new Map<string, string>()
 const tabRefreshTokens = ref<Record<string, number>>({})
+const duplicateDialogOpen = ref(false)
+const duplicateDialogTabType = ref<PromptableTabType>('editor')
+
+let duplicateDialogResolve: ((value: DuplicateTabResolution) => void) | null = null
 
 const createId = (): string => crypto.randomUUID()
 
@@ -55,22 +72,158 @@ const updateTab = (id: string, patch: Partial<WorkbenchTab>): void => {
   tabs.value[index] = { ...tabs.value[index]!, ...patch }
 }
 
-const updateEditorPath = (tabId: string, path: string): void => {
+const normalizeEditorPayload = (payload: EditorPayload): EditorPayload => {
+  const openPaths =
+    payload.openPaths && payload.openPaths.length > 0
+      ? payload.openPaths
+      : payload.path
+        ? [payload.path]
+        : []
+  const path = openPaths.includes(payload.path) ? payload.path : (openPaths[0] ?? '')
+  return { path, openPaths }
+}
+
+const addEditorFile = (tabId: string, path: string): void => {
   const tab = tabs.value.find((item) => item.id === tabId)
   if (!tab || tab.type !== 'editor') {
     return
   }
+
+  const payload = normalizeEditorPayload(tab.payload as EditorPayload)
+  const openPaths = payload.openPaths.includes(path) ? payload.openPaths : [...payload.openPaths, path]
   const fileName = path.split('/').pop() ?? path
+
   updateTab(tabId, {
     label: fileName,
-    payload: { path } satisfies EditorPayload,
+    payload: { path, openPaths } satisfies EditorPayload,
   })
 }
 
-const openEditor = (projectId: string, path: string): void => {
-  const existing = findTab((tab) => tab.type === 'editor' && tab.projectId === projectId)
+const setEditorActivePath = (tabId: string, path: string): void => {
+  const tab = tabs.value.find((item) => item.id === tabId)
+  if (!tab || tab.type !== 'editor') {
+    return
+  }
+
+  const payload = normalizeEditorPayload(tab.payload as EditorPayload)
+  if (!payload.openPaths.includes(path)) {
+    return
+  }
+
+  const fileName = path.split('/').pop() ?? path
+  updateTab(tabId, {
+    label: fileName,
+    payload: { path, openPaths: payload.openPaths } satisfies EditorPayload,
+  })
+}
+
+const closeEditorFile = async (tabId: string, path: string): Promise<void> => {
+  const tab = tabs.value.find((item) => item.id === tabId)
+  if (!tab || tab.type !== 'editor') {
+    return
+  }
+
+  const payload = normalizeEditorPayload(tab.payload as EditorPayload)
+  const openPaths = payload.openPaths.filter((item) => item !== path)
+
+  if (openPaths.length === 0) {
+    await closeTab(tabId)
+    return
+  }
+
+  const nextPath =
+    payload.path === path ? openPaths[openPaths.length - 1]! : payload.path
+  const fileName = nextPath.split('/').pop() ?? nextPath
+
+  updateTab(tabId, {
+    label: fileName,
+    payload: { path: nextPath, openPaths } satisfies EditorPayload,
+  })
+}
+
+const setEditorTabDirty = (tabId: string, dirty: boolean): void => {
+  updateTab(tabId, { dirty })
+}
+
+const resolveWorkbenchTabOpen = async (
+  params: ResolveWorkbenchTabOpenParams,
+): Promise<DuplicateTabResolution> => {
+  const existing = findTab(params.predicate)
+  if (!existing) {
+    return 'new'
+  }
+
+  const config = usePyrolaConfig()
+  const behavior =
+    config.effectiveSettings.value['workbench.duplicateTabBehavior'] ?? 'ask'
+
+  if (behavior === 'open-existing') {
+    return 'existing'
+  }
+  if (behavior === 'open-new') {
+    return 'new'
+  }
+
+  if (duplicateDialogOpen.value) {
+    return 'new'
+  }
+
+  duplicateDialogTabType.value = params.type
+  duplicateDialogOpen.value = true
+
+  return new Promise<DuplicateTabResolution>((resolve) => {
+    duplicateDialogResolve = resolve
+  })
+}
+
+const confirmDuplicateTabChoice = async (
+  choice: DuplicateTabResolution,
+  dontAskAgain: boolean,
+): Promise<void> => {
+  if (!duplicateDialogResolve) {
+    return
+  }
+
+  const resolve = duplicateDialogResolve
+  duplicateDialogResolve = null
+  duplicateDialogOpen.value = false
+  resolve(choice)
+
+  if (!dontAskAgain) {
+    return
+  }
+
+  const behavior: PyrolaDuplicateTabBehavior =
+    choice === 'existing' ? 'open-existing' : 'open-new'
+
+  try {
+    const config = usePyrolaConfig()
+    await config.updateSetting('personal', 'workbench.duplicateTabBehavior', behavior)
+  } catch (error) {
+    toast.error('Failed to save preference', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const cancelDuplicateTabDialog = (): void => {
+  if (!duplicateDialogResolve) {
+    duplicateDialogOpen.value = false
+    return
+  }
+
+  const resolve = duplicateDialogResolve
+  duplicateDialogResolve = null
+  duplicateDialogOpen.value = false
+  resolve('new')
+}
+
+const openEditor = async (projectId: string, path: string): Promise<void> => {
+  const predicate = (tab: WorkbenchTab) => tab.type === 'editor' && tab.projectId === projectId
+  const existing = findTab(predicate)
+
   if (existing) {
-    updateEditorPath(existing.id, path)
+    addEditorFile(existing.id, path)
     focusTab(existing.id)
     return
   }
@@ -81,13 +234,28 @@ const openEditor = (projectId: string, path: string): void => {
     type: 'editor',
     projectId,
     label: fileName,
-    payload: { path } satisfies EditorPayload,
+    payload: { path, openPaths: [path] } satisfies EditorPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)
 }
 
-const openTerminal = (projectId: string, label?: string): void => {
+const openTerminal = async (projectId: string, label?: string): Promise<void> => {
+  const predicate = (tab: WorkbenchTab) => tab.type === 'terminal' && tab.projectId === projectId
+  const existing = findTab(predicate)
+
+  if (existing) {
+    const resolution = await resolveWorkbenchTabOpen({
+      projectId,
+      type: 'terminal',
+      predicate,
+    })
+    if (resolution === 'existing') {
+      focusTab(existing.id)
+      return
+    }
+  }
+
   const project = getProject(projectId)
   const tabLabel = label ?? project?.slug ?? 'Terminal'
   const tab: WorkbenchTab = {
@@ -151,11 +319,20 @@ const openStudio = (
   focusTab(tab.id)
 }
 
-const openChanges = (projectId: string): void => {
-  const existing = findTab((tab) => tab.type === 'changes' && tab.projectId === projectId)
+const openChanges = async (projectId: string): Promise<void> => {
+  const predicate = (tab: WorkbenchTab) => tab.type === 'changes' && tab.projectId === projectId
+  const existing = findTab(predicate)
+
   if (existing) {
-    focusTab(existing.id)
-    return
+    const resolution = await resolveWorkbenchTabOpen({
+      projectId,
+      type: 'changes',
+      predicate,
+    })
+    if (resolution === 'existing') {
+      focusTab(existing.id)
+      return
+    }
   }
 
   const tab: WorkbenchTab = {
@@ -169,16 +346,23 @@ const openChanges = (projectId: string): void => {
   focusTab(tab.id)
 }
 
-const openBrowser = (projectId: string, url: string): void => {
-  const existing = findTab(
-    (tab) =>
-      tab.type === 'browser' &&
-      tab.projectId === projectId &&
-      (tab.payload as BrowserPayload).url === url,
-  )
+const openBrowser = async (projectId: string, url: string): Promise<void> => {
+  const predicate = (tab: WorkbenchTab) =>
+    tab.type === 'browser' &&
+    tab.projectId === projectId &&
+    (tab.payload as BrowserPayload).url === url
+  const existing = findTab(predicate)
+
   if (existing) {
-    focusTab(existing.id)
-    return
+    const resolution = await resolveWorkbenchTabOpen({
+      projectId,
+      type: 'browser',
+      predicate,
+    })
+    if (resolution === 'existing') {
+      focusTab(existing.id)
+      return
+    }
   }
 
   let label = url
@@ -324,6 +508,8 @@ export default () => ({
   rightSidebarOpen,
   tabRefreshTokens,
   hasMultipleProjects,
+  duplicateDialogOpen,
+  duplicateDialogTabType,
   focusTab,
   openEditor,
   openTerminal,
@@ -344,4 +530,10 @@ export default () => ({
   toggleRightSidebar,
   getProject,
   resolveProjectIdByRoot,
+  confirmDuplicateTabChoice,
+  cancelDuplicateTabDialog,
+  addEditorFile,
+  setEditorActivePath,
+  closeEditorFile,
+  setEditorTabDirty,
 })

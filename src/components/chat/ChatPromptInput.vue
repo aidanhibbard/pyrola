@@ -2,22 +2,14 @@
 import { computed, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
-import { FolderIcon, ChevronDownIcon } from '@lucide/vue'
+import { FolderIcon, ChevronDownIcon, RotateCcwIcon, XIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
-import { Input } from '@/components/shadcn/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/shadcn/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/shadcn/ui/select'
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -33,21 +25,20 @@ import {
 } from '@/components/ai-elements/prompt-input'
 import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
+import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
+import ModelsSearchModelSearchPicker from '@/components/models/search/ModelSearchPicker.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
 import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
-import { listProviderModels } from '@/services/providers/list-provider-models'
-import {
-  getProviderCatalogEntry,
-  keychainKeyForProvider,
-  providerRequiresApiKey,
-} from '@/services/providers/registry'
-import { getSecret } from '@/services/pyrola/pyrola-tauri'
+import resolveModelForRole from '@/services/models/resolve-model-for-role'
+import listConfiguredProviders from '@/services/providers/list-configured-providers'
+import { normalizeStoredModelRef } from '@/schemas/pyrola-settings'
+import parseModelRef from '@/utils/parse-model-ref'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/types'
-import type { PyrolaChatMode, PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const props = withDefaults(
   defineProps<{
@@ -66,6 +57,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   submit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
+  submitEdit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
+  reset: [payload: { mode: PyrolaChatMode; model: string }]
   stop: []
 }>()
 
@@ -77,39 +70,19 @@ const contextUsage = useContextUsage()
 
 const session = reactive<{
   selectedMode: PyrolaChatMode
-  selectedModel: string
+  selectedModelRef: string
   modeInitialized: boolean
   modelInitialized: boolean
 }>({
   selectedMode: 'agent',
-  selectedModel: '',
+  selectedModelRef: '',
   modeInitialized: false,
   modelInitialized: false,
 })
 
-const modelPicker = reactive<{
-  search: string
-  providerModels: string[]
-  loading: boolean
-}>({
-  search: '',
-  providerModels: [],
-  loading: false,
-})
-
-let modelsLoadGeneration = 0
-
-const defaultProvider = computed(
-  () => config.effectiveSettings.value['agent.defaultProvider'] ?? '',
+const hasProviders = computed(
+  () => listConfiguredProviders(config.effectiveSettings.value).length > 0,
 )
-
-const filteredProviderModels = computed(() => {
-  const query = modelPicker.search.trim().toLowerCase()
-  if (!query) {
-    return modelPicker.providerModels
-  }
-  return modelPicker.providerModels.filter((model) => model.toLowerCase().includes(query))
-})
 
 const selectedModeMeta = computed(() => getChatModeMeta(session.selectedMode))
 
@@ -117,97 +90,45 @@ const activeProjectName = computed(
   () => fleet.activeProject.value?.name ?? 'No project',
 )
 
-const displayModelLabel = computed(() => {
-  if (!session.selectedModel) {
-    return ''
-  }
-  const segments = session.selectedModel.split('/')
-  return segments[segments.length - 1] ?? session.selectedModel
-})
-
 const submitStatus = computed((): ChatStatus => props.status)
 
-const getCustomProvider = (providerId: string): PyrolaCustomProvider | undefined => {
-  const customKey = `providers.custom.${providerId}` as const
-  return config.effectiveSettings.value[customKey] as PyrolaCustomProvider | undefined
-}
+const isEditing = computed(() => chatStore.editingMessageId.value !== null)
 
-const getApiKeyRef = (providerId: string): string | undefined => {
-  const custom = getCustomProvider(providerId)
-  if (custom?.apiKeyRef) {
-    return custom.apiKeyRef
+const canReset = computed(() => chatStore.canResetToLastQuestion.value)
+
+const isAgentBusy = computed(
+  () => props.status === 'streaming' || props.status === 'submitted',
+)
+
+const resolvedModelIdForContext = computed(() => {
+  const parsed = parseModelRef(session.selectedModelRef)
+  if (parsed) {
+    return parsed.modelId
   }
-  const key = `providers.${providerId}.apiKeyRef` as const
-  return config.effectiveSettings.value[key]
-}
+  return session.selectedModelRef
+})
 
-const loadProviderModels = async (providerId: string): Promise<void> => {
-  const generation = ++modelsLoadGeneration
+const resolveInitialModelRef = (mode: PyrolaChatMode, metaModel?: string): string => {
+  const settings = config.effectiveSettings.value
+  const normalizedMeta = metaModel
+    ? normalizeStoredModelRef(metaModel) ?? metaModel
+    : undefined
 
-  if (!providerId) {
-    modelPicker.providerModels = []
-    modelPicker.loading = false
-    return
+  if (normalizedMeta) {
+    return normalizedMeta
   }
 
-  modelPicker.loading = true
-
-  try {
-    const custom = getCustomProvider(providerId)
-    const catalogEntry = getProviderCatalogEntry(providerId)
-    const requiresKey = custom ? false : providerRequiresApiKey(providerId)
-
-    let apiKey = ''
-    const apiKeyRef = getApiKeyRef(providerId)
-    if (apiKeyRef) {
-      apiKey = (await getSecret(keychainKeyForProvider(apiKeyRef))) ?? ''
-    }
-
-    if (requiresKey && !apiKey) {
-      if (generation !== modelsLoadGeneration) {
-        return
-      }
-      modelPicker.providerModels = catalogEntry?.models ?? []
-      return
-    }
-
-    const models = await listProviderModels({
-      providerId: custom ? 'openai' : providerId,
-      catalogProviderId: providerId,
-      apiKey,
-      baseUrl: custom?.baseURL ?? catalogEntry?.defaultBaseUrl,
-    })
-
-    if (generation !== modelsLoadGeneration) {
-      return
-    }
-
-    const merged = [...models]
-    const defaultModel = config.effectiveSettings.value['agent.defaultModel']
-    if (defaultModel && !merged.includes(defaultModel)) {
-      merged.unshift(defaultModel)
-    }
-    if (session.selectedModel && !merged.includes(session.selectedModel)) {
-      merged.unshift(session.selectedModel)
-    }
-    modelPicker.providerModels = merged
-  } catch (error) {
-    if (generation !== modelsLoadGeneration) {
-      return
-    }
-    modelPicker.providerModels = getProviderCatalogEntry(providerId)?.models ?? []
-    toast.error('Could not load models', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  } finally {
-    if (generation === modelsLoadGeneration) {
-      modelPicker.loading = false
-    }
-  }
+  return resolveModelForRole(mode, settings) ?? ''
 }
 
 const handleModeSelect = (mode: PyrolaChatMode): void => {
   session.selectedMode = mode
+  if (!session.selectedModelRef) {
+    const resolved = resolveModelForRole(mode, config.effectiveSettings.value)
+    if (resolved) {
+      session.selectedModelRef = resolved
+    }
+  }
 }
 
 const handleProjectSelect = async (projectId: string): Promise<void> => {
@@ -220,15 +141,9 @@ const handleProjectSelect = async (projectId: string): Promise<void> => {
   }
 }
 
-const handleModelChange = (value: unknown): void => {
-  if (typeof value === 'string' && value.length > 0) {
-    session.selectedModel = value
-  }
-}
-
-const handleModelOpenChange = (open: boolean): void => {
-  if (!open) {
-    modelPicker.search = ''
+const handleModelChange = (value: string): void => {
+  if (value.length > 0) {
+    session.selectedModelRef = value
   }
 }
 
@@ -241,14 +156,37 @@ const handleSubmit = (payload: PromptInputMessage): void => {
   if (!text || props.disabled) {
     return
   }
-  if (!session.selectedModel) {
+  if (!session.selectedModelRef) {
     toast.error('Select a model before sending')
     return
   }
-  emit('submit', {
+  const submitPayload = {
     text,
     mode: session.selectedMode,
-    model: session.selectedModel,
+    model: session.selectedModelRef,
+  }
+  if (isEditing.value) {
+    emit('submitEdit', submitPayload)
+    return
+  }
+  emit('submit', submitPayload)
+}
+
+const handleCancelEdit = (): void => {
+  chatStore.cancelEditMessage()
+}
+
+const handleReset = (): void => {
+  if (!canReset.value || isAgentBusy.value || props.disabled) {
+    return
+  }
+  if (!session.selectedModelRef) {
+    toast.error('Select a model before resetting')
+    return
+  }
+  emit('reset', {
+    mode: session.selectedMode,
+    model: session.selectedModelRef,
   })
 }
 
@@ -258,13 +196,14 @@ const refreshContextBudget = async (): Promise<void> => {
   }
 
   const project = fleet.activeProject.value
-  const model = session.selectedModel || chatStore.meta.value?.model || ''
-  if (!project || !model) {
+  const modelId =
+    resolvedModelIdForContext.value || chatStore.meta.value?.model || ''
+  if (!project || !modelId) {
     return
   }
 
   await contextUsage.refresh({
-    modelId: model,
+    modelId,
     mode: session.selectedMode,
     projectName: project.name,
     projectRoot: project.rootPath,
@@ -283,20 +222,15 @@ watch(
       session.modeInitialized = true
     }
     if (!session.modelInitialized) {
-      const model = config.effectiveSettings.value['agent.defaultModel']
-      if (model) {
-        session.selectedModel = model
+      const resolved = resolveInitialModelRef(session.selectedMode)
+      if (resolved) {
+        session.selectedModelRef = resolved
       }
       session.modelInitialized = true
     }
   },
   { immediate: true },
 )
-
-watch(defaultProvider, async (providerId) => {
-  modelPicker.search = ''
-  await loadProviderModels(providerId)
-}, { immediate: true })
 
 watch(
   () => chatStore.meta.value,
@@ -305,7 +239,11 @@ watch(
       return
     }
     if (meta.model) {
-      session.selectedModel = meta.model
+      const normalized =
+        normalizeStoredModelRef(meta.model) ?? meta.model
+      session.selectedModelRef = normalized.includes('::')
+        ? normalized
+        : resolveInitialModelRef(meta.mode ?? session.selectedMode, undefined)
     }
     if (meta.mode) {
       session.selectedMode = meta.mode
@@ -317,14 +255,18 @@ watch(
 watch(
   [
     () => props.showContextUsage,
-    () => session.selectedModel,
+    () => session.selectedModelRef,
     () => session.selectedMode,
     () => chatStore.messages.value.length,
     () => fleet.activeProject.value?.id,
     () => chatStore.meta.value?.model,
   ],
   () => {
-    void refreshContextBudget()
+    refreshContextBudget().catch((error) => {
+      toast.error('Failed to refresh context usage', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
   },
   { immediate: true },
 )
@@ -356,6 +298,23 @@ watch(
       </DropdownMenuContent>
     </DropdownMenu>
 
+    <div
+      v-if="isEditing"
+      class="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground"
+    >
+      <span>Editing message</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="h-7 gap-1 px-2"
+        @click="handleCancelEdit"
+      >
+        <XIcon class="size-3.5" />
+        Cancel
+      </Button>
+    </div>
+
     <PromptInput
       accept="image/*"
       class="w-full [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-border/50 [&_[data-slot=input-group]]:bg-background [&_[data-slot=input-group]]:shadow-sm"
@@ -363,6 +322,7 @@ watch(
       @submit="handleSubmit"
     >
       <PromptInputBody>
+        <ChatPromptEditSync />
         <PromptInputTextarea
           class="max-h-28 min-h-10 resize-none py-2.5"
           placeholder="Plan, build, / for skills, @ for context"
@@ -398,51 +358,26 @@ watch(
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
         </PromptInputTools>
-        <PromptInputTools class="ml-auto shrink-0 items-center gap-4">
-          <Select
-            :model-value="session.selectedModel"
-            :disabled="!defaultProvider || modelPicker.loading || disabled"
-            @update:model-value="handleModelChange"
-            @update:open="handleModelOpenChange"
+        <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
+          <Button
+            v-if="canReset"
+            type="button"
+            variant="ghost"
+            size="icon"
+            class="size-8 shrink-0"
+            title="Reset to last question"
+            :disabled="disabled || isAgentBusy"
+            @click="handleReset"
           >
-            <SelectTrigger
-              class="h-8 w-auto max-w-none shrink-0 border-0 bg-transparent px-2 shadow-none focus:ring-0 [&_[data-slot=select-value]]:line-clamp-none"
-              :title="session.selectedModel || 'No model'"
-            >
-              <SelectValue :placeholder="defaultProvider ? 'Select model' : 'No model'">
-                {{ displayModelLabel }}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent class="w-72 p-0">
-              <div class="border-b border-border/50 p-2" @pointerdown.stop>
-                <Input
-                  v-model="modelPicker.search"
-                  placeholder="Search models…"
-                  class="h-8"
-                  @keydown.stop
-                />
-              </div>
-              <div class="max-h-72 overflow-y-auto p-1">
-                <SelectItem
-                  v-for="model in filteredProviderModels"
-                  :key="model"
-                  :value="model"
-                >
-                  {{ model }}
-                </SelectItem>
-                <p
-                  v-if="!modelPicker.loading && filteredProviderModels.length === 0"
-                  class="px-2 py-4 text-center text-sm text-muted-foreground"
-                >
-                  {{
-                    modelPicker.search.trim()
-                      ? 'No models match your search.'
-                      : 'No models available.'
-                  }}
-                </p>
-              </div>
-            </SelectContent>
-          </Select>
+            <RotateCcwIcon class="size-4" />
+          </Button>
+          <ModelsSearchModelSearchPicker
+            :model-value="session.selectedModelRef"
+            compact
+            :disabled="!hasProviders || disabled"
+            placeholder="Select model"
+            @update:model-value="handleModelChange"
+          />
           <PromptInputSubmit
             class="ml-1 shrink-0"
             :status="submitStatus"

@@ -30,6 +30,7 @@ const harnessStatus = computed((): ChatStatus => unref(harness.value?.status) ??
 const harnessPendingApprovals = computed(
   () => unref(harness.value?.pendingApprovals) ?? [],
 )
+const pendingQuestion = computed(() => chatStore.pendingQuestion.value)
 const timeline = computed(() => chatStore.timeline.value)
 
 const initHarness = (): void => {
@@ -103,6 +104,42 @@ const handleSubmit = async (payload: {
   await fleetSidebar.refreshAll()
 }
 
+const handleSubmitEdit = async (payload: {
+  text: string
+  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  model: string
+}): Promise<void> => {
+  if (!harness.value) {
+    toast.error('Chat is not ready yet', {
+      description: 'Wait for the project to finish loading.',
+    })
+    return
+  }
+  await harness.value.submitEditMessage({
+    newContent: payload.text,
+    mode: payload.mode,
+    model: payload.model,
+  })
+  await fleetSidebar.refreshAll()
+}
+
+const handleReset = async (payload: {
+  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  model: string
+}): Promise<void> => {
+  if (!harness.value) {
+    toast.error('Chat is not ready yet', {
+      description: 'Wait for the project to finish loading.',
+    })
+    return
+  }
+  await harness.value.resetToLastQuestion({
+    mode: payload.mode,
+    model: payload.model,
+  })
+  await fleetSidebar.refreshAll()
+}
+
 const handleStop = (): void => {
   harness.value?.stop()
 }
@@ -113,6 +150,10 @@ const handleApprove = (toolCallId: string): void => {
 
 const handleReject = (toolCallId: string): void => {
   harness.value?.reject(toolCallId)
+}
+
+const handleSubmitAnswer = (toolCallId: string, answer: string): void => {
+  harness.value?.submitAnswer(toolCallId, answer)
 }
 
 onMounted(() => {
@@ -147,8 +188,10 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
       :timeline="timeline"
       :status="harnessStatus"
       :pending-approvals="harnessPendingApprovals"
+      :pending-question="pendingQuestion"
       @approve="handleApprove"
       @reject="handleReject"
+      @submit-answer="handleSubmitAnswer"
     />
     <div class="shrink-0 px-4 pb-4 pt-2">
       <ChatPromptInput
@@ -156,6 +199,8 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
         :disabled="!threadReady"
         show-context-usage
         @submit="handleSubmit"
+        @submit-edit="handleSubmitEdit"
+        @reset="handleReset"
         @stop="handleStop"
       />
     </div>

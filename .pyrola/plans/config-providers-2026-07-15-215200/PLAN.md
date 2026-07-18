@@ -8,19 +8,19 @@ dependsOn: contracts-2026-07-15-215200
 todos:
   - id: config-loader
     content: Load and merge ~/.pyrola + .pyrola settings (project wins)
-    status: pending
+    status: completed
   - id: settings-ui
     content: "Deferred to settings-ui plan — Personal + Project tabs, full provider/MCP UI"
-    status: pending
+    status: completed
   - id: provider-registry
     content: Provider registry wrapping @ai-sdk/* packages
-    status: pending
+    status: completed
   - id: http-proxy
     content: Rust reqwest HTTP proxy for arbitrary provider endpoints (CSP bypass)
-    status: pending
+    status: completed
   - id: keychain
     content: Tauri keychain commands (get_secret, set_secret, delete_secret)
-    status: pending
+    status: completed
 ---
 
 ## Summary

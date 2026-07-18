@@ -82,8 +82,10 @@ export const removeSectionOverrides = (
   const next: PyrolaSettings = { version: 1 }
   const prefixes =
     sectionPrefix === 'providers'
-      ? ['providers.', 'agent.defaultProvider', 'agent.defaultModel']
-      : [`${sectionPrefix}.`]
+      ? ['providers.']
+      : sectionPrefix === 'models'
+        ? ['models.']
+        : [`${sectionPrefix}.`]
 
   for (const [key, value] of Object.entries(settings)) {
     if (key === 'version') {

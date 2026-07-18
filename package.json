@@ -32,6 +32,7 @@
     "@tailwindcss/vite": "^4.3.2",
     "@tanstack/vue-table": "^8.21.3",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@unovis/vue": "^1.6.7",
     "@vee-validate/zod": "^4.15.1",

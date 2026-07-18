@@ -13,8 +13,8 @@ status: draft
 
 ## Summary
 `)
-    expect(parsed.frontmatter.title).toBe('Launch Brief')
-    expect(parsed.frontmatter.status).toBe('draft')
+    expect(parsed.frontmatter?.title).toBe('Launch Brief')
+    expect(parsed.frontmatter?.status).toBe('draft')
     expect(parsed.body).toContain('## Summary')
   })
 
@@ -22,8 +22,19 @@ status: draft
     const original = serializeStudioArtifact({ title: 'Old', status: 'draft' }, 'Body')
     const next = updateStudioFrontmatter(original, { title: 'New', status: 'published' })
     const parsed = parseStudioArtifact(next)
-    expect(parsed.frontmatter.title).toBe('New')
-    expect(parsed.frontmatter.status).toBe('published')
+    expect(parsed.frontmatter?.title).toBe('New')
+    expect(parsed.frontmatter?.status).toBe('published')
     expect(parsed.body).toBe('Body')
+  })
+
+  it('returns parseError for invalid frontmatter', () => {
+    const parsed = parseStudioArtifact(`---
+status: published
+---
+
+Body
+`)
+    expect(parsed.parseError).toMatch(/title is required/)
+    expect(parsed.frontmatter).toBeNull()
   })
 })

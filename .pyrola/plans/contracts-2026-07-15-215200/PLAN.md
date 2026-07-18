@@ -7,16 +7,16 @@ parent: pyrola-master-plan-2026-07-15-215200
 todos:
   - id: harness-event
     content: Define HarnessEvent IPC envelope (text-delta, tool-start, tool-result, todo-update, plan-write)
-    status: pending
+    status: completed
   - id: projects-registry
     content: Zod schema for projects.json + active-project.json (JSON fleet registry)
-    status: pending
+    status: completed
   - id: config-schemas
     content: Zod schemas for settings.json + mcp.json merge logic
-    status: pending
+    status: completed
   - id: ui-alias
     content: Fix @/components/ui → @/components/shadcn/ui alias in vite.config.ts
-    status: pending
+    status: completed
 ---
 
 ## Summary

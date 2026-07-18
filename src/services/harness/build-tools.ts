@@ -1,5 +1,7 @@
-import { tool } from 'ai'
+import { generateText, stepCountIs, tool } from 'ai'
 import { z } from 'zod'
+import createModel from '@/services/providers/create-model'
+import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
 import gitRepoInfo from '@/services/git/git-repo-info'
 import {
   fsApplyPatch,
@@ -35,7 +37,7 @@ import createPlan from '@/services/plans/write-plan'
 import parsePlan from '@/services/plans/parse-plan'
 import { updatePlanTodos } from '@/services/plans/write-plan'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import type { PlanTodoItem } from '@/types/workbench/workbench-tab'
+import { planTodoItemSchema } from '@/schemas/plan-document'
 import {
   createAgentShell,
   getAgentShell,
@@ -45,8 +47,12 @@ import {
 } from '@/services/harness/agent-shell-registry'
 import { loadSkill } from '@/services/skills/skill-registry'
 import isStudioHtmlContent from '@/services/studio/is-studio-html-content'
+import parseStudioArtifact from '@/services/studio/parse-studio-artifact'
+import validateStudioBlocks from '@/services/studio/validate-studio-blocks'
 import validateStudioSlug from '@/services/studio/validate-studio-slug'
+import studioDataSchema from '@/schemas/studio/studio-data'
 import type { HarnessEvent } from '@/types/harness/harness-event'
+import { requestQuestion } from '@/services/harness/question-gate'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -75,6 +81,24 @@ const mapDiffs = (raw: FileDiffRecord[]): FileDiff[] =>
   }))
 
 const DEFAULT_BLOCKING_TIMEOUT_MS = 120_000
+const SUBAGENT_MAX_OUTPUT_TOKENS = 8192
+const SUBAGENT_MAX_STEPS = 15
+
+const SUBAGENT_READ_ONLY_TOOLS = [
+  'read_file',
+  'list_dir',
+  'grep',
+  'glob_files',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_branch',
+  'lsp',
+  'web_fetch',
+  'load_skill',
+  'call_mcp_tool',
+  'get_mcp_tools',
+] as const
 
 const runTerminalCommand = async (
   ctx: HarnessToolContext,
@@ -161,7 +185,7 @@ const readTerminalOutput = async (
   }
 }
 
-export default (ctx: HarnessToolContext) => ({
+const buildHarnessTools = (ctx: HarnessToolContext) => ({
   read_file: tool({
     description: 'Read a file from the workspace',
     inputSchema: z.object({
@@ -230,7 +254,7 @@ export default (ctx: HarnessToolContext) => ({
         }
       }
       await fsWriteFile({ projectRoot: ctx.projectRoot, path, content })
-      return { ok: true, path }
+      return { ok: true, path, diffs }
     },
   }),
   edit_file: tool({
@@ -265,7 +289,7 @@ export default (ctx: HarnessToolContext) => ({
         path,
         replacements,
       })
-      return { ok: true, path }
+      return { ok: true, path, diffs }
     },
   }),
   apply_patch: tool({
@@ -289,7 +313,7 @@ export default (ctx: HarnessToolContext) => ({
         }
       }
       await fsApplyPatch({ projectRoot: ctx.projectRoot, patch })
-      return { ok: true, paths }
+      return { ok: true, paths, diffs }
     },
   }),
   call_mcp_tool: tool({
@@ -347,17 +371,22 @@ export default (ctx: HarnessToolContext) => ({
       question: z.string(),
       options: z.array(z.string()).optional(),
     }),
-    execute: async ({ question, options }) => ({ question, options, pending: true }),
-  }),
-  web_search: tool({
-    description: 'Search the web (BYOK)',
-    inputSchema: z.object({ query: z.string() }),
-    execute: async ({ query }) => ({
-      query,
-      results: [],
-      configured: false,
-      note: 'Configure search provider in settings',
-    }),
+    execute: async ({ question, options }, { toolCallId }) => {
+      if (ctx.signal?.aborted) {
+        throw new Error('Question aborted')
+      }
+      ctx.onHarnessEvent?.({
+        type: 'question-request',
+        toolCallId,
+        question,
+        options,
+      })
+      const answer = await requestQuestion(toolCallId, question, options)
+      if (ctx.signal?.aborted) {
+        throw new Error('Question aborted')
+      }
+      return { question, answer, options }
+    },
   }),
   load_skill: tool({
     description: 'Load the full instructions for a skill by name',
@@ -375,29 +404,23 @@ export default (ctx: HarnessToolContext) => ({
       }
     },
   }),
-  spawn_subagent: tool({
-    description: 'Spawn a blocking subagent',
-    inputSchema: z.object({
-      agentName: z.string(),
-      prompt: z.string(),
-      blocking: z.boolean().default(true),
-    }),
-    execute: async ({ agentName }): Promise<{ error: true }> => {
-      throw new Error(`spawn_subagent is not implemented yet (${agentName})`)
-    },
-  }),
   create_plan: tool({
     description: 'Create a plan file',
-    inputSchema: z.object({ title: z.string(), body: z.string() }),
-    execute: async ({ title, body }) => {
-      const plan = createPlan({ title, body, sourceChatId: ctx.chatId })
+    inputSchema: z.object({
+      title: z.string(),
+      body: z.string(),
+      todos: z.array(planTodoItemSchema).optional(),
+    }),
+    execute: async ({ title, body, todos }) => {
+      const planTodos = todos ?? []
+      const plan = createPlan({ title, body, todos: planTodos, sourceChatId: ctx.chatId })
       await fsWriteFile({ projectRoot: ctx.projectRoot, path: plan.path, content: plan.content })
       const workbench = useWorkbenchStore()
       const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
       if (projectId) {
         workbench.openPlan(projectId, plan.planId, plan.path, title)
       }
-      return { planId: plan.planId, path: plan.path }
+      return { planId: plan.planId, path: plan.path, todos: planTodos }
     },
   }),
   update_plan_todo: tool({
@@ -415,12 +438,15 @@ export default (ctx: HarnessToolContext) => ({
     execute: async ({ planPath, todos }) => {
       const existing = await fsReadFile({ projectRoot: ctx.projectRoot, path: planPath })
       const parsed = parsePlan(existing.content)
-      const nextContent = updatePlanTodos(existing.content, todos as PlanTodoItem[])
+      if (parsed.parseError) {
+        throw new Error(parsed.parseError)
+      }
+      const nextContent = updatePlanTodos(existing.content, todos)
       await fsWriteFile({ projectRoot: ctx.projectRoot, path: planPath, content: nextContent })
       const workbench = useWorkbenchStore()
       const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
       if (projectId) {
-        workbench.openPlan(projectId, parsed.frontmatter.id, planPath, parsed.frontmatter.title)
+        workbench.openPlan(projectId, parsed.frontmatter!.id, planPath, parsed.frontmatter!.title)
         workbench.refreshPlanStudioTabs()
       }
       return { planPath, todos }
@@ -443,6 +469,23 @@ export default (ctx: HarnessToolContext) => ({
         return {
           error:
             'Studio artifacts must be Comark markdown, not HTML. Call load_skill("studio") for block syntax.',
+        }
+      }
+
+      const parsed = parseStudioArtifact(content)
+      if (parsed.parseError) {
+        return { error: parsed.parseError }
+      }
+
+      const blockError = await validateStudioBlocks(parsed.body)
+      if (blockError) {
+        return { error: blockError }
+      }
+
+      if (sidecar) {
+        const dataResult = studioDataSchema.safeParse(sidecar)
+        if (!dataResult.success) {
+          return { error: 'Invalid studio data sidecar: expected a JSON object' }
         }
       }
 
@@ -539,3 +582,128 @@ export default (ctx: HarnessToolContext) => ({
     },
   }),
 })
+
+const buildTools = (ctx: HarnessToolContext) => ({
+  ...buildHarnessTools(ctx),
+  spawn_subagent: tool({
+    description: 'Spawn a blocking subagent',
+    inputSchema: z.object({
+      agentName: z.string(),
+      prompt: z.string(),
+      blocking: z.boolean().default(true),
+    }),
+    execute: async (
+      { agentName, prompt, blocking },
+      { toolCallId },
+    ): Promise<{ subagentId: string; name: string; summary: string }> => {
+      if (ctx.signal?.aborted) {
+        throw new Error('Subagent aborted')
+      }
+
+      const subagentId = crypto.randomUUID()
+
+      ctx.onHarnessEvent?.({
+        type: 'subagent-start',
+        subagentId,
+        name: agentName,
+        blocking,
+      })
+
+      const modelRef = resolveParsedModelForRole('agent', ctx.settings)
+      if (!modelRef) {
+        throw new Error('No model configured for agent role')
+      }
+
+      const model = await createModel({
+        providerId: modelRef.providerId,
+        modelId: modelRef.modelId,
+        settings: ctx.settings,
+      })
+
+      const emitNestedEvent = (event: HarnessEvent): void => {
+        ctx.onHarnessEvent?.({
+          type: 'subagent-event',
+          parentToolCallId: toolCallId,
+          event,
+        })
+      }
+
+      const nestedCtx: HarnessToolContext = {
+        ...ctx,
+        onHarnessEvent: emitNestedEvent,
+      }
+      const allow = new Set<string>(SUBAGENT_READ_ONLY_TOOLS)
+      const nestedTools = Object.fromEntries(
+        Object.entries(buildHarnessTools(nestedCtx)).filter(([name]) => allow.has(name)),
+      )
+
+      try {
+        if (ctx.signal?.aborted) {
+          throw new Error('Subagent aborted')
+        }
+
+        const result = await generateText({
+          model,
+          system: `You are a read-only sub-agent named "${agentName}". Explore the codebase with read-only tools. Do not modify files or run commands. Provide a concise summary when finished.`,
+          prompt,
+          tools: nestedTools,
+          stopWhen: stepCountIs(SUBAGENT_MAX_STEPS),
+          maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
+          abortSignal: ctx.signal,
+          onToolExecutionStart: (event) => {
+            emitNestedEvent({
+              type: 'tool-start',
+              toolCallId: event.toolCall.toolCallId,
+              name: event.toolCall.toolName,
+              args: event.toolCall.input,
+            })
+          },
+          onToolExecutionEnd: (event) => {
+            const { toolCall, toolOutput } = event
+            if (toolOutput.type === 'tool-error') {
+              emitNestedEvent({
+                type: 'tool-result',
+                toolCallId: toolCall.toolCallId,
+                result: { error: toolOutput.error },
+                isError: true,
+              })
+              return
+            }
+            emitNestedEvent({
+              type: 'tool-result',
+              toolCallId: toolCall.toolCallId,
+              result: toolOutput.output,
+              isError: false,
+            })
+          },
+        })
+
+        if (ctx.signal?.aborted) {
+          throw new Error('Subagent aborted')
+        }
+
+        const summary = result.text
+
+        ctx.onHarnessEvent?.({
+          type: 'subagent-result',
+          subagentId,
+          summary,
+          blocking,
+        })
+
+        return { subagentId, name: agentName, summary }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Subagent failed'
+        ctx.onHarnessEvent?.({
+          type: 'subagent-result',
+          subagentId,
+          summary: message,
+          blocking,
+        })
+        throw error
+      }
+    },
+  }),
+})
+
+export default buildTools

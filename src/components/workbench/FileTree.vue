@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { FileTree } from '@/components/ai-elements/file-tree'
 import { fsListDirTree } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import { FileTreeProjectRootKey } from '@/composables/use-file-tree-node-menu'
 import WorkbenchFileTreeNode from '@/components/workbench/FileTreeNode.vue'
 
 const props = defineProps<{
@@ -35,6 +36,8 @@ const projectLabel = computed(() => {
 const projectRoot = computed(
   () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
 )
+
+provide(FileTreeProjectRootKey, projectRoot)
 
 const findNodeKind = (
   nodes: TreeNode[] | undefined,

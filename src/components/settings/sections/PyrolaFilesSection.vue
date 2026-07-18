@@ -3,6 +3,11 @@ import { onMounted, ref, watch } from 'vue'
 import { ExternalLink, Folder } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -165,24 +170,34 @@ const openInEditor = (file: ProjectFileEntry): void => {
           </p>
         </div>
         <div class="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-8 w-8"
-            aria-label="Open in editor"
-            @click="openInEditor(file)"
-          >
-            <ExternalLink class="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-8 w-8"
-            aria-label="Reveal in folder"
-            @click="revealInFolder(file.path)"
-          >
-            <Folder class="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                aria-label="Open in editor"
+                @click="openInEditor(file)"
+              >
+                <ExternalLink class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Open in editor</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                aria-label="Reveal in folder"
+                @click="revealInFolder(file.path)"
+              >
+                <Folder class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reveal in folder</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

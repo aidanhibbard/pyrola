@@ -1,4 +1,5 @@
-import type { ParsedPlan, PlanFrontmatter, PlanTodoItem } from '@/types/workbench/workbench-tab'
+import { planFrontmatterSchema, formatPlanSchemaError } from '@/schemas/plan-document'
+import type { ParsedPlan, PlanTodoItem } from '@/types/plans/plan-document'
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
@@ -53,10 +54,9 @@ const parseTodos = (lines: string[], startIndex: number): { todos: PlanTodoItem[
   return { todos, end: index }
 }
 
-const parseFrontmatter = (yaml: string): PlanFrontmatter => {
+const parseYamlFrontmatter = (yaml: string): Record<string, unknown> => {
   const lines = yaml.split('\n')
-  const data: Record<string, string> = {}
-  let todos: PlanTodoItem[] = []
+  const data: Record<string, unknown> = {}
   let index = 0
 
   while (index < lines.length) {
@@ -66,8 +66,14 @@ const parseFrontmatter = (yaml: string): PlanFrontmatter => {
       continue
     }
     if (line.startsWith('todos:')) {
+      const inline = line.slice(6).trim()
+      if (inline === '[]') {
+        data.todos = []
+        index += 1
+        continue
+      }
       const parsed = parseTodos(lines, index + 1)
-      todos = parsed.todos
+      data.todos = parsed.todos
       index = parsed.end
       continue
     }
@@ -80,32 +86,33 @@ const parseFrontmatter = (yaml: string): PlanFrontmatter => {
     index += 1
   }
 
-  return {
-    id: data.id ?? 'unknown',
-    title: data.title ?? 'Untitled plan',
-    createdAt: data.createdAt ?? new Date().toISOString(),
-    mode: data.mode,
-    sourceChatId: data.sourceChatId,
-    todos,
-  }
+  return data
 }
 
 export default (content: string): ParsedPlan => {
   const match = content.match(FRONTMATTER_RE)
   if (!match) {
     return {
-      frontmatter: {
-        id: 'unknown',
-        title: 'Untitled plan',
-        createdAt: new Date().toISOString(),
-        todos: [],
-      },
+      frontmatter: null,
       body: content,
+      parseError: 'Plan file is missing YAML frontmatter (expected --- delimiters).',
+    }
+  }
+
+  const body = match[2]?.trim() ?? ''
+  const rawFrontmatter = parseYamlFrontmatter(match[1] ?? '')
+  const result = planFrontmatterSchema.safeParse(rawFrontmatter)
+
+  if (!result.success) {
+    return {
+      frontmatter: null,
+      body,
+      parseError: `Invalid plan frontmatter: ${formatPlanSchemaError(result.error)}`,
     }
   }
 
   return {
-    frontmatter: parseFrontmatter(match[1] ?? ''),
-    body: match[2]?.trim() ?? '',
+    frontmatter: result.data,
+    body,
   }
 }

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Suspense } from 'vue'
 import { Comark } from '@comark/vue'
 import studioBlocks from '@/components/studio/studio-blocks'
 

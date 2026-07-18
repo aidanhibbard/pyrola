@@ -1,3 +1,4 @@
+import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { FileDiff } from '@/types/harness/file-diff'
 import type { SideTaskKind } from '@/types/harness/side-task-kind'
@@ -14,7 +15,14 @@ export type HarnessEvent =
   | { type: 'reasoning-delta'; delta: string; messageId?: string }
   | { type: 'tool-start'; toolCallId: string; name: string; args: unknown }
   | { type: 'tool-pending-approval'; toolCallId: string; name: string; diff: FileDiff[] }
-  | { type: 'tool-result'; toolCallId: string; result: unknown; isError?: boolean }
+  | {
+      type: 'tool-result'
+      toolCallId: string
+      result: unknown
+      isError?: boolean
+      artifact?: ChatArtifact
+      diffs?: FileDiff[]
+    }
   | { type: 'step-start'; stepId: string }
   | { type: 'step-finish'; stepId: string }
   | { type: 'tool-rejected'; toolCallId: string; reason: string }

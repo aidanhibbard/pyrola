@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DialogRootEmits, DialogRootProps } from "reka-ui"
-import { useForwardPropsEmits } from "reka-ui"
+import { DialogClose, useForwardPropsEmits } from "reka-ui"
+import { X } from "@lucide/vue"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/shadcn/ui/dialog'
 import Command from "./Command.vue"
 
@@ -18,12 +19,19 @@ const forwarded = useForwardPropsEmits(props, emits)
 
 <template>
   <Dialog v-slot="slotProps" v-bind="forwarded">
-    <DialogContent class="overflow-hidden p-0 ">
+    <DialogContent class="overflow-hidden p-0" :show-close-button="false">
       <DialogHeader class="sr-only">
         <DialogTitle>{{ title }}</DialogTitle>
         <DialogDescription>{{ description }}</DialogDescription>
       </DialogHeader>
-      <Command>
+      <Command class="relative">
+        <DialogClose
+          data-slot="dialog-close"
+          class="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-2.5 right-3 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        >
+          <X />
+          <span class="sr-only">Close</span>
+        </DialogClose>
         <slot v-bind="slotProps" />
       </Command>
     </DialogContent>

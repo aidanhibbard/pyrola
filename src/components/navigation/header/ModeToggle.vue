@@ -5,6 +5,11 @@ import { useColorMode } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
 
@@ -29,19 +34,24 @@ const toggleMode = async (): Promise<void> => {
 </script>
 
 <template>
-  <Button
-    data-slot="mode-toggle"
-    variant="ghost"
-    size="icon"
-    :class="cn('h-7 w-7', $props.class)"
-    @click="toggleMode"
-  >
-    <Moon
-      class="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
-    />
-    <Sun
-      class="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
-    />
-    <span class="sr-only">Toggle theme</span>
-  </Button>
+  <Tooltip>
+    <TooltipTrigger as-child>
+      <Button
+        data-slot="mode-toggle"
+        variant="ghost"
+        size="icon"
+        :class="cn('h-7 w-7', $props.class)"
+        aria-label="Toggle theme"
+        @click="toggleMode"
+      >
+        <Moon
+          class="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
+        />
+        <Sun
+          class="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
+        />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent>Toggle theme</TooltipContent>
+  </Tooltip>
 </template>

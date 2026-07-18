@@ -10,25 +10,25 @@ dependsOn:
 todos:
   - id: mcp-client
     content: MCP stdio client in Rust (spawn_mcp_server, send_mcp_message)
-    status: pending
+    status: completed
   - id: mcp-tool
     content: call_mcp_tool in harness with per-agent allowlist
-    status: pending
+    status: completed
   - id: mcp-lifecycle
     content: MCP lifecycle commands — start, stop, refresh, list_tools, logout
-    status: pending
+    status: completed
   - id: comark-vue
     content: Install @comark/vue + use-studio-renderer composable
-    status: pending
+    status: completed
   - id: studio-mdc
     content: Studio MDC blocks (Chart, Metrics, Mermaid) under src/components/studio/mdc/
-    status: pending
+    status: completed
   - id: studio-artifacts
     content: write_studio_artifact tool → .pyrola/studio/<slug>/index.md
-    status: pending
+    status: completed
   - id: pdf-v1
     content: PDF export v1 — print CSS, rasterize charts/mermaid, window.print()
-    status: pending
+    status: completed
 ---
 
 ## Summary

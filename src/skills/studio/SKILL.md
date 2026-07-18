@@ -5,7 +5,14 @@ description: Publish Comark studio artifacts with write_studio_artifact. Use blo
 
 # Studio artifacts
 
+Studio guidance is auto-injected in studio mode; you do not need to call `load_skill("studio")` first.
+
 Publish durable pages to `.pyrola/studio/<slug>/index.md`. Optional `data.json` sidecar for large structured payloads.
+
+## Publishing
+
+- Data may come from the user, MCP, shell, or inline YAML in the artifact.
+- Publish with **write_studio_artifact** (Comark markdown only, never HTML).
 
 ## When to use blocks
 

@@ -14,7 +14,7 @@ pub mod shell;
 pub mod watch;
 pub use chat::{
   append_chat_line, create_chat, delete_chat, fork_chat, list_chats, list_pinned_chats, pin_chat,
-  read_chat_meta, read_chat_messages, update_chat_meta,
+  read_chat_meta, read_chat_messages, truncate_chat_log, update_chat_meta,
 };
 pub use config::{
   config_exists, read_json_file, read_mcp_config, read_settings, write_json_file, write_mcp_config,
@@ -40,8 +40,9 @@ pub use paths::{
   list_project_files, list_pyrola_files,
 };
 pub use registry::{
-  get_active_project, registry_add_project, registry_list_projects, registry_remove_project,
-  registry_set_active_project, registry_update_project_root,
+  get_active_project, open_project_at_path, registry_add_project, registry_list_projects,
+  registry_remove_project, registry_set_active_project, registry_update_project_root,
+  resolve_launch_path,
 };
 pub use shell::{
   reveal_in_folder, shell_kill_pty, shell_kill_tracked, shell_resize_pty, shell_run_command,

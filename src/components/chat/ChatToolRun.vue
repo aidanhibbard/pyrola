@@ -2,7 +2,10 @@
 import { computed, ref } from 'vue'
 import { ChevronRightIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
 import type { ToolRun } from '@/types/harness/tool-run'
+import type { FileDiff } from '@/types/harness/file-diff'
 import formatToolRunLabel from '@/utils/format-tool-run-label'
+import ChatArtifactLink from '@/components/chat/ChatArtifactLink.vue'
+import ChatInlineFileDiff from '@/components/chat/InlineFileDiff.vue'
 import {
   Collapsible,
   CollapsibleContent,
@@ -37,6 +40,13 @@ const hasDetails = computed(
 )
 const argsText = computed(() => formatDetail(props.run.args))
 const resultText = computed(() => formatDetail(props.run.result))
+const diffs = computed((): FileDiff[] => props.run.diffs ?? [])
+const showRawOutput = computed(
+  () =>
+    resultText.value.length > 0 &&
+    (props.run.status === 'done' || props.run.status === 'error') &&
+    diffs.value.length === 0,
+)
 </script>
 
 <template>
@@ -62,6 +72,10 @@ const resultText = computed(() => formatDetail(props.run.result))
         :class="open ? 'rotate-90' : ''"
       />
       <span class="min-w-0 truncate">{{ label }}</span>
+      <ChatArtifactLink
+        v-if="run.artifact && run.status === 'done'"
+        :artifact="run.artifact"
+      />
     </CollapsibleTrigger>
     <CollapsibleContent
       class="mt-1 space-y-2 border-l border-border/60 pl-5 text-xs text-muted-foreground"
@@ -78,7 +92,17 @@ const resultText = computed(() => formatDetail(props.run.result))
         </p>
         <pre class="max-h-40 overflow-auto whitespace-pre-wrap wrap-break-word">{{ argsText }}</pre>
       </div>
-      <div v-if="resultText && (run.status === 'done' || run.status === 'error')">
+      <div
+        v-if="diffs.length > 0 && run.status === 'done'"
+        class="space-y-2"
+      >
+        <ChatInlineFileDiff
+          v-for="diff in diffs"
+          :key="diff.path"
+          :diff="diff"
+        />
+      </div>
+      <div v-if="showRawOutput">
         <p class="mb-1 font-medium text-foreground/80">
           Output
         </p>

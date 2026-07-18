@@ -16,12 +16,11 @@ const TOOL_LABELS: Record<string, string> = {
   terminal_output: 'Read shell output',
   stop_terminal: 'Stopped shell',
   web_fetch: 'Fetched URL',
-  web_search: 'Searched web',
   call_mcp_tool: 'Called MCP tool',
   get_mcp_tools: 'Listed MCP tools',
   create_plan: 'Created plan',
   update_plan_todo: 'Updated plan',
-  spawn_subagent: 'Spawned subagent',
+  spawn_subagent: 'Spawned sub-agent',
   lsp: 'LSP lookup',
 }
 
@@ -35,6 +34,9 @@ const formatArgsHint = (args: unknown): string | null => {
   }
   if (typeof record.pattern === 'string' && record.pattern.length > 0) {
     return record.pattern
+  }
+  if (typeof record.agentName === 'string' && record.agentName.length > 0) {
+    return record.agentName
   }
   if (typeof record.command === 'string' && record.command.length > 0) {
     return record.command

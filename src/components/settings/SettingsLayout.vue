@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import SettingsNav from '@/components/settings/SettingsNav.vue'
 import AppearanceSection from '@/components/settings/sections/AppearanceSection.vue'
 import ProvidersSection from '@/components/settings/sections/ProvidersSection.vue'
+import ModelsSection from '@/components/settings/sections/ModelsSection.vue'
 import McpServersSection from '@/components/settings/sections/McpServersSection.vue'
 import FleetSection from '@/components/settings/sections/FleetSection.vue'
 import GeneralSection from '@/components/settings/sections/GeneralSection.vue'
@@ -11,7 +12,6 @@ import PlansSection from '@/components/settings/sections/PlansSection.vue'
 import StudioSection from '@/components/settings/sections/StudioSection.vue'
 import SkillsSection from '@/components/settings/sections/SkillsSection.vue'
 import RulesSection from '@/components/settings/sections/RulesSection.vue'
-import SearchSection from '@/components/settings/sections/SearchSection.vue'
 import LspServersSection from '@/components/settings/sections/LspServersSection.vue'
 import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/ui/tabs'
 import type { SettingsSectionId } from '@/types/settings/settings-section'
@@ -34,6 +34,8 @@ const sectionComponent = computed(() => {
       return AppearanceSection
     case 'providers':
       return ProvidersSection
+    case 'models':
+      return ModelsSection
     case 'mcp':
       return McpServersSection
     case 'fleet':
@@ -50,8 +52,6 @@ const sectionComponent = computed(() => {
       return SkillsSection
     case 'rules':
       return RulesSection
-    case 'search':
-      return SearchSection
     case 'lsp':
       return LspServersSection
     default:

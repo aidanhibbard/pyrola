@@ -1,4 +1,7 @@
-import type { PlanTodoItem } from '@/types/workbench/workbench-tab'
+import { planFrontmatterSchema, parsedPlanSchema, formatPlanSchemaError } from '@/schemas/plan-document'
+import parsePlan from '@/services/plans/parse-plan'
+import assertPlanHasMermaid from '@/services/plans/validate-plan'
+import type { PlanTodoItem } from '@/types/plans/plan-document'
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
@@ -40,14 +43,41 @@ export type CreatePlanResult = {
   content: string
 }
 
+const validatePlanDocument = (frontmatter: unknown, body: string): void => {
+  const frontmatterResult = planFrontmatterSchema.safeParse(frontmatter)
+  if (!frontmatterResult.success) {
+    throw new Error(`Invalid plan frontmatter: ${formatPlanSchemaError(frontmatterResult.error)}`)
+  }
+
+  const parsedResult = parsedPlanSchema.safeParse({
+    frontmatter: frontmatterResult.data,
+    body,
+  })
+  if (!parsedResult.success) {
+    throw new Error(`Invalid plan document: ${formatPlanSchemaError(parsedResult.error)}`)
+  }
+
+  assertPlanHasMermaid(body)
+}
+
 export default (input: CreatePlanInput): CreatePlanResult => {
   const now = new Date()
   const planId = `${slugify(input.title)}-${formatTimestamp(now)}`
   const path = `.pyrola/plans/${planId}/PLAN.md`
   const todos = input.todos ?? []
-  const sourceChatLine = input.sourceChatId
-    ? `sourceChatId: ${input.sourceChatId}\n`
-    : ''
+  const body = input.body.trim()
+  const frontmatter = {
+    id: planId,
+    title: input.title,
+    createdAt: now.toISOString(),
+    mode: 'plan' as const,
+    ...(input.sourceChatId ? { sourceChatId: input.sourceChatId } : {}),
+    todos,
+  }
+
+  validatePlanDocument(frontmatter, body)
+
+  const sourceChatLine = input.sourceChatId ? `sourceChatId: ${input.sourceChatId}\n` : ''
   const content = `---
 id: ${planId}
 title: ${JSON.stringify(input.title)}
@@ -56,7 +86,7 @@ mode: plan
 ${sourceChatLine}${formatTodos(todos)}
 ---
 
-${input.body.trim()}
+${body}
 `
 
   return { planId, path, content }
@@ -76,5 +106,11 @@ export const updatePlanTodos = (
   const lines = yaml.split('\n').filter((line) => !line.trim().startsWith('todos:'))
   const trimmedYaml = lines.join('\n').trimEnd()
   const nextYaml = `${trimmedYaml}\n${formatTodos(todos)}`
-  return `---\n${nextYaml}\n---\n\n${body.trimStart()}`
+  const nextContent = `---\n${nextYaml}\n---\n\n${body.trimStart()}`
+  const parsed = parsePlan(nextContent)
+  if (parsed.parseError) {
+    throw new Error(parsed.parseError)
+  }
+
+  return nextContent
 }

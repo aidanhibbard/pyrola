@@ -8,22 +8,22 @@ dependsOn: contracts-2026-07-15-215200
 todos:
   - id: router-views
     content: Add router + FleetView, AgentThreadView, SettingsView
-    status: pending
+    status: completed
   - id: main-layout
     content: Refactor App.vue — left sidebar + main stack (chat/workbench top, terminal bottom)
-    status: pending
+    status: completed
   - id: workbench-tabs
     content: Tabbed workbench (Changes, Editor, Browser, Studio — no Terminal tab)
-    status: pending
+    status: completed
   - id: bottom-terminal
     content: Bottom terminal panel (xterm.js) spanning chat + workbench width, bounded by left sidebar
-    status: pending
+    status: completed
   - id: monaco
     content: Integrate Monaco editor in Editor tab
-    status: pending
+    status: completed
   - id: file-tree
     content: File tree + folder open dialog (Tauri FS commands stubbed or minimal)
-    status: pending
+    status: completed
 ---
 
 ## Summary
@@ -95,6 +95,20 @@ Terminal left boundary = right edge of `LeftSidebar`. Terminal never renders ben
 | Resize | Vertical `ResizableHandle` between top stack and terminal |
 | Collapse | Toggle from title bar or keyboard shortcut |
 | Backend | xterm.js placeholder → `portable-pty` in Phase 3 |
+
+## Status (updated 2026-07-17)
+
+What shipped vs. the original Phase 1 spec:
+
+- **Layout** — Left sidebar + horizontal chat/workbench split + bottom terminal panel with vertical resize; terminal spans chat+workbench only (not under sidebar).
+- **Router** — `HomePage` (fleet home), `AgentThreadView`, and `SettingsView` routes; no separate `FleetView`.
+- **Workbench tabs** — Editor, Terminal, Browser, and Changes (git status). Plan and Studio are **chat modes**, not workbench tab types; `+` menu no longer offers them.
+- **Monaco editor** — Writable multi-file sub-tabs with per-file dirty tracking, Cmd+S save, and close-with-dirty confirmation.
+- **File tree** — VS Code-style context menu (copy relative/absolute path, reveal in Finder).
+- **Markdown preview** — `.md` files in the editor tab support Edit / Split / Preview modes.
+- **Terminal** — xterm.js bottom panel with `portable-pty` backend for `run_terminal`; collapsible via title bar.
+- **Duplicate tabs** — AlertDialog when opening an already-open file path, with never-ask-again setting.
+- **Settings** — Moved from `NavHeader` to `SidebarFooter` (`NavFooter`).
 
 ## Definition of done
 

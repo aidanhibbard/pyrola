@@ -34,6 +34,9 @@ const mapProject = (record: {
 const normalizeProjectRoots = async (): Promise<void> => {
   const workspaceRoot = await getDefaultWorkspaceRoot()
   for (const project of projects.value) {
+    if (project.name !== 'pyrola' || projects.value.length > 1) {
+      continue
+    }
     if (project.rootPath === workspaceRoot) {
       continue
     }

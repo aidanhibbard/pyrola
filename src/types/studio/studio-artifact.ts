@@ -1,14 +1,14 @@
+import type { z } from 'zod'
+import type { studioDocTypeSchema, studioFrontmatterSchema } from '@/schemas/studio-document'
+
 export type StudioArtifactStatus = 'draft' | 'published'
 
-export type StudioArtifactFrontmatter = {
-  title?: string
-  subtitle?: string
-  status?: StudioArtifactStatus
-  dateRange?: string
-  source?: string
-}
+export type StudioArtifactDocType = z.infer<typeof studioDocTypeSchema>
+
+export type StudioArtifactFrontmatter = z.infer<typeof studioFrontmatterSchema>
 
 export type ParsedStudioArtifact = {
-  frontmatter: StudioArtifactFrontmatter
+  frontmatter: StudioArtifactFrontmatter | null
   body: string
+  parseError?: string
 }

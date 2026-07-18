@@ -1,14 +1,15 @@
 import { generateText } from 'ai'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import createModel from '@/services/providers/create-model'
+import loadPrompt from '@/services/prompts/load-prompt'
 import { updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
 
 export type ChatTitleTaskInput = {
   projectSlug: string
   chatId: string
   prompt: string
-  providerId: string
   settings: PyrolaSettings
 }
 
@@ -18,21 +19,21 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
       return null
     }
 
-    const modelId =
-      input.settings['chat.autoTitleModel'] ??
-      input.settings['agent.defaultModel'] ??
-      'gpt-4o-mini'
+    const modelRef = resolveParsedModelForRole('title', input.settings)
+    if (!modelRef) {
+      return null
+    }
 
     const model = await createModel({
-      providerId: input.providerId,
-      modelId,
+      providerId: modelRef.providerId,
+      modelId: modelRef.modelId,
       settings: input.settings,
     })
 
     const result = await generateText({
       model,
       maxOutputTokens: 256,
-      prompt: `Generate a short chat title (max 6 words, no quotes) for this user message:\n\n${input.prompt}`,
+      prompt: loadPrompt('side-tasks/chat-title.md', { prompt: input.prompt }),
     })
 
     const title = result.text.trim().replace(/^["']|["']$/g, '').slice(0, 80)

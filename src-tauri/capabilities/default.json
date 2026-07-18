@@ -17,6 +17,7 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:scope-appdata-recursive",
+    "dialog:default",
     "mcp-bridge:default"
   ]
 }

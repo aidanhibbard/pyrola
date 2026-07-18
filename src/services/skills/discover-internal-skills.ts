@@ -8,6 +8,9 @@ const skillModules = import.meta.glob('../../skills/**/SKILL.md', {
 }) as Record<string, string>
 
 const INTERNAL_SKILL_MODE_GATES: Record<string, Array<'ask' | 'plan' | 'studio' | 'agent'>> = {
+  ask: ['ask'],
+  plan: ['plan'],
+  agent: ['agent'],
   studio: ['studio'],
 }
 

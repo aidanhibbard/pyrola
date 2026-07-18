@@ -12,22 +12,22 @@ dependsOn:
 todos:
   - id: rw-1-tabs
     content: WorkbenchTabBar — tab list, close, reorder, + menu
-    status: pending
+    status: completed
   - id: rw-2-changes
     content: ChangesTab — git status, agent branch warning, per-turn summaries
-    status: pending
+    status: completed
   - id: rw-3-editor
     content: EditorTab — Monaco + file tree overlay + diff view
-    status: pending
+    status: completed
   - id: rw-4-browser
     content: BrowserTab — Tauri webview placeholder
-    status: pending
+    status: completed
   - id: rw-5-studio
     content: StudioTab — Comark canvas / plan preview placeholder
-    status: pending
+    status: completed
   - id: rw-6-open
     content: Wire open-file from palette, stream, and file tree
-    status: pending
+    status: completed
 ---
 
 ## Summary

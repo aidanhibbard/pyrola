@@ -10,19 +10,19 @@ dependsOn:
 todos:
   - id: context-buckets
     content: Define ContextBudget type with Cursor-matching buckets + token counts
-    status: pending
+    status: completed
   - id: context-calculator
     content: use-context-usage composable — count tokens per bucket before each turn
-    status: pending
+    status: completed
   - id: context-ui
     content: ContextUsagePanel (stacked bar + breakdown list) in chat input area
-    status: pending
+    status: completed
   - id: context-report
     content: Optional detailed Context Usage report view (View Report link)
     status: pending
   - id: context-warnings
     content: Warn when approaching model context limit (80%, 95%)
-    status: pending
+    status: completed
 ---
 
 ## Summary

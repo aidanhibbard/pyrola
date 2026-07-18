@@ -1,7 +1,9 @@
 import { ref, watch, type Ref } from 'vue'
+import studioDataSchema from '@/schemas/studio/studio-data'
 import { fsReadFile } from '@/services/pyrola/pyrola-tauri'
 import isStudioHtmlContent from '@/services/studio/is-studio-html-content'
 import parseStudioArtifact from '@/services/studio/parse-studio-artifact'
+import validateStudioBlocks from '@/services/studio/validate-studio-blocks'
 import type { StudioArtifactFrontmatter } from '@/types/studio/studio-artifact'
 
 export type StudioRendererState = {
@@ -12,6 +14,7 @@ export type StudioRendererState = {
   loading: Ref<boolean>
   parseError: Ref<string | null>
   reload: () => Promise<void>
+  applySourceContent: (content: string) => Promise<void>
 }
 
 const dataJsonPathFor = (artifactPath: string): string => {
@@ -30,6 +33,34 @@ export default (
   const frontmatter = ref<StudioArtifactFrontmatter>({})
   const loading = ref(true)
   const parseError = ref<string | null>(null)
+
+  const applyParsedContent = async (content: string): Promise<void> => {
+    if (isStudioHtmlContent(content)) {
+      parseError.value =
+        'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio").'
+      renderMarkdown.value = ''
+      return
+    }
+
+    const parsed = parseStudioArtifact(content)
+    if (parsed.parseError) {
+      parseError.value = parsed.parseError
+      renderMarkdown.value = ''
+      return
+    }
+
+    const blockError = await validateStudioBlocks(parsed.body)
+    if (blockError) {
+      parseError.value = blockError
+      renderMarkdown.value = ''
+      return
+    }
+
+    parseError.value = null
+    frontmatter.value = parsed.frontmatter ?? {}
+    markdown.value = content
+    renderMarkdown.value = parsed.body
+  }
 
   const reload = async (): Promise<void> => {
     const root = projectRoot.value
@@ -53,15 +84,24 @@ export default (
         return
       }
 
-      const parsed = parseStudioArtifact(file.content)
-      frontmatter.value = parsed.frontmatter
-      markdown.value = file.content
-      renderMarkdown.value = parsed.body
+      await applyParsedContent(file.content)
+      if (parseError.value) {
+        markdown.value = ''
+        data.value = {}
+        frontmatter.value = {}
+        return
+      }
 
       const sidecarPath = dataJsonPathFor(artifactPath.value)
       try {
         const sidecar = await fsReadFile({ projectRoot: root, path: sidecarPath })
-        data.value = JSON.parse(sidecar.content) as Record<string, unknown>
+        const parsedData = studioDataSchema.safeParse(JSON.parse(sidecar.content))
+        if (!parsedData.success) {
+          parseError.value = 'Invalid studio data.json sidecar'
+          data.value = {}
+          return
+        }
+        data.value = parsedData.data
       } catch {
         data.value = {}
       }
@@ -74,6 +114,10 @@ export default (
     } finally {
       loading.value = false
     }
+  }
+
+  const applySourceContent = async (content: string): Promise<void> => {
+    await applyParsedContent(content)
   }
 
   watch(
@@ -94,5 +138,6 @@ export default (
     loading,
     parseError,
     reload,
+    applySourceContent,
   }
 }

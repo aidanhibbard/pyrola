@@ -7,7 +7,8 @@ export type WorkbenchTabType =
   | 'plan'
 
 export type EditorPayload = {
-  path: string | null
+  path: string
+  openPaths: string[]
 }
 
 export type TerminalPayload = {
@@ -47,22 +48,4 @@ export type WorkbenchTab = {
   payload: WorkbenchTabPayload
 }
 
-export type PlanTodoItem = {
-  id: string
-  content: string
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-}
-
-export type PlanFrontmatter = {
-  id: string
-  title: string
-  createdAt: string
-  mode?: string
-  sourceChatId?: string
-  todos: PlanTodoItem[]
-}
-
-export type ParsedPlan = {
-  frontmatter: PlanFrontmatter
-  body: string
-}
+export type { PlanFrontmatter, PlanTodoItem, ParsedPlan } from '@/types/plans/plan-document'

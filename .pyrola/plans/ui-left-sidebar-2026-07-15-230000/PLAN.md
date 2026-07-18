@@ -11,22 +11,22 @@ dependsOn:
 todos:
   - id: ls-1-shell
     content: Remove SidebarFooter; wire Settings → router; collapsible rail
-    status: pending
+    status: completed
   - id: ls-2-projects
     content: NavProjects + empty state + AddProjectDialog
-    status: pending
+    status: completed
   - id: ls-3-chats
     content: ChatListItem + routing + list_chats / active highlight
-    status: pending
+    status: completed
   - id: ls-4-pinned
     content: Pinned dropdown + pin/unpin + context menu actions
-    status: pending
+    status: completed
   - id: ls-5-header-actions
     content: Projects header — inline search, running filter, collapse all
-    status: pending
+    status: completed
   - id: ls-6-palette
     content: CommandPalette + Cmd+K
-    status: pending
+    status: completed
   - id: ls-7-polish
     content: Running indicator on project row; More pagination
     status: pending

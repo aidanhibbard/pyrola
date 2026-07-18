@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { GitFork, Pencil, Trash2 } from '@lucide/vue'
+import { GitFork, Pencil, Pin, PinOff, Trash2 } from '@lucide/vue'
 import type { FleetSidebarChat } from '@/types/fleet/fleet-sidebar-chat'
 import {
   AlertDialog,
@@ -32,11 +32,12 @@ import {
 } from '@/components/shadcn/ui/dialog'
 import { Input } from '@/components/shadcn/ui/input'
 import { SidebarMenuSubButton } from '@/components/shadcn/ui/sidebar'
-import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import useFleetSidebar, { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import {
   deleteChat,
   forkChat,
+  pinChat,
   updateChatMeta,
 } from '@/services/pyrola/pyrola-tauri'
 
@@ -47,6 +48,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
+const fleetSidebar = useFleetSidebar()
 
 const renameOpen = ref(false)
 const deleteOpen = ref(false)
@@ -54,6 +56,13 @@ const renameTitle = ref(props.chat.title)
 const savingRename = ref(false)
 const deleting = ref(false)
 const forking = ref(false)
+const pinning = ref(false)
+
+const isPinned = computed(() =>
+  fleetSidebar.pinnedChats.value.some(
+    (item) => item.chatId === props.chat.id && item.projectSlug === props.projectSlug,
+  ),
+)
 
 const openChat = async (): Promise<void> => {
   try {
@@ -89,6 +98,26 @@ const handleRename = async (): Promise<void> => {
     })
   } finally {
     savingRename.value = false
+  }
+}
+
+const handleTogglePin = async (): Promise<void> => {
+  if (pinning.value) {
+    return
+  }
+
+  const nextPinned = !isPinned.value
+  pinning.value = true
+  try {
+    await pinChat(props.projectSlug, props.chat.id, nextPinned)
+    await refreshFleetSidebar()
+    toast.success(nextPinned ? 'Chat pinned' : 'Chat unpinned')
+  } catch (error) {
+    toast.error(nextPinned ? 'Could not pin chat' : 'Could not unpin chat', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  } finally {
+    pinning.value = false
   }
 }
 
@@ -171,6 +200,11 @@ watch(
       <ContextMenuItem :disabled="forking" @select="handleFork">
         <GitFork />
         Fork
+      </ContextMenuItem>
+      <ContextMenuItem :disabled="pinning" @select="handleTogglePin">
+        <PinOff v-if="isPinned" />
+        <Pin v-else />
+        {{ isPinned ? 'Unpin' : 'Pin' }}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem variant="destructive" @select="deleteOpen = true">

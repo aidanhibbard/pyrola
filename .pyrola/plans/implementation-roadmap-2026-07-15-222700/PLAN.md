@@ -7,22 +7,22 @@ parent: pyrola-master-plan-2026-07-15-215200
 todos:
   - id: step-1-settings
     content: "Step 1: Settings — BYOK providers, MCP config/auth, personal + project tabs"
-    status: pending
+    status: completed
   - id: step-2-chats
     content: "Step 2: Chats — streaming harness, persistence, basic chat UI (needs Step 1)"
-    status: pending
+    status: completed
   - id: step-3-mcps
     content: "Step 3: MCP runtime — connect, refresh, list tools, call_mcp_tool (needs Step 2)"
-    status: pending
+    status: completed
   - id: step-4-sidebar
     content: "Step 4: Right sidebar — Plans + Studio workbench tabs (needs Step 3)"
-    status: pending
+    status: completed
   - id: step-5-ide
     content: "Step 5: IDE — Monaco, bottom terminal, diffs, Changes, browser (needs Step 4)"
-    status: pending
+    status: completed
   - id: step-6-polish
     content: "Step 6: Fleet, pinned chats, context usage, tray, sub-agents, polish"
-    status: pending
+    status: completed
 ---
 
 ## Summary

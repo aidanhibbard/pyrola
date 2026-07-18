@@ -11,31 +11,31 @@ dependsOn:
 todos:
   - id: mcp-schema
     content: Zod schema for VS Code mcp.json + merged effective config
-    status: pending
+    status: completed
   - id: mcp-merge
     content: Merge ~/.pyrola/mcp.json + project .pyrola/mcp.json (project wins by server name)
-    status: pending
+    status: completed
   - id: mcp-stdio-rust
     content: Rust stdio transport — spawn, JSON-RPC, process lifecycle
-    status: pending
+    status: completed
   - id: mcp-remote-ts
     content: HTTP + SSE transports via @modelcontextprotocol/client in TS harness layer
-    status: pending
+    status: completed
   - id: mcp-inputs-auth
     content: inputs, env, envFile, headers Bearer — resolve from keychain + prompts
-    status: pending
+    status: completed
   - id: mcp-oauth
     content: OAuth 2.1 flow — SDK OAuthClientProvider + tauri-plugin-oauth + keychain
     status: pending
   - id: mcp-lifecycle-cmds
     content: Tauri commands — start, stop, refresh, list_tools, call_tool, logout
-    status: pending
+    status: completed
   - id: mcp-harness-tool
     content: call_mcp_tool built-in harness tool with per-server allowlist
-    status: pending
+    status: completed
   - id: mcp-status-events
     content: Connection status + tool cache events for Settings UI and context usage
-    status: pending
+    status: completed
 ---
 
 ## Summary

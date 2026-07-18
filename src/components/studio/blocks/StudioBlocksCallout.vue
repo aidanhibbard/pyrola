@@ -13,7 +13,7 @@ defineProps<{
     class="border-border/50"
   >
     <AlertTitle v-if="title">{{ title }}</AlertTitle>
-    <AlertDescription class="prose prose-sm dark:prose-invert max-w-none">
+    <AlertDescription class="text-sm leading-6 text-muted-foreground [&_p]:text-sm [&_p]:leading-6">
       <slot />
     </AlertDescription>
   </Alert>

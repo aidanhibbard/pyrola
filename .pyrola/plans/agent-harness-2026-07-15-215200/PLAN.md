@@ -11,25 +11,25 @@ dependsOn:
 todos:
   - id: local-transport
     content: LocalChatTransport calling streamText directly (no HTTP route)
-    status: pending
+    status: completed
   - id: orchestrator
     content: Agent orchestrator with tool loop and HarnessEvent emission
-    status: pending
+    status: completed
   - id: builtin-tools
     content: Built-in tools (read_file, write_file, grep, git read-only, run_terminal) via Tauri invoke
-    status: pending
+    status: completed
   - id: chat-ui
     content: Wire ai-elements Conversation, Message, Tool, PromptInput to harness
-    status: pending
+    status: completed
   - id: session-persist
     content: Incremental append to ~/.pyrola/chats/<project-slug>/<chat-id>/messages.jsonl + resume
-    status: pending
+    status: completed
   - id: chat-modes
     content: Mode switching (Agent, Plan, Ask, Studio) with tool allowlists
-    status: pending
+    status: completed
   - id: context-integration
     content: Emit context-budget HarnessEvent; wire ContextUsageIndicator in chat footer
-    status: pending
+    status: completed
   - id: approval-gate
     content: write_file shadow path → Monaco diff → user approve
     status: pending

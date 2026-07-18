@@ -21,6 +21,7 @@ export default () => {
       chats: (chatsBySlug.value[project.slug] ?? []).map((chat) => ({
         id: chat.id,
         title: chat.title,
+        status: chat.status,
       })),
     })),
   )

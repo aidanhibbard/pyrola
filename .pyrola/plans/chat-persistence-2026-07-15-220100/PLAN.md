@@ -10,25 +10,25 @@ dependsOn:
 todos:
   - id: chat-dir-layout
     content: Define {appDataDir}/.pyrola/chats/<project-slug>/<chat-id>/ on-disk layout
-    status: pending
+    status: completed
   - id: chat-schema
     content: Zod schema for meta.json + messages.jsonl (AI SDK UIMessage parts)
-    status: pending
+    status: completed
   - id: chat-service
     content: Chat CRUD service (create, load, append, checkpoint, list by project)
-    status: pending
+    status: completed
   - id: delete-chat
     content: UI + command to delete a chat (remove directory)
-    status: pending
+    status: completed
   - id: fork-chat
     content: UI + command to duplicate/fork a chat (copy dir, new id, forkedFrom meta)
-    status: pending
+    status: completed
   - id: sidebar-integration
     content: Left sidebar lists chats from {appDataDir}/.pyrola/chats/<project-slug>/
-    status: pending
+    status: completed
   - id: pin-chat
     content: Pin/unpin chats (unlimited) — pinned field in meta.json + Pinned sidebar section
-    status: pending
+    status: completed
 ---
 
 ## Summary

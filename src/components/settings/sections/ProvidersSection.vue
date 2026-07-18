@@ -5,13 +5,6 @@ import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
 import { Label } from '@/components/shadcn/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/shadcn/ui/select'
-import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -22,6 +15,7 @@ import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.v
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
+import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import {
   getProviderCatalogEntry,
   keychainKeyForProvider,
@@ -31,7 +25,6 @@ import {
   providerRequiresApiKey,
 } from '@/services/providers/registry'
 import { deleteSecret, getSecret, setSecret } from '@/services/pyrola/pyrola-tauri'
-import { listProviderModels } from '@/services/providers/list-provider-models'
 import { testProviderConnection } from '@/services/providers/test-connection'
 
 const props = defineProps<{
@@ -49,31 +42,15 @@ const customName = ref('')
 const customBaseUrl = ref('http://localhost:1234/v1')
 const customApiKeyInput = ref('')
 const providerSearchQuery = ref('')
-const defaultProviderSearch = ref('')
-const defaultModelSearch = ref('')
-const providerModels = ref<string[]>([])
-const loadingProviderModels = ref(false)
 
 let apiKeyStatusGeneration = 0
-let modelsLoadGeneration = 0
 
 const dialogSurfaceClass =
   'border-border/80 bg-zinc-50 shadow-2xl backdrop-blur-none dark:bg-zinc-900'
 
 const settings = computed(() => config.getScopeSettings(props.tab))
 
-const configuredProviders = computed(() => {
-  const ids = new Set<string>()
-  for (const key of Object.keys(settings.value)) {
-    if (key.startsWith('providers.') && key.endsWith('.apiKeyRef')) {
-      ids.add(key.replace('providers.', '').replace('.apiKeyRef', ''))
-    }
-    if (key.startsWith('providers.custom.')) {
-      ids.add(key.replace('providers.custom.', ''))
-    }
-  }
-  return [...ids]
-})
+const configuredProviders = computed(() => listConfiguredProviders(settings.value))
 
 const hasProviders = computed(() => configuredProviders.value.length > 0)
 
@@ -106,116 +83,6 @@ const hasProviderSearchResults = computed(
     filteredAiSdkProviders.value.length > 0 ||
     filteredOpenAiCompatibleProviders.value.length > 0,
 )
-
-const defaultProvider = computed(() => settings.value['agent.defaultProvider'] ?? '')
-
-const defaultModel = computed(() => settings.value['agent.defaultModel'] ?? '')
-
-const filteredConfiguredProviders = computed(() => {
-  const query = defaultProviderSearch.value.trim().toLowerCase()
-  if (!query) {
-    return configuredProviders.value
-  }
-  return configuredProviders.value.filter((id) => {
-    const name = getProviderDisplayName(id).toLowerCase()
-    return name.includes(query) || id.toLowerCase().includes(query)
-  })
-})
-
-const filteredProviderModels = computed(() => {
-  const query = defaultModelSearch.value.trim().toLowerCase()
-  if (!query) {
-    return providerModels.value
-  }
-  return providerModels.value.filter((model) => model.toLowerCase().includes(query))
-})
-
-const defaultModelHint = computed(() => {
-  const providerId = defaultProvider.value
-  if (!providerId) {
-    return ''
-  }
-  if (loadingProviderModels.value) {
-    return 'Loading models…'
-  }
-  const custom = getCustomProvider(providerId)
-  const requiresKey = custom ? false : providerRequiresApiKey(providerId)
-  if (requiresKey && !hasApiKeyInKeychain(providerId)) {
-    return 'Add an API key to load models from this provider'
-  }
-  const count = providerModels.value.length
-  if (count === 0) {
-    return 'No models found'
-  }
-  return `${count} models available`
-})
-
-const getCustomProvider = (providerId: string): PyrolaCustomProvider | undefined => {
-  const customKey = `providers.custom.${providerId}` as const
-  return settings.value[customKey] as PyrolaCustomProvider | undefined
-}
-
-const loadProviderModels = async (providerId: string): Promise<void> => {
-  const generation = ++modelsLoadGeneration
-
-  if (!providerId) {
-    providerModels.value = []
-    loadingProviderModels.value = false
-    return
-  }
-
-  loadingProviderModels.value = true
-
-  try {
-    const custom = getCustomProvider(providerId)
-    const catalogEntry = getProviderCatalogEntry(providerId)
-    const requiresKey = custom ? false : providerRequiresApiKey(providerId)
-
-    let apiKey = ''
-    const ref = getApiKeyRef(providerId)
-    if (ref) {
-      apiKey = (await getSecret(keychainKeyForProvider(ref))) ?? ''
-    }
-
-    if (requiresKey && !apiKey) {
-      if (generation !== modelsLoadGeneration) {
-        return
-      }
-      providerModels.value = catalogEntry?.models ?? []
-      return
-    }
-
-    const models = await listProviderModels({
-      providerId: custom ? 'openai' : providerId,
-      catalogProviderId: providerId,
-      apiKey,
-      baseUrl: custom?.baseURL ?? catalogEntry?.defaultBaseUrl,
-    })
-
-    if (generation !== modelsLoadGeneration) {
-      return
-    }
-
-    const merged = [...models]
-    const selectedModel = settings.value['agent.defaultModel']
-    if (selectedModel && !merged.includes(selectedModel)) {
-      merged.unshift(selectedModel)
-    }
-    providerModels.value = merged
-  } catch (error) {
-    if (generation !== modelsLoadGeneration) {
-      return
-    }
-    providerModels.value = getProviderCatalogEntry(providerId)?.models ?? []
-    toast.error('Could not load models', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  } finally {
-    if (generation === modelsLoadGeneration) {
-      loadingProviderModels.value = false
-    }
-  }
-}
 
 const getApiKeyRef = (providerId: string): string | undefined => {
   const customKey = `providers.custom.${providerId}` as const
@@ -380,9 +247,6 @@ const saveApiKey = async (providerId: string): Promise<void> => {
     apiKeyInput.value = ''
     editProviderId.value = null
     await refreshApiKeyStatus()
-    if (providerId === defaultProvider.value) {
-      await loadProviderModels(providerId)
-    }
     toast.success('API key saved')
   } catch (error) {
     toast.error('Failed to save API key', {
@@ -401,9 +265,6 @@ const clearApiKey = async (providerId: string): Promise<void> => {
     await deleteSecret(keychainKeyForProvider(ref))
     setApiKeyConfigured(providerId, false)
     await refreshApiKeyStatus()
-    if (providerId === defaultProvider.value) {
-      await loadProviderModels(providerId)
-    }
     toast.success('API key cleared')
   } catch (error) {
     toast.error('Failed to clear API key', {
@@ -425,29 +286,7 @@ const removeProvider = async (providerId: string): Promise<void> => {
       ? [customKey]
       : [`providers.${providerId}.apiKeyRef`]
 
-    const wasDefault = settings.value['agent.defaultProvider'] === providerId
-    if (wasDefault) {
-      keysToRemove.push('agent.defaultProvider', 'agent.defaultModel')
-    }
-
-    const remaining = configuredProviders.value.filter((id) => id !== providerId)
-
     await config.removeSettings(props.tab, keysToRemove)
-
-    if (wasDefault && remaining.length > 0) {
-      const nextId = remaining[0]
-      if (!nextId) {
-        return
-      }
-      await config.updateSetting(props.tab, 'agent.defaultProvider', nextId)
-      const catalogModels = getProviderCatalogEntry(nextId)?.models ?? []
-      if (catalogModels[0]) {
-        await config.updateSetting(props.tab, 'agent.defaultModel', catalogModels[0])
-      } else {
-        await config.updateSetting(props.tab, 'agent.defaultModel', '')
-      }
-    }
-
     toast.success('Provider removed')
   } catch (error) {
     toast.error('Failed to remove provider', {
@@ -492,66 +331,6 @@ const testConnection = async (providerId: string): Promise<void> => {
   }
 }
 
-const handleDefaultProviderOpenChange = (open: boolean): void => {
-  if (!open) {
-    defaultProviderSearch.value = ''
-  }
-}
-
-const handleDefaultModelOpenChange = (open: boolean): void => {
-  if (!open) {
-    defaultModelSearch.value = ''
-  }
-}
-
-const handleDefaultProviderChange = async (value: unknown): Promise<void> => {
-  if (typeof value !== 'string' || value === defaultProvider.value) {
-    return
-  }
-
-  if (props.tab === 'project' && !config.activeRootPath.value) {
-    toast.error('Failed to save default provider', {
-      description: 'No active project',
-    })
-    return
-  }
-
-  try {
-    await config.updateSetting(props.tab, 'agent.defaultProvider', value)
-    toast.success('Default provider saved', {
-      description: getProviderDisplayName(value),
-    })
-  } catch (error) {
-    toast.error('Failed to save default provider', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const handleDefaultModelChange = async (value: unknown): Promise<void> => {
-  if (typeof value !== 'string' || value === defaultModel.value) {
-    return
-  }
-
-  if (props.tab === 'project' && !config.activeRootPath.value) {
-    toast.error('Failed to save default model', {
-      description: 'No active project',
-    })
-    return
-  }
-
-  try {
-    await config.updateSetting(props.tab, 'agent.defaultModel', value)
-    toast.success('Default model saved', {
-      description: value,
-    })
-  } catch (error) {
-    toast.error('Failed to save default model', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
 watch(
   [configuredProviders, () => props.tab],
   async () => {
@@ -559,21 +338,6 @@ watch(
       await refreshApiKeyStatus()
     } catch (error) {
       toast.error('Failed to refresh API key status', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  },
-  { immediate: true },
-)
-
-watch(
-  [() => defaultProvider.value, () => props.tab],
-  async ([providerId]) => {
-    defaultModelSearch.value = ''
-    try {
-      await loadProviderModels(providerId)
-    } catch (error) {
-      toast.error('Could not load models', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
@@ -598,91 +362,6 @@ watch(
     </div>
 
     <template v-else>
-      <div class="space-y-4">
-        <div class="flex flex-wrap gap-4">
-          <div class="space-y-2">
-            <Label>Default provider</Label>
-            <Select
-              :model-value="defaultProvider"
-              @update:model-value="handleDefaultProviderChange"
-              @update:open="handleDefaultProviderOpenChange"
-            >
-              <SelectTrigger class="w-[220px]">
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent class="p-0">
-                <div class="border-b border-border/50 p-2" @pointerdown.stop>
-                  <Input
-                    v-model="defaultProviderSearch"
-                    placeholder="Search providers…"
-                    @keydown.stop
-                  />
-                </div>
-                <div class="max-h-64 overflow-y-auto p-1">
-                  <SelectItem
-                    v-for="id in filteredConfiguredProviders"
-                    :key="id"
-                    :value="id"
-                  >
-                    {{ getProviderDisplayName(id) }}
-                  </SelectItem>
-                  <p
-                    v-if="filteredConfiguredProviders.length === 0"
-                    class="px-2 py-4 text-center text-sm text-muted-foreground"
-                  >
-                    No providers match your search.
-                  </p>
-                </div>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="space-y-2">
-            <Label>Default model</Label>
-            <Select
-              :model-value="defaultModel"
-              :disabled="!defaultProvider || loadingProviderModels"
-              @update:model-value="handleDefaultModelChange"
-              @update:open="handleDefaultModelOpenChange"
-            >
-              <SelectTrigger class="w-[320px]">
-                <SelectValue placeholder="Select model" />
-              </SelectTrigger>
-              <SelectContent class="p-0">
-                <div class="border-b border-border/50 p-2" @pointerdown.stop>
-                  <Input
-                    v-model="defaultModelSearch"
-                    placeholder="Search models…"
-                    @keydown.stop
-                  />
-                </div>
-                <div class="max-h-72 overflow-y-auto p-1">
-                  <SelectItem
-                    v-for="model in filteredProviderModels"
-                    :key="model"
-                    :value="model"
-                  >
-                    {{ model }}
-                  </SelectItem>
-                  <p
-                    v-if="!loadingProviderModels && filteredProviderModels.length === 0"
-                    class="px-2 py-4 text-center text-sm text-muted-foreground"
-                  >
-                    {{
-                      defaultModelSearch.trim()
-                        ? 'No models match your search.'
-                        : 'No models available.'
-                    }}
-                  </p>
-                </div>
-              </SelectContent>
-            </Select>
-            <p v-if="defaultModelHint" class="text-xs text-muted-foreground">
-              {{ defaultModelHint }}
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-4">
           <h3 class="text-sm font-medium">Configured providers</h3>

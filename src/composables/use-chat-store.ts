@@ -3,17 +3,27 @@ import type { UIMessage } from 'ai'
 import type { AgentStep } from '@/types/chat/agent-step'
 import type { AgentTurn } from '@/types/chat/agent-turn'
 import type { ChatMeta } from '@/types/chat/chat-meta'
-import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
+import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
+import type { ChatArtifact } from '@/types/chat/chat-artifact'
+import type { PendingQuestionState } from '@/types/chat/pending-question'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ToolRun } from '@/types/harness/tool-run'
+import type { TodoItem } from '@/types/harness/harness-event'
+import type { FileDiff } from '@/types/harness/file-diff'
+import { resolveQuestion } from '@/services/harness/question-gate'
 import { chatMetaSchema } from '@/schemas/chat-meta'
 import { chatMessageLineSchema } from '@/schemas/chat-message-line'
+import { fileDiffListSchema } from '@/schemas/file-diff'
 import {
   createChat,
   listChats,
   readChatMeta,
   readChatMessages,
 } from '@/services/pyrola/pyrola-tauri'
+import {
+  truncateChatLogAfterLastUser,
+  truncateChatLogBeforeMessage,
+} from '@/services/chat/truncate-chat-log'
 
 type MessagePart = UIMessage['parts'][number]
 
@@ -24,6 +34,138 @@ const loading = ref(false)
 const activeTurnId = ref<string | null>(null)
 const activeStepId = ref<string | null>(null)
 const pendingStepText = ref('')
+const pendingQuestion = ref<PendingQuestionState | null>(null)
+const editingMessageId = ref<string | null>(null)
+const editDraftText = ref('')
+
+const parseChatArtifact = (value: unknown): ChatArtifact | undefined => {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const record = value as Record<string, unknown>
+  const kind = record.kind
+  const path = record.path
+  if (
+    (kind !== 'plan' && kind !== 'studio' && kind !== 'file') ||
+    typeof path !== 'string' ||
+    path.length === 0
+  ) {
+    return undefined
+  }
+  const label = typeof record.label === 'string' ? record.label : undefined
+  return { kind, path, label }
+}
+
+const parseChatDiffs = (value: unknown): FileDiff[] | undefined => {
+  const parsed = fileDiffListSchema.safeParse(value)
+  if (!parsed.success) {
+    return undefined
+  }
+  return parsed.data
+}
+
+const parseTodoItems = (value: unknown): TodoItem[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return []
+    }
+    const record = item as Record<string, unknown>
+    const id = typeof record.id === 'string' ? record.id : ''
+    const content = typeof record.content === 'string' ? record.content : ''
+    const status = record.status
+    if (
+      !id ||
+      !content ||
+      (status !== 'pending' &&
+        status !== 'in_progress' &&
+        status !== 'completed' &&
+        status !== 'cancelled')
+    ) {
+      return []
+    }
+    return [{ id, content, status }]
+  })
+}
+
+const upsertTodoTimelineItem = (items: ChatTimelineItem[], todos: TodoItem[]): ChatTimelineItem[] => {
+  if (todos.length === 0) {
+    return items
+  }
+  const next = [...items]
+  const last = next.at(-1)
+  if (last?.type === 'todo') {
+    next[next.length - 1] = { type: 'todo', todos }
+    return next
+  }
+  return [...next, { type: 'todo', todos }]
+}
+
+const upsertSubagentStart = (
+  items: ChatTimelineItem[],
+  subagent: Omit<SubagentTimelineItem, 'type' | 'status'>,
+): ChatTimelineItem[] => {
+  const index = items.findIndex(
+    (item) => item.type === 'subagent' && item.subagentId === subagent.subagentId,
+  )
+  if (index >= 0) {
+    const next = [...items]
+    const existing = next[index]
+    if (existing?.type === 'subagent') {
+      next[index] = {
+        ...existing,
+        name: subagent.name,
+        blocking: subagent.blocking,
+      }
+    }
+    return next
+  }
+  return [
+    ...items,
+    {
+      type: 'subagent',
+      subagentId: subagent.subagentId,
+      name: subagent.name,
+      blocking: subagent.blocking,
+      status: 'running',
+    },
+  ]
+}
+
+const completeSubagentTimelineItem = (
+  items: ChatTimelineItem[],
+  subagentId: string,
+  summary: string,
+): ChatTimelineItem[] => {
+  const index = items.findIndex(
+    (item) => item.type === 'subagent' && item.subagentId === subagentId,
+  )
+  if (index >= 0) {
+    const next = [...items]
+    const existing = next[index]
+    if (existing?.type === 'subagent') {
+      next[index] = {
+        ...existing,
+        status: 'done',
+        summary,
+      }
+    }
+    return next
+  }
+  return [
+    ...items,
+    {
+      type: 'subagent',
+      subagentId,
+      name: 'Sub-agent',
+      blocking: false,
+      status: 'done',
+      summary,
+    },
+  ]
+}
 
 const mapMeta = (record: {
   id: string
@@ -99,6 +241,8 @@ const upsertToolInStep = (step: AgentStep, run: ToolRun): AgentStep => {
       status,
       args: run.args ?? existing.args,
       result: run.result ?? existing.result,
+      artifact: run.artifact ?? existing.artifact,
+      diffs: run.diffs ?? existing.diffs,
     }
   } else {
     tools.push(run)
@@ -217,6 +361,43 @@ const distributeLegacyStepText = (turn: AgentTurn): AgentTurn => {
   }
 }
 
+const rebuildMessagesFromTimeline = (items: ChatTimelineItem[]): UIMessage[] => {
+  const nextMessages: UIMessage[] = []
+  for (const item of items) {
+    if (item.type === 'user') {
+      nextMessages.push(item.message)
+      continue
+    }
+    if (item.type !== 'agent-turn') {
+      continue
+    }
+    const turn = item.turn
+    const reasoning = turn.steps.map((step) => step.reasoning).join('')
+    nextMessages.push({
+      id: turn.id,
+      role: 'assistant',
+      parts: [
+        ...(reasoning ? [{ type: 'reasoning' as const, text: reasoning }] : []),
+        { type: 'text' as const, text: turn.text },
+      ],
+    })
+  }
+  return nextMessages
+}
+
+const clearActiveTurnState = (): void => {
+  activeTurnId.value = null
+  activeStepId.value = null
+  pendingStepText.value = ''
+  pendingQuestion.value = null
+}
+
+const extractUserMessageText = (message: UIMessage): string =>
+  message.parts
+    .filter((part) => part.type === 'text')
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .join('')
+
 export default () => {
   const chatId = computed(() => meta.value?.id ?? null)
 
@@ -276,6 +457,43 @@ export default () => {
         const parsed = chatMessageLineSchema.parse(line)
         const harnessEvent = parsed.harnessEvent
 
+        if (harnessEvent?.type === 'todo-update') {
+          const todos = parseTodoItems(harnessEvent.todos)
+          if (todos.length > 0) {
+            const merged = upsertTodoTimelineItem(nextTimeline, todos)
+            nextTimeline.length = 0
+            nextTimeline.push(...merged)
+          }
+          continue
+        }
+
+        if (harnessEvent?.type === 'subagent-start') {
+          const subagentId = String(harnessEvent.subagentId ?? '')
+          const name = String(harnessEvent.name ?? 'Sub-agent')
+          const blocking = Boolean(harnessEvent.blocking)
+          if (subagentId) {
+            const merged = upsertSubagentStart(nextTimeline, {
+              subagentId,
+              name,
+              blocking,
+            })
+            nextTimeline.length = 0
+            nextTimeline.push(...merged)
+          }
+          continue
+        }
+
+        if (harnessEvent?.type === 'subagent-result') {
+          const subagentId = String(harnessEvent.subagentId ?? '')
+          const summary = String(harnessEvent.summary ?? '')
+          if (subagentId) {
+            const merged = completeSubagentTimelineItem(nextTimeline, subagentId, summary)
+            nextTimeline.length = 0
+            nextTimeline.push(...merged)
+          }
+          continue
+        }
+
         if (harnessEvent?.type === 'step-text') {
           const stepId = String(harnessEvent.stepId ?? '')
           const text = String(harnessEvent.text ?? '')
@@ -326,6 +544,8 @@ export default () => {
               (persistedStatus === 'running'
                 ? { error: 'Tool did not complete' }
                 : undefined),
+            artifact: parseChatArtifact(harnessEvent.artifact),
+            diffs: parseChatDiffs(harnessEvent.diffs),
           }
           if (!run.toolCallId) {
             continue
@@ -405,6 +625,9 @@ export default () => {
       activeTurnId.value = null
       activeStepId.value = null
       pendingStepText.value = ''
+      pendingQuestion.value = null
+      editingMessageId.value = null
+      editDraftText.value = ''
     } finally {
       loading.value = false
     }
@@ -424,6 +647,9 @@ export default () => {
     activeTurnId.value = null
     activeStepId.value = null
     pendingStepText.value = ''
+    pendingQuestion.value = null
+    editingMessageId.value = null
+    editDraftText.value = ''
     return meta.value
   }
 
@@ -622,12 +848,162 @@ export default () => {
     meta.value = mapMeta(record)
   }
 
+  const appendLocalTodoUpdate = (todos: TodoItem[]): void => {
+    if (todos.length === 0) {
+      return
+    }
+    timeline.value = upsertTodoTimelineItem(timeline.value, todos)
+  }
+
+  const upsertLocalSubagentStart = (subagent: {
+    subagentId: string
+    name: string
+    blocking: boolean
+  }): void => {
+    timeline.value = upsertSubagentStart(timeline.value, subagent)
+  }
+
+  const completeLocalSubagent = (subagentId: string, summary: string): void => {
+    timeline.value = completeSubagentTimelineItem(timeline.value, subagentId, summary)
+  }
+
+  const setPendingQuestion = (question: PendingQuestionState): void => {
+    pendingQuestion.value = question
+  }
+
+  const clearPendingQuestion = (): void => {
+    pendingQuestion.value = null
+  }
+
+  const submitAnswer = (toolCallId: string, answer: string): void => {
+    resolveQuestion(toolCallId, answer)
+    if (pendingQuestion.value?.toolCallId === toolCallId) {
+      pendingQuestion.value = null
+    }
+  }
+
+  const todos = computed(() => {
+    for (let index = timeline.value.length - 1; index >= 0; index -= 1) {
+      const item = timeline.value[index]
+      if (item?.type === 'todo') {
+        return item.todos
+      }
+    }
+    return []
+  })
+
+  const findUserMessage = (messageId: string): UIMessage | null => {
+    const item = timeline.value.find(
+      (entry) => entry.type === 'user' && entry.message.id === messageId,
+    )
+    return item?.type === 'user' ? item.message : null
+  }
+
+  const hasTimelineContentAfterMessage = (messageId: string): boolean => {
+    const index = timeline.value.findIndex(
+      (entry) => entry.type === 'user' && entry.message.id === messageId,
+    )
+    return index >= 0 && index < timeline.value.length - 1
+  }
+
+  const truncateTimelineBeforeMessage = (messageId: string): void => {
+    const index = timeline.value.findIndex(
+      (entry) => entry.type === 'user' && entry.message.id === messageId,
+    )
+    if (index < 0) {
+      return
+    }
+    const nextTimeline = timeline.value.slice(0, index)
+    timeline.value = nextTimeline
+    messages.value = rebuildMessagesFromTimeline(nextTimeline)
+    clearActiveTurnState()
+  }
+
+  const truncateTimelineAfterLastUserMessage = (): void => {
+    let lastUserIndex = -1
+    for (let index = timeline.value.length - 1; index >= 0; index -= 1) {
+      if (timeline.value[index]?.type === 'user') {
+        lastUserIndex = index
+        break
+      }
+    }
+    if (lastUserIndex < 0) {
+      return
+    }
+    const nextTimeline = timeline.value.slice(0, lastUserIndex + 1)
+    timeline.value = nextTimeline
+    messages.value = rebuildMessagesFromTimeline(nextTimeline)
+    clearActiveTurnState()
+  }
+
+  const getLastUserMessage = (): UIMessage | null => {
+    for (let index = timeline.value.length - 1; index >= 0; index -= 1) {
+      const item = timeline.value[index]
+      if (item?.type === 'user') {
+        return item.message
+      }
+    }
+    return null
+  }
+
+  const canResetToLastQuestion = computed(() => {
+    let lastUserIndex = -1
+    for (let index = timeline.value.length - 1; index >= 0; index -= 1) {
+      if (timeline.value[index]?.type === 'user') {
+        lastUserIndex = index
+        break
+      }
+    }
+    if (lastUserIndex < 0) {
+      return false
+    }
+    return timeline.value
+      .slice(lastUserIndex + 1)
+      .some((item) => item.type === 'agent-turn')
+  })
+
+  const beginEditMessage = (messageId: string): void => {
+    const message = findUserMessage(messageId)
+    if (!message) {
+      return
+    }
+    editingMessageId.value = messageId
+    editDraftText.value = extractUserMessageText(message)
+  }
+
+  const cancelEditMessage = (): void => {
+    editingMessageId.value = null
+    editDraftText.value = ''
+  }
+
+  const truncateBeforeMessage = async (
+    projectSlug: string,
+    chatId: string,
+    messageId: string,
+  ): Promise<void> => {
+    await truncateChatLogBeforeMessage(projectSlug, chatId, messageId)
+    truncateTimelineBeforeMessage(messageId)
+  }
+
+  const truncateAfterLastUserMessage = async (
+    projectSlug: string,
+    chatId: string,
+  ): Promise<void> => {
+    await truncateChatLogAfterLastUser(projectSlug, chatId)
+    truncateTimelineAfterLastUserMessage()
+  }
+
   return {
     meta,
     messages,
     timeline,
     loading,
     chatId,
+    pendingQuestion,
+    todos,
+    editingMessageId,
+    editDraftText,
+    canResetToLastQuestion,
     loadChat,
     createNewChat,
     listProjectChats,
@@ -641,5 +1017,17 @@ export default () => {
     appendLocalReasoningDelta,
     upsertLocalToolRun,
     finishAgentTurn,
+    appendLocalTodoUpdate,
+    upsertLocalSubagentStart,
+    completeLocalSubagent,
+    setPendingQuestion,
+    clearPendingQuestion,
+    submitAnswer,
+    hasTimelineContentAfterMessage,
+    beginEditMessage,
+    cancelEditMessage,
+    truncateBeforeMessage,
+    truncateAfterLastUserMessage,
+    getLastUserMessage,
   }
 }

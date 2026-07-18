@@ -1,7 +1,10 @@
+import {
+  formatStudioSchemaError,
+  studioFrontmatterSchema,
+} from '@/schemas/studio-document'
 import type {
   ParsedStudioArtifact,
   StudioArtifactFrontmatter,
-  StudioArtifactStatus,
 } from '@/types/studio/studio-artifact'
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
@@ -17,8 +20,8 @@ const parseYamlValue = (raw: string): string => {
   return trimmed
 }
 
-const parseFrontmatter = (yaml: string): StudioArtifactFrontmatter => {
-  const data: StudioArtifactFrontmatter = {}
+const parseYamlFrontmatter = (yaml: string): Record<string, unknown> => {
+  const data: Record<string, unknown> = {}
   for (const line of yaml.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) {
@@ -30,17 +33,7 @@ const parseFrontmatter = (yaml: string): StudioArtifactFrontmatter => {
     }
     const key = trimmed.slice(0, colon).trim()
     const value = parseYamlValue(trimmed.slice(colon + 1))
-    if (key === 'title') {
-      data.title = value
-    } else if (key === 'subtitle') {
-      data.subtitle = value
-    } else if (key === 'status') {
-      data.status = value as StudioArtifactStatus
-    } else if (key === 'dateRange') {
-      data.dateRange = value
-    } else if (key === 'source') {
-      data.source = value
-    }
+    data[key] = value
   }
   return data
 }
@@ -50,9 +43,22 @@ const parseStudioArtifact = (content: string): ParsedStudioArtifact => {
   if (!match) {
     return { frontmatter: {}, body: content }
   }
+
+  const body = match[2] ?? ''
+  const rawFrontmatter = parseYamlFrontmatter(match[1] ?? '')
+  const result = studioFrontmatterSchema.safeParse(rawFrontmatter)
+
+  if (!result.success) {
+    return {
+      frontmatter: null,
+      body,
+      parseError: `Invalid studio frontmatter: ${formatStudioSchemaError(result.error)}`,
+    }
+  }
+
   return {
-    frontmatter: parseFrontmatter(match[1] ?? ''),
-    body: match[2] ?? '',
+    frontmatter: result.data,
+    body,
   }
 }
 
@@ -78,6 +84,18 @@ export const serializeStudioArtifact = (
   if (frontmatter.source) {
     lines.push(`source: ${frontmatter.source}`)
   }
+  if (frontmatter.docType) {
+    lines.push(`docType: ${frontmatter.docType}`)
+  }
+  if (frontmatter.slug) {
+    lines.push(`slug: ${frontmatter.slug}`)
+  }
+  if (frontmatter.createdAt) {
+    lines.push(`createdAt: ${frontmatter.createdAt}`)
+  }
+  if (frontmatter.updatedAt) {
+    lines.push(`updatedAt: ${frontmatter.updatedAt}`)
+  }
   lines.push('---', '')
   return `${lines.join('\n')}${body.trimStart()}`
 }
@@ -87,5 +105,8 @@ export const updateStudioFrontmatter = (
   patch: Partial<StudioArtifactFrontmatter>,
 ): string => {
   const parsed = parseStudioArtifact(content)
+  if (parsed.parseError || !parsed.frontmatter) {
+    return content
+  }
   return serializeStudioArtifact({ ...parsed.frontmatter, ...patch }, parsed.body)
 }

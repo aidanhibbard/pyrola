@@ -6,12 +6,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+} from '@/components/shadcn/ui/context-menu'
 import { cn } from '@/lib/utils'
 import { computed, provide } from 'vue'
 import { FileTreeFolderKey, useFileTreeContext } from '@/components/ai-elements/file-tree/context'
 import FileTreeIcon from '@/components/ai-elements/file-tree/FileTreeIcon.vue'
 import FileTreeName from '@/components/ai-elements/file-tree/FileTreeName.vue'
 import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
+import WorkbenchFileTreeContextMenuContent from '@/components/workbench/FileTreeContextMenuContent.vue'
 
 interface Props extends /* @vue-ignore */ HTMLAttributes {
   path: string
@@ -41,34 +46,43 @@ provide(FileTreeFolderKey, {
       tabindex="0"
       v-bind="$attrs"
     >
-      <CollapsibleTrigger as-child>
-        <button
-          :class="
-            cn(
-              'flex w-full items-center gap-1 rounded px-2 py-1 text-left transition-colors hover:bg-muted/50',
-              isSelected && 'bg-muted',
-            )
-          "
-          type="button"
-        >
-          <ChevronRightIcon
-            :class="
-              cn(
-                'size-4 shrink-0 text-muted-foreground transition-transform',
-                isExpanded && 'rotate-90',
-              )
-            "
-          />
-          <FileTreeIcon>
-            <WorkbenchFileEntryIcon
-              :name="props.name"
-              is-directory
-              :is-open="isExpanded"
-            />
-          </FileTreeIcon>
-          <FileTreeName>{{ props.name }}</FileTreeName>
-        </button>
-      </CollapsibleTrigger>
+      <ContextMenu>
+        <ContextMenuTrigger as-child>
+          <CollapsibleTrigger as-child>
+            <button
+              :class="
+                cn(
+                  'flex w-full items-center gap-1 rounded px-2 py-1 text-left transition-colors hover:bg-muted/50',
+                  isSelected && 'bg-muted',
+                )
+              "
+              type="button"
+            >
+              <ChevronRightIcon
+                :class="
+                  cn(
+                    'size-4 shrink-0 text-muted-foreground transition-transform',
+                    isExpanded && 'rotate-90',
+                  )
+                "
+              />
+              <FileTreeIcon>
+                <WorkbenchFileEntryIcon
+                  :name="props.name"
+                  is-directory
+                  :is-open="isExpanded"
+                />
+              </FileTreeIcon>
+              <FileTreeName>{{ props.name }}</FileTreeName>
+            </button>
+          </CollapsibleTrigger>
+        </ContextMenuTrigger>
+        <WorkbenchFileTreeContextMenuContent
+          :name="props.name"
+          :path="props.path"
+          :is-directory="true"
+        />
+      </ContextMenu>
       <CollapsibleContent>
         <div class="ml-4 border-l pl-2">
           <slot />

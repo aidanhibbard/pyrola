@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { Folder, FolderOpen, PanelLeftClose, Plus } from '@lucide/vue'
+import { Folder, FolderOpen, PanelLeftClose, Plus, FileCode, Terminal } from '@lucide/vue'
 import type { FleetSidebarProject } from '@/types/fleet/fleet-sidebar-project'
 import {
   Collapsible,
@@ -14,6 +14,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/shadcn/ui/context-menu'
 import {
@@ -26,8 +27,11 @@ import {
 import NavigationAsideLeftChatListItem from '@/components/navigation/aside/left/ChatListItem.vue'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import useWorkbenchStore from '@/composables/use-workbench-store'
+import useProjectsExpansion from '@/composables/use-projects-expansion'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import resolveModelForRole from '@/services/models/resolve-model-for-role'
 
 const props = defineProps<{
   project: FleetSidebarProject
@@ -36,10 +40,36 @@ const props = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const fleet = useFleetRegistry()
+const workbench = useWorkbenchStore()
 const chatStore = useChatStore()
 const config = usePyrolaConfig()
+const expansion = useProjectsExpansion()
 const startingChat = ref(false)
 const removingProject = ref(false)
+const manualOpen = ref<boolean | null>(null)
+
+const projectOpen = computed({
+  get: (): boolean =>
+    expansion.resolveOpen(props.project.defaultExpanded ?? false, manualOpen.value),
+  set: (open: boolean) => {
+    manualOpen.value = open
+    expansion.onProjectOpenChange()
+  },
+})
+
+watch(
+  () => props.project.defaultExpanded,
+  () => {
+    manualOpen.value = null
+  },
+)
+
+watch(
+  () => expansion.expansionMode.value,
+  () => {
+    manualOpen.value = null
+  },
+)
 
 const handleStartChat = async (): Promise<void> => {
   if (startingChat.value) {
@@ -57,11 +87,17 @@ const handleStartChat = async (): Promise<void> => {
   startingChat.value = true
   try {
     await fleet.setActiveProject(fleetProject.id)
+    const defaultMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
+    const model = resolveModelForRole(defaultMode, config.effectiveSettings.value) ?? ''
+    if (!model) {
+      toast.error('Select a default model in Settings before starting a chat')
+      return
+    }
     const chat = await chatStore.createNewChat({
       projectSlug: fleetProject.slug,
       projectRoot: fleetProject.rootPath,
-      mode: config.effectiveSettings.value['agent.defaultMode'] ?? 'agent',
-      model: config.effectiveSettings.value['agent.defaultModel'] ?? '',
+      mode: defaultMode,
+      model,
     })
     await refreshFleetSidebar()
     await router.push(`/project/${fleetProject.slug}/chat/${chat.id}`)
@@ -102,12 +138,50 @@ const handleRemoveFromSidebar = async (): Promise<void> => {
     removingProject.value = false
   }
 }
+
+const handleOpenEditor = async (): Promise<void> => {
+  const fleetProject = fleet.projects.value.find(
+    (item) => item.slug === props.project.slug,
+  )
+  if (!fleetProject) {
+    toast.error('Project not found')
+    return
+  }
+
+  try {
+    await fleet.setActiveProject(fleetProject.id)
+    await workbench.openEditor(fleetProject.id, 'README.md')
+  } catch (error) {
+    toast.error('Could not open editor', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleOpenTerminal = async (): Promise<void> => {
+  const fleetProject = fleet.projects.value.find(
+    (item) => item.slug === props.project.slug,
+  )
+  if (!fleetProject) {
+    toast.error('Project not found')
+    return
+  }
+
+  try {
+    await fleet.setActiveProject(fleetProject.id)
+    await workbench.openTerminal(fleetProject.id)
+  } catch (error) {
+    toast.error('Could not open terminal', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 </script>
 
 <template>
   <Collapsible
+    v-model:open="projectOpen"
     as-child
-    :default-open="project.defaultExpanded"
     class="group/collapsible"
   >
     <SidebarMenuItem>
@@ -126,6 +200,15 @@ const handleRemoveFromSidebar = async (): Promise<void> => {
           </CollapsibleTrigger>
         </ContextMenuTrigger>
         <ContextMenuContent class="w-52">
+          <ContextMenuItem @select="handleOpenEditor">
+            <FileCode />
+            Open Editor
+          </ContextMenuItem>
+          <ContextMenuItem @select="handleOpenTerminal">
+            <Terminal />
+            Open Terminal
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem
             :disabled="removingProject"
             @select="handleRemoveFromSidebar"
@@ -141,11 +224,11 @@ const handleRemoveFromSidebar = async (): Promise<void> => {
           size="icon"
           class="size-6"
           :disabled="startingChat"
+          :aria-label="`New chat in ${project.displayName}`"
           :title="`New chat in ${project.displayName}`"
           @click.stop="handleStartChat"
         >
           <Plus class="size-3.5" />
-          <span class="sr-only">New chat in {{ project.displayName }}</span>
         </Button>
       </SidebarMenuAction>
       <CollapsibleContent>

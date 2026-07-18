@@ -8,22 +8,22 @@ dependsOn: agent-harness-2026-07-15-215200
 todos:
   - id: plan-format
     content: PLAN.md parser/writer (YAML frontmatter + todos)
-    status: pending
+    status: completed
   - id: plan-tools
     content: create_plan and update_plan_todo harness tools
-    status: pending
+    status: completed
   - id: inline-todos
     content: Inline chat todos via ai-elements Task
-    status: pending
+    status: completed
   - id: sub-agents
     content: Load .pyrola/agents/*.md + spawn_subagent tool
-    status: pending
+    status: completed
   - id: rules
     content: Load .pyrola/rules/*.md with glob-scoped injection
     status: pending
   - id: skills
     content: Load .pyrola/skills/<name>/SKILL.md on demand
-    status: pending
+    status: completed
 ---
 
 ## Summary

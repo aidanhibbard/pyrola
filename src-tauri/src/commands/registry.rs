@@ -69,13 +69,33 @@ pub fn registry_list_projects(app: AppHandle) -> Result<Vec<FleetProject>, Strin
   Ok(read_registry(&app)?.projects)
 }
 
-#[tauri::command]
-pub fn registry_add_project(
-  app: AppHandle,
+pub fn resolve_launch_path(path_arg: &str) -> Result<PathBuf, String> {
+  let path = PathBuf::from(path_arg);
+  let absolute = if path.is_absolute() {
+    path
+  } else {
+    std::env::current_dir()
+      .map_err(|e| e.to_string())?
+      .join(path)
+  };
+
+  let canonical = absolute
+    .canonicalize()
+    .map_err(|e| format!("Failed to resolve path {path_arg}: {e}"))?;
+
+  if !canonical.is_dir() {
+    return Err(format!("Not a directory: {}", canonical.display()));
+  }
+
+  Ok(canonical)
+}
+
+fn add_or_update_project(
+  app: &AppHandle,
   name: String,
   root_path: String,
 ) -> Result<FleetProject, String> {
-  let mut registry = read_registry(&app)?;
+  let mut registry = read_registry(app)?;
   if let Some(existing) = registry
     .projects
     .iter_mut()
@@ -84,7 +104,7 @@ pub fn registry_add_project(
     existing.name = name;
     existing.last_opened = chrono_now();
     let project = existing.clone();
-    write_registry(&app, &registry)?;
+    write_registry(app, &registry)?;
     return Ok(project);
   }
 
@@ -97,8 +117,30 @@ pub fn registry_add_project(
   };
   registry.projects.push(project.clone());
   registry.projects.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
-  write_registry(&app, &registry)?;
+  write_registry(app, &registry)?;
   Ok(project)
+}
+
+pub fn open_project_at_path(app: &AppHandle, root_path: PathBuf) -> Result<FleetProject, String> {
+  let name = root_path
+    .file_name()
+    .and_then(|n| n.to_str())
+    .filter(|s| !s.is_empty())
+    .unwrap_or("project")
+    .to_string();
+  let root_path_str = root_path.to_string_lossy().to_string();
+  let project = add_or_update_project(app, name, root_path_str)?;
+  registry_set_active_project(app.clone(), Some(project.id.clone()))?;
+  Ok(project)
+}
+
+#[tauri::command]
+pub fn registry_add_project(
+  app: AppHandle,
+  name: String,
+  root_path: String,
+) -> Result<FleetProject, String> {
+  add_or_update_project(&app, name, root_path)
 }
 
 #[tauri::command]

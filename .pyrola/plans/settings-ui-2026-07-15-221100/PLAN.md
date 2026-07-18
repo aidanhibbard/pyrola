@@ -10,19 +10,19 @@ dependsOn:
 todos:
   - id: settings-view
     content: SettingsView with Personal + Project tabs (project tab only when .pyrola exists)
-    status: pending
+    status: completed
   - id: appearance-prefs
     content: Theme + glass/vibrancy toggles persisted in ~/.pyrola/settings.json
-    status: pending
+    status: completed
   - id: provider-registry
     content: Full AI SDK provider registry + custom OpenAI-compatible providers (user + project scope)
-    status: pending
+    status: completed
   - id: api-key-ui
     content: API key management via keychain refs with add/edit/test per provider
-    status: pending
+    status: completed
   - id: mcp-list
     content: MCP server list with live status (connected, error, auth required, stopped)
-    status: pending
+    status: completed
   - id: mcp-auth
     content: Support all VS Code mcp.json auth types (inputs, env, headers, OAuth)
     status: pending
@@ -31,13 +31,13 @@ todos:
     status: pending
   - id: mcp-refresh
     content: Refresh action — reconnect server, re-fetch tools, refresh OAuth token if expired
-    status: pending
+    status: completed
   - id: mcp-logout
     content: Log out action — revoke/clear OAuth tokens and inputs from keychain
-    status: pending
+    status: completed
   - id: mcp-tools-panel
     content: Expandable tools list per server (name, description, input schema)
-    status: pending
+    status: completed
 
 ## Summary
 

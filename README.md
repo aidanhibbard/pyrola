@@ -1,4 +1,33 @@
-# .
+# pyrola
+
+## CLI usage
+
+Open Pyrola with an optional project directory. The path is resolved relative to your current working directory when relative.
+
+```sh
+pyrola .
+pyrola /path/to/repo
+```
+
+On first launch with a path, the project is registered in the fleet registry (using the directory name) and set as the active project. If the path is already registered, it is activated.
+
+### Installing a `pyrola` command
+
+After building the app (`npm run tauri build`), symlink or copy the bundled binary onto your `PATH`. On macOS the release binary is typically at `src-tauri/target/release/bundle/macos/pyrola.app/Contents/MacOS/pyrola`.
+
+```sh
+ln -s "/path/to/pyrola.app/Contents/MacOS/pyrola" ~/.local/bin/pyrola
+```
+
+Without a `PATH` install you can open a project from Terminal on macOS:
+
+```sh
+open -a pyrola --args /path/to/repo
+```
+
+**Known limitation:** launching `pyrola /path` while Pyrola is already running starts a second instance; single-instance handoff (focus existing window and switch project) is not implemented yet.
+
+---
 
 This template should help get you started developing with Vue 3 in Vite.
 

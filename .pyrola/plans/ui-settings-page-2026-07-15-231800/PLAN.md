@@ -10,28 +10,28 @@ dependsOn:
 todos:
   - id: set-1-shell
     content: SettingsView + SettingsLayout + router; Personal/Project tabs
-    status: pending
+    status: completed
   - id: set-2-appearance
     content: AppearanceSection — persist theme/glass in settings.json; sync title bar toggles
-    status: pending
+    status: completed
   - id: set-3-providers
     content: ProvidersSection — list, add/edit dialogs, keychain, test connection
-    status: pending
+    status: completed
   - id: set-4-mcp-list
     content: McpServersSection — status rows, per-row ↻ Refresh, Start/Stop/Log out
-    status: pending
+    status: completed
   - id: set-5-mcp-crud
     content: MCP structured add/edit dialogs + expandable tools panel
-    status: pending
+    status: completed
   - id: set-6-mcp-auth
     content: MCP Authenticate flows — inputs, OAuth, envFile picker
     status: pending
   - id: set-7-fleet-general
     content: FleetSection + GeneralSection (personal tab only)
-    status: pending
+    status: completed
   - id: set-8-linkout
     content: Agents/Rules/Skills link-out lists with Open in Editor / Reveal in Finder
-    status: pending
+    status: completed
   - id: set-9-polish
     content: Deep links, project override banner, reset-to-personal actions
     status: pending

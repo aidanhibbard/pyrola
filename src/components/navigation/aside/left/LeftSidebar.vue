@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SidebarProps } from '@/components/shadcn/ui/sidebar'
+import NavFooter from './NavFooter.vue'
 import NavHeader from './NavHeader.vue'
 import NavProjects from './NavProjects.vue'
 import {
@@ -23,7 +24,9 @@ const props = withDefaults(defineProps<SidebarProps>(), {
     <SidebarContent>
       <NavProjects />
     </SidebarContent>
-    <SidebarFooter />
+    <SidebarFooter>
+      <NavFooter />
+    </SidebarFooter>
     <SidebarRail />
   </Sidebar>
 </template>

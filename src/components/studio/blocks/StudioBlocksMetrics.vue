@@ -28,7 +28,7 @@ const deltaClass = (tone?: string): string => {
     <div v-for="(item, index) in metrics" :key="`${item.label}-${index}`" class="px-4 py-3">
       <p class="text-xs text-muted-foreground">{{ item.label }}</p>
       <div class="mt-1 flex items-baseline gap-1.5">
-        <p class="text-xl font-semibold tracking-tight tabular-nums">{{ item.value }}</p>
+        <p class="text-lg font-semibold tracking-tight tabular-nums text-foreground">{{ item.value }}</p>
         <p v-if="item.delta" class="text-xs font-medium" :class="deltaClass(item.tone)">
           {{ item.delta }}
         </p>

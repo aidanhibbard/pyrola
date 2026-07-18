@@ -10,22 +10,22 @@ dependsOn:
 todos:
   - id: tb-1-chrome
     content: TitleBar — drag region, window controls, panel toggles
-    status: pending
+    status: completed
   - id: tb-2-nav
     content: Back/forward nav history (optional v1.5)
     status: pending
   - id: tm-1-panel
     content: TerminalPanel — bottom resizable panel in layout
-    status: pending
+    status: completed
   - id: tm-2-xterm
     content: xterm.js integration + tab strip for multiple shells
-    status: pending
+    status: completed
   - id: tm-3-toggle
     content: Collapse/expand terminal from title bar + keyboard shortcut
-    status: pending
+    status: completed
   - id: tm-4-pty
     content: portable-pty backend for run_terminal harness tool
-    status: pending
+    status: completed
 ---
 
 ## Summary

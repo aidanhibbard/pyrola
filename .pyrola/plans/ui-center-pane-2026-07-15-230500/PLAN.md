@@ -12,19 +12,19 @@ dependsOn:
 todos:
   - id: cp-1-routes
     content: AgentThreadView route + empty home state vs active thread
-    status: pending
+    status: completed
   - id: cp-2-header
     content: ThreadHeader — title, pin, mode badge, todo progress
-    status: pending
+    status: completed
   - id: cp-3-stream
     content: Message stream — ai-elements Conversation, Tool, Reasoning, Commit summaries
-    status: pending
+    status: completed
   - id: cp-4-input
     content: PromptInput — attach, mode, model selector, voice, stop
-    status: pending
+    status: completed
   - id: cp-5-context-bar
     content: Context bar — branch chip, machine label, context % ring
-    status: pending
+    status: completed
   - id: cp-6-home
     content: Home empty state — plan/build input, Plan New Idea, Multitask hints
     status: pending

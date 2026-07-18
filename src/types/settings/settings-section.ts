@@ -1,6 +1,7 @@
 export type SettingsSectionId =
   | 'appearance'
   | 'providers'
+  | 'models'
   | 'mcp'
   | 'fleet'
   | 'general'
@@ -9,7 +10,6 @@ export type SettingsSectionId =
   | 'studio'
   | 'rules'
   | 'skills'
-  | 'search'
   | 'lsp'
 
 export const PERSONAL_SECTIONS: SettingsSectionId[] = [
@@ -17,7 +17,7 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
   'appearance',
   'mcp',
   'providers',
-  'search',
+  'models',
   'lsp',
   'fleet',
   'plans',
@@ -29,7 +29,7 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
 export const PROJECT_SECTIONS: SettingsSectionId[] = [
   'mcp',
   'providers',
-  'search',
+  'models',
   'lsp',
   'plans',
   'studio',
@@ -41,6 +41,7 @@ export const PROJECT_SECTIONS: SettingsSectionId[] = [
 export const SECTION_LABELS: Record<SettingsSectionId, string> = {
   appearance: 'Appearance',
   providers: 'Providers',
+  models: 'Models',
   mcp: 'MCP',
   fleet: 'Fleet',
   general: 'General',
@@ -49,6 +50,5 @@ export const SECTION_LABELS: Record<SettingsSectionId, string> = {
   studio: 'Studio',
   rules: 'Rules',
   skills: 'Skills',
-  search: 'Search',
   lsp: 'LSP',
 }

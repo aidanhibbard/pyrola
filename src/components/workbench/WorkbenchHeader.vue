@@ -91,7 +91,7 @@ const handleDragEnd = (): void => {
     style="--titlebar-height: 40px"
   >
     <div class="pointer-events-auto shrink-0 pl-1">
-      <WorkbenchTabPicker>
+      <WorkbenchTabPicker tooltip="Open tab">
         <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" aria-label="Open tab">
           <Plus class="h-4 w-4" />
         </Button>
@@ -135,15 +135,12 @@ const handleDragEnd = (): void => {
             <X class="h-3 w-3" />
           </span>
         </button>
+        <div class="h-full min-w-0 flex-1" data-tauri-drag-region />
       </div>
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
 
-    <div
-      v-else
-      class="pointer-events-auto h-full min-w-0 flex-1"
-      data-tauri-drag-region
-    />
+    <div v-else class="h-full min-w-0 flex-1" />
 
     <div class="pointer-events-auto mr-3 flex shrink-0 items-center gap-0.5">
       <WorkbenchTabMenu v-if="hasTabs" />

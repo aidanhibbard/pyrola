@@ -5,6 +5,8 @@ import gitRepoInfo from '@/services/git/git-repo-info'
 import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import loadPrompt from '@/services/prompts/load-prompt'
+import { loadInternalSkill } from '@/services/skills/discover-internal-skills'
 import { listSkillIndex } from '@/services/skills/skill-registry'
 import { mcpStatus, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
 
@@ -88,6 +90,14 @@ const formatMentionBlocks = (
   }
 }
 
+// Auto-inject the active mode skill at assembly time instead of requiring
+// load_skill("<mode>") at turn start — avoids an extra tool round-trip while
+// keeping mode guidance in src/skills/<mode>/SKILL.md.
+const resolveModeSkillBlock = (mode: PyrolaChatMode): string => {
+  const loaded = loadInternalSkill(mode)
+  return loaded?.content ?? ''
+}
+
 export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
   const branch = await gitRepoInfo(input.projectRoot).catch(() => null)
 
@@ -121,38 +131,18 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
   const toolCatalog = formatToolCatalogForMode(input.mode)
   const mcpCatalog = await formatMcpCatalog(input.projectRoot).catch(() => '')
 
-  const toolGuidance = [
-    'Tool usage:',
-    '- You already have the tool list below. Do not grep the repo just to discover built-in tools or MCP servers.',
-    '- For MCP: use get_mcp_tools if the catalog below is stale, then call_mcp_tool with serverId and tool name.',
-    '- For shell commands use the built-in run_terminal tool — never call_mcp_tool for a "terminal" MCP server unless one is listed below.',
-    '- Prefer edit_file or write_file for code changes. Do not use run_terminal to edit files.',
-    '- apply_patch uses OpenCode format, NOT git diff. Example:',
-    '  *** Update File: src/example.ts',
-    '  @@',
-    '  -old line',
-    '  +new line',
-    '- If a tool fails repeatedly, stop retrying the same approach and explain the blocker to the user.',
-    ...(input.mode === 'studio'
-      ? [
-          'When publishing a studio artifact, call load_skill("studio") first.',
-          '- Data may come from the user, MCP, shell, or inline YAML in the artifact.',
-          '- Publish with write_studio_artifact (Comark markdown only, never HTML).',
-        ]
-      : []),
-    ...(input.mode === 'plan' || input.mode === 'ask'
-      ? [
-          '- Use run_terminal to inspect the machine or project environment when planning or answering (git status, disk, memory, running processes).',
-        ]
-      : []),
-  ].join('\n')
+  const branchSuffix = branch?.currentBranch ? `\n\nGit branch: ${branch.currentBranch}` : ''
+  const modeSkillBlock = resolveModeSkillBlock(input.mode)
 
   const base = [
-    `You are Pyrola, an AI coding agent in ${input.mode} mode.`,
-    `Project: ${input.projectName} (${input.projectRoot})`,
-    branch?.currentBranch ? `Git branch: ${branch.currentBranch}` : '',
-    'Use tools to explore and modify the codebase when appropriate.',
-    toolGuidance,
+    loadPrompt('system/base.md', {
+      mode: input.mode,
+      projectName: input.projectName,
+      projectRoot: input.projectRoot,
+      branchSuffix,
+    }),
+    loadPrompt('system/tool-guidance.md'),
+    modeSkillBlock,
   ]
     .filter(Boolean)
     .join('\n\n')

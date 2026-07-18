@@ -3,6 +3,11 @@ import { computed, ref } from 'vue'
 import { ChevronDown, ChevronRight, Loader2, LogIn, LogOut, Play, RefreshCw, Server, Square, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { Input } from '@/components/shadcn/ui/input'
 import { Label } from '@/components/shadcn/ui/label'
 import { Badge } from '@/components/shadcn/ui/badge'
@@ -216,47 +221,70 @@ const refreshAll = async (): Promise<void> => {
             {{ serverStates[server.id]?.tools?.length }} tools
           </Badge>
           <div class="ml-auto flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-8 w-8"
-              aria-label="Refresh server"
-              :disabled="isServerLoading(server.id)"
-              @click="handleRefreshServer(server.id, server.config)"
-            >
-              <RefreshCw class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-8 w-8"
-              :aria-label="isServerRunning(server.id) ? 'Stop server' : 'Start server'"
-              :disabled="isServerLoading(server.id)"
-              @click="toggleServerPower(server.id, server.config)"
-            >
-              <Square v-if="isServerRunning(server.id)" class="h-4 w-4" />
-              <Play v-else class="h-4 w-4" />
-            </Button>
-            <Button
-              v-if="showAuthControl(server.config, server.id)"
-              variant="ghost"
-              size="icon"
-              class="h-8 w-8"
-              :aria-label="serverStatus(server.id) === 'auth_required' ? 'Log in' : 'Log out'"
-              @click="handleAuthAction(server.id, server.config)"
-            >
-              <LogIn v-if="serverStatus(server.id) === 'auth_required'" class="h-4 w-4" />
-              <LogOut v-else class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-8 w-8 text-destructive hover:text-destructive"
-              aria-label="Delete server"
-              @click="deleteServer(tab, server.id, config.activeRootPath.value)"
-            >
-              <Trash2 class="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  aria-label="Refresh server"
+                  :disabled="isServerLoading(server.id)"
+                  @click="handleRefreshServer(server.id, server.config)"
+                >
+                  <RefreshCw class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh server</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  :aria-label="isServerRunning(server.id) ? 'Stop server' : 'Start server'"
+                  :disabled="isServerLoading(server.id)"
+                  @click="toggleServerPower(server.id, server.config)"
+                >
+                  <Square v-if="isServerRunning(server.id)" class="h-4 w-4" />
+                  <Play v-else class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {{ isServerRunning(server.id) ? 'Stop server' : 'Start server' }}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip v-if="showAuthControl(server.config, server.id)">
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  :aria-label="serverStatus(server.id) === 'auth_required' ? 'Log in' : 'Log out'"
+                  @click="handleAuthAction(server.id, server.config)"
+                >
+                  <LogIn v-if="serverStatus(server.id) === 'auth_required'" class="h-4 w-4" />
+                  <LogOut v-else class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {{ serverStatus(server.id) === 'auth_required' ? 'Log in' : 'Log out' }}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-destructive hover:text-destructive"
+                  aria-label="Delete server"
+                  @click="deleteServer(tab, server.id, config.activeRootPath.value)"
+                >
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete server</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 

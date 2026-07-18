@@ -10,16 +10,16 @@ dependsOn:
 todos:
   - id: project-registry
     content: Multi-project registry in {appDataDir}/.pyrola/projects.json (JSON v1; SQLite deferred)
-    status: pending
+    status: completed
   - id: thread-grouping
     content: Left sidebar — project chat lists + Pinned section (unlimited, cross-project)
-    status: pending
+    status: completed
   - id: concurrency
     content: fleet.maxConcurrentAgents queue + per-agent Tauri capabilities
     status: pending
   - id: tray
     content: Tray icon + agents continue when window closed
-    status: pending
+    status: completed
   - id: cost-tracking
     content: Per-turn token cost via tokenlens (see context-usage plan for bucket breakdown)
     status: pending

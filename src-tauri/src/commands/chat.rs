@@ -142,6 +142,53 @@ pub fn read_chat_messages(
 }
 
 #[tauri::command]
+pub fn truncate_chat_log(
+  app: AppHandle,
+  project_slug: String,
+  chat_id: String,
+  before_message_id: Option<String>,
+  keep_through_last_user: Option<bool>,
+) -> Result<(), String> {
+  let messages = read_chat_messages(app.clone(), project_slug.clone(), chat_id.clone())?;
+  let keep_count = if let Some(message_id) = before_message_id {
+    messages
+      .iter()
+      .position(|line| {
+        line
+          .get("id")
+          .and_then(|value| value.as_str())
+          .is_some_and(|id| id == message_id)
+      })
+      .unwrap_or(messages.len())
+  } else if keep_through_last_user.unwrap_or(false) {
+    messages
+      .iter()
+      .rposition(|line| {
+        line
+          .get("role")
+          .and_then(|value| value.as_str())
+          .is_some_and(|role| role == "user")
+      })
+      .map(|index| index + 1)
+      .unwrap_or(0)
+  } else {
+    return Err("truncate_chat_log requires before_message_id or keep_through_last_user".to_string());
+  };
+
+  let kept = messages.into_iter().take(keep_count).collect::<Vec<_>>();
+  let path = chat_dir(&app, &project_slug, &chat_id)?.join("messages.jsonl");
+  let mut content = String::new();
+  for line in kept {
+    let serialized = serde_json::to_string(&line).map_err(|e| e.to_string())?;
+    content.push_str(&serialized);
+    content.push('\n');
+  }
+  fs::write(&path, content).map_err(|e| e.to_string())?;
+  let _ = update_chat_meta(app, project_slug, chat_id, serde_json::json!({}));
+  Ok(())
+}
+
+#[tauri::command]
 pub fn append_chat_line(
   app: AppHandle,
   project_slug: String,

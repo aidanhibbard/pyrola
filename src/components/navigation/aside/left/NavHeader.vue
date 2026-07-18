@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Bot, Pin, Search, Settings } from '@lucide/vue'
+import { Bot, Pin, Search } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
+import useCommandPalette from '@/composables/use-command-palette'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import {
   DropdownMenu,
@@ -14,6 +15,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/shadcn/ui/sidebar'
 
 const { push } = useRouter()
+const commandPalette = useCommandPalette()
 const { pinnedChats } = useFleetSidebar()
 
 const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
@@ -36,7 +38,7 @@ const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
       </SidebarMenuButton>
     </SidebarMenuItem>
     <SidebarMenuItem>
-      <SidebarMenuButton tooltip="Search">
+      <SidebarMenuButton tooltip="Search" @click="commandPalette.togglePalette()">
         <Search />
         <span>Search</span>
       </SidebarMenuButton>
@@ -68,12 +70,6 @@ const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
           <DropdownMenuItem v-else disabled> No pinned chats </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </SidebarMenuItem>
-    <SidebarMenuItem>
-      <SidebarMenuButton tooltip="Settings" @click="push('/settings')">
-        <Settings />
-        <span>Settings</span>
-      </SidebarMenuButton>
     </SidebarMenuItem>
   </SidebarMenu>
 </template>
