@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Hammer } from '@lucide/vue'
+import { Hammer, Network } from '@lucide/vue'
 import { Markdown } from 'vue-stream-markdown'
 import 'vue-stream-markdown/index.css'
 import { toast } from 'vue-sonner'
@@ -170,6 +170,27 @@ const handleBuildNow = async (): Promise<void> => {
     planTitle: title.value || props.tab.label,
     sourceChatId: sourceChatId.value,
     model: selectedModel.value,
+    executionMode: 'agent',
+  })
+
+  if (success) {
+    await loadPlan()
+  }
+}
+
+const handleOrchestrate = async (): Promise<void> => {
+  if (!selectedModel.value) {
+    toast.error('Select a model before orchestrating')
+    return
+  }
+
+  const success = await startPlanBuild({
+    projectId: props.tab.projectId,
+    planPath: planPayload.value.path,
+    planTitle: title.value || props.tab.label,
+    sourceChatId: sourceChatId.value,
+    model: selectedModel.value,
+    executionMode: 'orchestrator',
   })
 
   if (success) {
@@ -235,6 +256,21 @@ watch([planPayload, projectRoot, refreshToken], () => {
             placeholder="Select model"
             @update:model-value="handleModelChange"
           />
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="
+              loading ||
+              building ||
+              Boolean(parseError) ||
+              !selectedModel ||
+              !hasProviders
+            "
+            @click="handleOrchestrate"
+          >
+            <Network class="mr-1.5 h-3.5 w-3.5" />
+            Orchestrate
+          </Button>
           <Button
             size="sm"
             :disabled="

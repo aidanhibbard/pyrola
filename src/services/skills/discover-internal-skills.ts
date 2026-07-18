@@ -1,4 +1,5 @@
 import type { SkillIndexEntry } from '@/types/skills/skill'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import parseSkillFrontmatter from '@/services/skills/strip-skill-frontmatter'
 
 const skillModules = import.meta.glob('../../skills/**/SKILL.md', {
@@ -7,11 +8,12 @@ const skillModules = import.meta.glob('../../skills/**/SKILL.md', {
   eager: true,
 }) as Record<string, string>
 
-const INTERNAL_SKILL_MODE_GATES: Record<string, Array<'ask' | 'plan' | 'studio' | 'agent'>> = {
+const INTERNAL_SKILL_MODE_GATES: Record<string, PyrolaChatMode[]> = {
   ask: ['ask'],
   plan: ['plan'],
   agent: ['agent'],
   studio: ['studio'],
+  orchestrator: ['orchestrator'],
 }
 
 const pathToSkillName = (path: string): string => {
@@ -36,7 +38,7 @@ const internalSkills: SkillIndexEntry[] = Object.entries(skillModules).map(([pat
 export default (): SkillIndexEntry[] => internalSkills
 
 export const listInternalSkillIndex = (
-  mode: 'ask' | 'plan' | 'studio' | 'agent',
+  mode: PyrolaChatMode,
 ): SkillIndexEntry[] =>
   internalSkills.filter((skill) => {
     const modes = INTERNAL_SKILL_MODE_GATES[skill.name]

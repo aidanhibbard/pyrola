@@ -31,6 +31,13 @@ export type HarnessEvent =
   | { type: 'subagent-start'; subagentId: string; name: string; blocking: boolean }
   | { type: 'subagent-event'; parentToolCallId: string; event: HarnessEvent }
   | { type: 'subagent-result'; subagentId: string; summary: string; blocking: boolean }
+  | {
+      type: 'pending-subagent'
+      toolCallId: string
+      subagentId: string
+      agentName: string
+      prompt: string
+    }
   | { type: 'side-task-start'; taskId: string; kind: SideTaskKind }
   | { type: 'side-task-complete'; taskId: string; kind: SideTaskKind; result: unknown }
   | { type: 'chat-meta-changed'; projectSlug: string; chatId: string; patch: Partial<ChatMeta> }

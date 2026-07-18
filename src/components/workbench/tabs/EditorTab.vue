@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { AcceptableValue } from 'reka-ui'
-import { Code, Columns2, Eye, X } from '@lucide/vue'
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileCode,
+  List,
+  MoreHorizontal,
+  Search,
+  X,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
   AlertDialog,
@@ -13,27 +20,49 @@ import {
   AlertDialogTitle,
 } from '@/components/shadcn/ui/alert-dialog'
 import { Button } from '@/components/shadcn/ui/button'
-import { ScrollArea, ScrollBar } from '@/components/shadcn/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/shadcn/ui/dropdown-menu'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/shadcn/ui/empty'
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/shadcn/ui/resizable'
-import { ToggleGroup, ToggleGroupItem } from '@/components/shadcn/ui/toggle-group'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
 import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
+import useCommandPalette from '@/composables/use-command-palette'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import { fsReadFile } from '@/services/pyrola/pyrola-tauri'
+import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
 import type { EditorPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
 
-type EditorMode = 'edit' | 'split' | 'preview'
+type EditorMode = 'edit' | 'preview'
 
 const props = defineProps<{
   tab: WorkbenchTab
 }>()
 
 const workbench = useWorkbenchStore()
+const commandPalette = useCommandPalette()
 
 const monacoRef = ref<InstanceType<typeof WorkbenchMonacoEditor> | null>(null)
 const editorMode = ref<EditorMode>('edit')
@@ -42,6 +71,17 @@ const fileDirty = ref<Record<string, boolean>>({})
 const closeConfirmOpen = ref(false)
 const closeTargetPath = ref<string | null>(null)
 const closeSaving = ref(false)
+const fileTreeOpen = ref(true)
+const isNavigatingHistory = ref(false)
+const pathHistory = ref<string[]>([])
+const historyIndex = ref(-1)
+
+const diffView = ref(false)
+const lspEnabled = ref(true)
+const lineNumbers = ref(true)
+const wordWrap = ref(true)
+const autoSave = ref(false)
+const formatOnSave = ref(false)
 
 const editorPayload = computed(() => props.tab.payload as EditorPayload)
 
@@ -54,6 +94,7 @@ const openPaths = computed(() => {
 })
 
 const selectedPath = computed(() => editorPayload.value.path)
+const isEmpty = computed(() => openPaths.value.length === 0)
 const projectRoot = computed(() => workbench.getProject(props.tab.projectId)?.rootPath ?? null)
 
 const isMarkdownFile = computed(() => {
@@ -61,10 +102,55 @@ const isMarkdownFile = computed(() => {
   return path.endsWith('.md') || path.endsWith('.markdown')
 })
 
-const showPreview = computed(() => isMarkdownFile.value && editorMode.value !== 'edit')
-const showEditor = computed(() => !isMarkdownFile.value || editorMode.value !== 'preview')
+const showPreview = computed(() => isMarkdownFile.value && editorMode.value === 'preview')
+const showEditor = computed(() => !isMarkdownFile.value || editorMode.value === 'edit')
+
+const activeFileName = computed(() => {
+  const path = selectedPath.value
+  if (!path) {
+    return ''
+  }
+  return fileName(path)
+})
+
+const canGoBack = computed(() => historyIndex.value > 0)
+const canGoForward = computed(() => historyIndex.value < pathHistory.value.length - 1)
 
 const fileName = (path: string): string => path.split('/').pop() ?? path
+
+const toAbsolutePath = (relativePath: string): string => {
+  const root = projectRoot.value
+  if (!root) {
+    return ''
+  }
+  if (relativePath === '.' || relativePath === '') {
+    return root
+  }
+  return `${root.replace(/\/$/, '')}/${relativePath}`
+}
+
+const parentDirectoryPath = (absolutePath: string): string => {
+  const lastSlash = absolutePath.lastIndexOf('/')
+  if (lastSlash <= 0) {
+    return absolutePath
+  }
+  return absolutePath.slice(0, lastSlash)
+}
+
+const pushPathHistory = (path: string): void => {
+  if (!path) {
+    return
+  }
+
+  const truncated = pathHistory.value.slice(0, historyIndex.value + 1)
+  if (truncated[truncated.length - 1] === path) {
+    return
+  }
+
+  truncated.push(path)
+  pathHistory.value = truncated
+  historyIndex.value = truncated.length - 1
+}
 
 const syncWorkbenchDirty = (): void => {
   const anyDirty = Object.values(fileDirty.value).some(Boolean)
@@ -75,11 +161,89 @@ const handleSelect = (path: string): void => {
   workbench.openEditor(props.tab.projectId, path)
 }
 
-const handleSubTabClick = (path: string): void => {
-  if (path === selectedPath.value) {
+const handleOpenSearch = (): void => {
+  commandPalette.openPalette()
+}
+
+const handleToggleFileTree = (): void => {
+  fileTreeOpen.value = !fileTreeOpen.value
+}
+
+const handleBack = (): void => {
+  if (!canGoBack.value) {
     return
   }
+
+  const nextIndex = historyIndex.value - 1
+  const path = pathHistory.value[nextIndex]
+  if (!path) {
+    return
+  }
+
+  historyIndex.value = nextIndex
+  isNavigatingHistory.value = true
   workbench.setEditorActivePath(props.tab.id, path)
+  isNavigatingHistory.value = false
+}
+
+const handleForward = (): void => {
+  if (!canGoForward.value) {
+    return
+  }
+
+  const nextIndex = historyIndex.value + 1
+  const path = pathHistory.value[nextIndex]
+  if (!path) {
+    return
+  }
+
+  historyIndex.value = nextIndex
+  isNavigatingHistory.value = true
+  workbench.setEditorActivePath(props.tab.id, path)
+  isNavigatingHistory.value = false
+}
+
+const handleSave = async (): Promise<void> => {
+  try {
+    await monacoRef.value?.save()
+  } catch (error) {
+    toast.error('Failed to save file', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleRevealInFinder = async (): Promise<void> => {
+  const path = selectedPath.value
+  if (!path) {
+    return
+  }
+
+  const absolutePath = toAbsolutePath(path)
+  const revealPath = parentDirectoryPath(absolutePath)
+
+  try {
+    await revealInFolder(revealPath)
+  } catch (error) {
+    toast.error('Failed to reveal in Finder', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleCopyRelativePath = async (): Promise<void> => {
+  const path = selectedPath.value
+  if (!path) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(path)
+  } catch (error) {
+    toast.error('Failed to copy relative path', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 
 const removeDirtyPath = (path: string): void => {
@@ -166,15 +330,6 @@ const handleSaved = (payload: { path: string; content: string }): void => {
   }
 }
 
-const handleEditorModeChange = (value: AcceptableValue | AcceptableValue[]): void => {
-  if (typeof value !== 'string') {
-    return
-  }
-  if (value === 'edit' || value === 'split' || value === 'preview') {
-    editorMode.value = value
-  }
-}
-
 const loadFileContent = async (): Promise<void> => {
   const root = projectRoot.value
   const path = selectedPath.value
@@ -201,6 +356,17 @@ watch(selectedPath, (path) => {
 })
 
 watch(
+  selectedPath,
+  (path) => {
+    if (isNavigatingHistory.value || !path) {
+      return
+    }
+    pushPathHistory(path)
+  },
+  { immediate: true },
+)
+
+watch(
   [selectedPath, projectRoot, isMarkdownFile],
   () => {
     loadFileContent().catch((error) => {
@@ -224,95 +390,156 @@ watch(
       class="min-h-0 min-w-0 overflow-hidden"
     >
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
-        <ScrollArea class="w-full shrink-0 border-b border-border/50">
-          <div class="flex items-center gap-0.5 px-1 py-1">
-            <button
-              v-for="filePath in openPaths"
-              :key="filePath"
-              type="button"
-              class="group flex max-w-[12rem] shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors"
-              :class="
-                filePath === selectedPath
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-              "
-              @click="handleSubTabClick(filePath)"
-            >
-              <span
-                v-if="fileDirty[filePath]"
-                class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                aria-label="Unsaved changes"
-              />
-              <span class="truncate">{{ fileName(filePath) }}</span>
-              <span
-                role="button"
-                tabindex="0"
-                class="ml-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-background/80 group-hover:opacity-100"
-                :class="filePath === selectedPath ? 'opacity-70' : ''"
-                aria-label="Close file"
-                @click.stop="handleSubTabClose(filePath)"
-                @keydown.enter.stop="handleSubTabClose(filePath)"
-                @keydown.space.prevent.stop="handleSubTabClose(filePath)"
-              >
-                <X class="h-3 w-3" />
-              </span>
-            </button>
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-
         <div
-          v-if="isMarkdownFile"
-          class="flex shrink-0 items-center justify-end border-b border-border/50 px-2 py-1"
+          v-if="!isEmpty"
+          class="group flex h-7 shrink-0 items-center justify-between border-b border-border/50 px-2"
         >
-          <ToggleGroup
-            type="single"
-            :model-value="editorMode"
-            variant="outline"
-            size="sm"
-            @update:model-value="handleEditorModeChange"
+          <div class="flex min-w-0 flex-1 items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 shrink-0 text-muted-foreground"
+                  :disabled="!canGoBack"
+                  aria-label="Go back"
+                  @click="handleBack"
+                >
+                  <ChevronLeft class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Go back</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 shrink-0 text-muted-foreground"
+                  :disabled="!canGoForward"
+                  aria-label="Go forward"
+                  @click="handleForward"
+                >
+                  <ChevronRight class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Go forward</TooltipContent>
+            </Tooltip>
+            <span
+              v-if="fileDirty[selectedPath]"
+              class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+              aria-label="Unsaved changes"
+            />
+            <span class="truncate text-xs text-muted-foreground">
+              {{ activeFileName }}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-5 w-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+              aria-label="Close file"
+              @click="handleSubTabClose(selectedPath)"
+            >
+              <X class="h-3 w-3" />
+            </Button>
+          </div>
+
+          <div
+            v-if="!fileTreeOpen || isMarkdownFile"
+            class="flex shrink-0 items-center gap-0.5"
           >
-            <ToggleGroupItem value="edit" aria-label="Edit">
-              <Code class="h-3.5 w-3.5" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="split" aria-label="Split">
-              <Columns2 class="h-3.5 w-3.5" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="preview" aria-label="Preview">
-              <Eye class="h-3.5 w-3.5" />
-            </ToggleGroupItem>
-          </ToggleGroup>
+            <template v-if="isMarkdownFile">
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-6 px-2 text-xs"
+                :class="
+                  editorMode === 'edit'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                "
+                @click="editorMode = 'edit'"
+              >
+                Source
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-6 px-2 text-xs"
+                :class="
+                  editorMode === 'preview'
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                "
+                @click="editorMode = 'preview'"
+              >
+                Preview
+              </Button>
+            </template>
+
+            <Tooltip v-if="!fileTreeOpen">
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  aria-label="Toggle file list"
+                  @click="handleToggleFileTree"
+                >
+                  <List class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Toggle file list</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
+        <Empty
+          v-if="isEmpty"
+          class="min-h-0 flex-1 border-none"
+        >
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FileCode />
+            </EmptyMedia>
+            <EmptyTitle>No file open</EmptyTitle>
+            <EmptyDescription>
+              Select a file from the tree or search the project.
+            </EmptyDescription>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="mt-2 text-muted-foreground"
+              @click="handleOpenSearch"
+            >
+              <Search class="mr-2 h-3.5 w-3.5" />
+              Search files
+            </Button>
+          </EmptyHeader>
+        </Empty>
+
         <div
-          class="flex min-h-0 flex-1 overflow-hidden"
-          :class="editorMode === 'split' ? 'flex-row' : 'flex-col'"
+          v-else
+          class="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           <div
             v-show="showEditor"
-            class="min-h-0 min-w-0 overflow-hidden"
-            :class="editorMode === 'split' ? 'flex-1' : 'h-full w-full'"
+            class="h-full min-h-0 min-w-0 overflow-hidden"
           >
             <WorkbenchMonacoEditor
               ref="monacoRef"
               :project-id="tab.projectId"
               :path="selectedPath"
               :open-paths="openPaths"
+              :lsp-enabled="lspEnabled"
               @dirty-change="handleDirtyChange"
               @saved="handleSaved"
             />
           </div>
 
           <div
-            v-if="editorMode === 'split'"
-            class="w-px shrink-0 bg-border"
-            aria-hidden="true"
-          />
-
-          <div
             v-if="showPreview"
-            class="min-h-0 min-w-0 overflow-hidden"
-            :class="editorMode === 'split' ? 'flex-1' : 'h-full w-full'"
+            class="h-full min-h-0 min-w-0 overflow-hidden"
           >
             <WorkbenchEditorMarkdownPreview
               :key="selectedPath"
@@ -324,8 +551,9 @@ watch(
         </div>
       </div>
     </ResizablePanel>
-    <ResizableHandle />
+    <ResizableHandle v-if="fileTreeOpen" />
     <ResizablePanel
+      v-if="fileTreeOpen"
       :default-size="25"
       :min-size="15"
       :max-size="40"
@@ -335,7 +563,90 @@ watch(
         :project-id="tab.projectId"
         :selected-path="selectedPath"
         @select="handleSelect"
-      />
+      >
+        <template #toolbar>
+          <div class="flex shrink-0 items-center gap-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  aria-label="File actions"
+                >
+                  <MoreHorizontal class="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-56">
+                <DropdownMenuLabel>File</DropdownMenuLabel>
+                <DropdownMenuItem @click="handleSave">
+                  Save
+                  <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="handleRevealInFinder">
+                  Reveal in Finder
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="handleCopyRelativePath">
+                  Copy Relative Path
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>View</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem v-model:checked="diffView">
+                  Diff View
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem v-model:checked="lspEnabled">
+                  LSP
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem v-model:checked="lineNumbers">
+                  Line Numbers
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem v-model:checked="wordWrap">
+                  Word Wrap
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Editor</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem v-model:checked="autoSave">
+                  Auto Save
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem v-model:checked="formatOnSave">
+                  Format on Save
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  aria-label="Search files"
+                  @click="handleOpenSearch"
+                >
+                  <Search class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Search files</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  :class="fileTreeOpen ? 'text-foreground' : ''"
+                  aria-label="Toggle file list"
+                  @click="handleToggleFileTree"
+                >
+                  <List class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Toggle file list</TooltipContent>
+            </Tooltip>
+          </div>
+        </template>
+      </WorkbenchFileTree>
     </ResizablePanel>
   </ResizablePanelGroup>
 

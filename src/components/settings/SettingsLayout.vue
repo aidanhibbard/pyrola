@@ -64,7 +64,7 @@ const sectionComponent = computed(() => {
   <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
     <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
 
-    <div class="flex min-h-0 flex-1 gap-6">
+    <div class="flex min-h-0 flex-1 flex-col gap-6 md:flex-row">
       <SettingsNav
         :active-tab="activeTab"
         :active-section="activeSection"

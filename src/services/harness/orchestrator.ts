@@ -1,9 +1,10 @@
-import type { ChatStatus, UIMessage } from 'ai'
+import type { ChatStatus, ModelMessage, UIMessage } from 'ai'
 import { convertToModelMessages, smoothStream, stepCountIs, streamText } from 'ai'
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { SubagentResult } from '@/types/harness/subagent-record'
 import createModel from '@/services/providers/create-model'
 import {
   appendChatLine,
@@ -25,6 +26,13 @@ import {
   killShellsForChat,
   setAgentShellEventEmitter,
 } from '@/services/harness/agent-shell-registry'
+import {
+  abort as abortSubagentsForChat,
+  clearTurnResponseMessages,
+  getTurnResponseMessages,
+  hasRunningSubagentsForChat,
+  setTurnResponseMessages,
+} from '@/services/harness/subagent-registry'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -42,6 +50,15 @@ export type OrchestratorInput = {
   onEvent: (event: HarnessEvent) => void
   assistantId?: string
   skipUserPersist?: boolean
+}
+
+export type ResumeOrchestratorInput = Omit<
+  OrchestratorInput,
+  'userText' | 'skipUserPersist'
+> & {
+  toolCallId: string
+  completedResult: SubagentResult
+  skipUserPersist: true
 }
 
 const MAX_OUTPUT_TOKENS = 8192
@@ -173,6 +190,20 @@ const persistSubagentHarnessEvent = async (
   })
 }
 
+const persistPendingSubagent = async (
+  projectSlug: string,
+  chatId: string,
+  event: Extract<HarnessEvent, { type: 'pending-subagent' }>,
+): Promise<void> => {
+  await persistLine(projectSlug, chatId, {
+    id: `${event.subagentId}-pending`,
+    role: 'assistant',
+    parts: [],
+    createdAt: nowIso(),
+    harnessEvent: event,
+  })
+}
+
 const persistStepText = async (
   projectSlug: string,
   chatId: string,
@@ -225,7 +256,51 @@ const resolveToolErrorMessage = (error: unknown): string => {
   }
 }
 
-export default async (input: OrchestratorInput): Promise<void> => {
+const patchSubagentToolResult = (
+  messages: ModelMessage[],
+  toolCallId: string,
+  completedResult: SubagentResult,
+): ModelMessage[] =>
+  messages.map((message) => {
+    if (message.role !== 'tool' || !Array.isArray(message.content)) {
+      return message
+    }
+    return {
+      ...message,
+      content: message.content.map((part) => {
+        if (part.type !== 'tool-result' || part.toolCallId !== toolCallId) {
+          return part
+        }
+        return {
+          ...part,
+          output: {
+            type: 'json' as const,
+            value: completedResult,
+          },
+        }
+      }),
+    }
+  })
+
+type HarnessStreamInput = {
+  projectSlug: string
+  chatId: string
+  projectRoot: string
+  projectName: string
+  mode: PyrolaChatMode
+  modelId: string
+  providerId: string
+  settings: PyrolaSettings
+  mentions: ContextMention[]
+  messages: UIMessage[]
+  modelMessages: ModelMessage[]
+  signal: AbortSignal
+  onEvent: (event: HarnessEvent) => void
+  assistantId: string
+  captureTurnMessages: boolean
+}
+
+const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   const {
     projectSlug,
     chatId,
@@ -235,37 +310,16 @@ export default async (input: OrchestratorInput): Promise<void> => {
     modelId,
     providerId,
     settings,
-    messages,
-    userText,
     mentions,
+    messages,
+    modelMessages,
     signal,
     onEvent,
-    assistantId: inputAssistantId,
-    skipUserPersist = false,
+    assistantId,
+    captureTurnMessages,
   } = input
 
   setAgentShellEventEmitter(onEvent)
-
-  const existingUser = [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        message.role === 'user' &&
-        message.parts.some(
-          (part) => part.type === 'text' && part.text === userText,
-        ),
-    )
-
-  const userLine = {
-    id: existingUser?.id ?? crypto.randomUUID(),
-    role: 'user' as const,
-    parts: [{ type: 'text', text: userText }],
-    createdAt: nowIso(),
-  }
-
-  if (!skipUserPersist) {
-    await persistLine(projectSlug, chatId, userLine)
-  }
 
   onEvent({
     type: 'chat-status-changed',
@@ -274,37 +328,6 @@ export default async (input: OrchestratorInput): Promise<void> => {
     status: 'running',
   })
   await updateChatMeta(projectSlug, chatId, { status: 'running' })
-
-  const isFirstUserMessage =
-    messages.filter((message) => message.role === 'user').length === 1
-
-  const emitTitleChange = (title: string): void => {
-    onEvent({
-      type: 'chat-meta-changed',
-      projectSlug,
-      chatId,
-      patch: { title },
-    })
-  }
-
-  if (isFirstUserMessage) {
-    const fallbackTitle = deriveChatTitle(userText)
-    if (fallbackTitle) {
-      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
-      emitTitleChange(fallbackTitle)
-    }
-  }
-
-  void runSideTask({
-    projectSlug,
-    chatId,
-    prompt: userText,
-    settings,
-  }).then((generatedTitle) => {
-    if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
-      emitTitleChange(generatedTitle)
-    }
-  })
 
   const system = await assembleSystemPrompt({
     mode,
@@ -336,7 +359,9 @@ export default async (input: OrchestratorInput): Promise<void> => {
     if (event.type === 'subagent-start' || event.type === 'subagent-result') {
       void persistSubagentHarnessEvent(projectSlug, chatId, event)
     }
-    // subagent-event lines are live-only (like text-delta) and are not persisted.
+    if (event.type === 'pending-subagent') {
+      void persistPendingSubagent(projectSlug, chatId, event)
+    }
     onEvent(event)
   }
 
@@ -353,11 +378,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
   })
   const tools = filterToolsForMode(mode, allTools)
 
-  const modelMessages = await convertToModelMessages(messages)
-
   let trailingText = ''
   let assistantReasoning = ''
-  const assistantId = inputAssistantId ?? crypto.randomUUID()
   let stepCount = 0
   let streamError: Error | null = null
   let consecutiveToolErrors = 0
@@ -475,6 +497,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
         rejectAllPending()
         rejectAllPendingQuestions()
         await killShellsForChat(chatId)
+        abortSubagentsForChat(chatId)
         if (trailingText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
             id: assistantId,
@@ -603,6 +626,11 @@ export default async (input: OrchestratorInput): Promise<void> => {
       }
     }
 
+    if (captureTurnMessages && hasRunningSubagentsForChat(chatId)) {
+      const responseMessages = await result.responseMessages
+      setTurnResponseMessages(chatId, responseMessages)
+    }
+
     if (streamError && !signal.aborted) {
       throw streamError
     }
@@ -641,6 +669,140 @@ export default async (input: OrchestratorInput): Promise<void> => {
     })
     await updateChatMeta(projectSlug, chatId, { status: 'idle' })
   }
+}
+
+export default async (input: OrchestratorInput): Promise<void> => {
+  const {
+    projectSlug,
+    chatId,
+    messages,
+    userText,
+    skipUserPersist = false,
+    assistantId: inputAssistantId,
+    ...streamInput
+  } = input
+
+  const existingUser = [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === 'user' &&
+        message.parts.some(
+          (part) => part.type === 'text' && part.text === userText,
+        ),
+    )
+
+  const userLine = {
+    id: existingUser?.id ?? crypto.randomUUID(),
+    role: 'user' as const,
+    parts: [{ type: 'text', text: userText }],
+    createdAt: nowIso(),
+  }
+
+  if (!skipUserPersist) {
+    await persistLine(projectSlug, chatId, userLine)
+  }
+
+  const isFirstUserMessage =
+    messages.filter((message) => message.role === 'user').length === 1
+
+  const emitTitleChange = (title: string): void => {
+    input.onEvent({
+      type: 'chat-meta-changed',
+      projectSlug,
+      chatId,
+      patch: { title },
+    })
+  }
+
+  if (isFirstUserMessage) {
+    const fallbackTitle = deriveChatTitle(userText)
+    if (fallbackTitle) {
+      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
+      emitTitleChange(fallbackTitle)
+    }
+  }
+
+  void runSideTask({
+    projectSlug,
+    chatId,
+    prompt: userText,
+    settings: input.settings,
+  }).then((generatedTitle) => {
+    if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
+      emitTitleChange(generatedTitle)
+    }
+  })
+
+  const modelMessages = await convertToModelMessages(messages)
+
+  await runHarnessStream({
+    ...streamInput,
+    projectSlug,
+    chatId,
+    messages,
+    modelMessages,
+    assistantId: inputAssistantId ?? crypto.randomUUID(),
+    captureTurnMessages: true,
+  })
+}
+
+export const resumeOrchestrator = async (
+  input: ResumeOrchestratorInput,
+): Promise<void> => {
+  const {
+    projectSlug,
+    chatId,
+    messages,
+    toolCallId,
+    completedResult,
+    assistantId: inputAssistantId,
+    onEvent,
+    ...streamInput
+  } = input
+
+  const turnMessages = getTurnResponseMessages(chatId)
+  if (!turnMessages) {
+    throw new Error('No pending subagent turn to resume')
+  }
+
+  onEvent({
+    type: 'tool-result',
+    toolCallId,
+    result: completedResult,
+    isError: false,
+  })
+  await persistToolRun(
+    projectSlug,
+    chatId,
+    toolCallId,
+    'spawn_subagent',
+    'done',
+    '',
+    { agentName: completedResult.name, blocking: false },
+    completedResult,
+  )
+
+  const patchedTurnMessages = patchSubagentToolResult(
+    turnMessages,
+    toolCallId,
+    completedResult,
+  )
+  const baseMessages = await convertToModelMessages(messages)
+  const modelMessages = [...baseMessages, ...patchedTurnMessages]
+
+  clearTurnResponseMessages(chatId)
+
+  await runHarnessStream({
+    ...streamInput,
+    projectSlug,
+    chatId,
+    messages,
+    modelMessages,
+    onEvent,
+    assistantId: inputAssistantId ?? crypto.randomUUID(),
+    captureTurnMessages: false,
+  })
 }
 
 export type HarnessStatus = ChatStatus

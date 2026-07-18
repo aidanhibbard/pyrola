@@ -3,7 +3,11 @@ import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-setti
 import parseModelRef from '@/utils/parse-model-ref'
 
 const isChatMode = (role: ModelRoleId): role is PyrolaChatMode =>
-  role === 'ask' || role === 'plan' || role === 'studio' || role === 'agent'
+  role === 'ask' ||
+  role === 'plan' ||
+  role === 'studio' ||
+  role === 'agent' ||
+  role === 'orchestrator'
 
 const readSettingsModel = (
   settings: PyrolaSettings,

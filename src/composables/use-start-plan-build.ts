@@ -10,6 +10,9 @@ import loadPrompt from '@/services/prompts/load-prompt'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import updatePlanFrontmatter from '@/services/plans/update-plan-frontmatter'
 import { readChatMeta, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+
+export type PlanExecutionMode = 'agent' | 'orchestrator'
 
 export type StartPlanBuildInput = {
   projectId: string
@@ -17,6 +20,7 @@ export type StartPlanBuildInput = {
   planTitle: string
   sourceChatId?: string | null
   model?: string
+  executionMode?: PlanExecutionMode
 }
 
 export default () => {
@@ -53,14 +57,24 @@ export default () => {
       return false
     }
 
+    const executionMode = input.executionMode ?? 'agent'
+    const modelRole = executionMode === 'orchestrator' ? 'orchestrator' : 'agent'
+    const chatMode: PyrolaChatMode =
+      executionMode === 'orchestrator' ? 'orchestrator' : 'agent'
     const model =
-      input.model?.trim() || resolveModelForRole('agent', config.effectiveSettings.value) || ''
+      input.model?.trim() ||
+      resolveModelForRole(modelRole, config.effectiveSettings.value) ||
+      ''
     if (!model) {
       toast.error('Select a default model in Settings before building')
       return false
     }
 
-    const prompt = loadPrompt('handoffs/plan-build.md', {
+    const promptPath =
+      executionMode === 'orchestrator'
+        ? 'handoffs/plan-orchestrate.md'
+        : 'handoffs/plan-build.md'
+    const prompt = loadPrompt(promptPath, {
       planPath: input.planPath,
       planTitle: input.planTitle,
     })
@@ -74,21 +88,28 @@ export default () => {
         const chat = await chatStore.createNewChat({
           projectSlug: project.slug,
           projectRoot: project.rootPath,
-          mode: 'agent',
+          mode: chatMode,
           model,
           title: input.planTitle,
         })
         chatId = chat.id
       } else {
         const meta = await readChatMeta(project.slug, chatId)
+        const patch: { model?: string; mode?: PyrolaChatMode } = {}
         if (meta.model !== model) {
-          await updateChatMeta(project.slug, chatId, { model })
+          patch.model = model
+        }
+        if (meta.mode !== chatMode) {
+          patch.mode = chatMode
+        }
+        if (Object.keys(patch).length > 0) {
+          await updateChatMeta(project.slug, chatId, patch)
         }
       }
 
       setPendingChatMessage({
         text: prompt,
-        mode: 'agent',
+        mode: chatMode,
         model,
       })
 

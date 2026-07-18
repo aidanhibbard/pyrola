@@ -267,7 +267,18 @@ export const fsReadFile = (args: {
   path: string
   offset?: number
   limit?: number
-}): Promise<{ path: string; content: string }> => call('fs_read_file', args)
+  includeBase64?: boolean
+}): Promise<{
+  path: string
+  content: string
+  totalLines: number
+  offset: number
+  limit: number
+  isImage?: boolean
+  mimeType?: string
+  sizeBytes?: number
+  base64?: string
+}> => call('fs_read_file', args)
 
 export const fsWriteFile = (args: {
   projectRoot: string
@@ -316,6 +327,35 @@ export const fsListDirTree = (
   depth?: number,
 ): Promise<unknown> => call('fs_list_dir_tree', { projectRoot, path, depth })
 
+export const fsRename = (args: {
+  projectRoot: string
+  from: string
+  to: string
+}): Promise<void> => call('fs_rename', args)
+
+export const fsDelete = (args: {
+  projectRoot: string
+  path: string
+  recursive?: boolean
+}): Promise<void> => call('fs_delete', args)
+
+export const fsCopy = (args: {
+  projectRoot: string
+  from: string
+  to: string
+}): Promise<void> => call('fs_copy', args)
+
+export const fsMove = (args: {
+  projectRoot: string
+  from: string
+  to: string
+}): Promise<void> => call('fs_move', args)
+
+export const fsMkdir = (args: {
+  projectRoot: string
+  path: string
+}): Promise<void> => call('fs_mkdir', args)
+
 export const fsStagePreviewWrite = (args: {
   projectRoot: string
   path: string
@@ -343,6 +383,15 @@ export const fsStagePreviewApplyPatch = (args: {
   call('fs_stage_preview', {
     projectRoot: args.projectRoot,
     request: { kind: 'applyPatch', patch: args.patch },
+  })
+
+export const fsStagePreviewDelete = (args: {
+  projectRoot: string
+  path: string
+}): Promise<FileDiffRecord[]> =>
+  call('fs_stage_preview', {
+    projectRoot: args.projectRoot,
+    request: { kind: 'delete', path: args.path },
   })
 
 export type GrepMatch = {
@@ -409,6 +458,30 @@ export const gitLog = (
 ): Promise<{ commits: Array<{ hash: string; subject: string }> }> =>
   call('git_log', { projectRoot, limit })
 
+export const gitListBranches = (projectRoot: string): Promise<string[]> =>
+  call('git_list_branches', { rootPath: projectRoot })
+
+export const gitCheckoutBranch = (projectRoot: string, branch: string): Promise<void> =>
+  call('git_checkout_branch', { rootPath: projectRoot, branch })
+
+export type GitCommitResult = {
+  hash: string
+  message: string
+  output: string
+}
+
+export const gitCommit = (args: {
+  projectRoot: string
+  message: string
+  paths?: string[]
+}): Promise<GitCommitResult> => call('git_commit', args)
+
+export const gitBranchCreate = (args: {
+  projectRoot: string
+  name: string
+  checkout?: boolean
+}): Promise<void> => call('git_branch_create', args)
+
 export const mcpCallTool = (
   serverId: string,
   tool: string,
@@ -419,6 +492,7 @@ export const shellSpawnPty = (args: {
   projectRoot: string
   cols: number
   rows: number
+  cwd?: string
 }): Promise<{ sessionId: string }> => call('shell_spawn_pty', args)
 
 export const shellWritePty = (sessionId: string, data: string): Promise<void> =>

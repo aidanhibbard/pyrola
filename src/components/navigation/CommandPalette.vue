@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import {
@@ -19,40 +19,32 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/shadcn/ui/command'
+import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/ui/tabs'
 import useCommandPalette from '@/composables/use-command-palette'
-import type {
-  CommandPaletteGroup,
-  CommandPaletteItem,
+import {
+  COMMAND_PALETTE_TABS,
+  getCommandPaletteTab,
+  type CommandPaletteItem,
+  type CommandPaletteTab,
 } from '@/types/navigation/command-palette-item'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-
-const GROUP_ORDER: CommandPaletteGroup[] = [
-  'Actions',
-  'Projects',
-  'Chats',
-  'Pinned',
-  'Settings',
-]
 
 const router = useRouter()
 const fleet = useFleetRegistry()
 const workbench = useWorkbenchStore()
 const { open, items, closePalette } = useCommandPalette()
 
-const groupedItems = computed(() => {
-  const groups = new Map<CommandPaletteGroup, CommandPaletteItem[]>()
+const activeTab = ref<CommandPaletteTab>('All')
 
-  for (const item of items.value) {
-    const list = groups.get(item.group) ?? []
-    list.push(item)
-    groups.set(item.group, list)
+const filteredItems = computed(() => {
+  if (activeTab.value === 'All') {
+    return items.value
   }
 
-  return GROUP_ORDER.filter((name) => groups.has(name)).map((name) => ({
-    name,
-    items: groups.get(name)!,
-  }))
+  return items.value.filter(
+    (item) => getCommandPaletteTab(item) === activeTab.value,
+  )
 })
 
 const itemIcon = (item: CommandPaletteItem) => {
@@ -149,16 +141,27 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
 
 <template>
   <CommandDialog v-model:open="open">
+    <Tabs
+      :model-value="activeTab"
+      class="px-2 pt-2"
+      @update:model-value="(value) => { activeTab = value as CommandPaletteTab }"
+    >
+      <TabsList class="grid w-full grid-cols-5">
+        <TabsTrigger
+          v-for="tab in COMMAND_PALETTE_TABS"
+          :key="tab"
+          :value="tab"
+        >
+          {{ tab }}
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
     <CommandInput placeholder="Search projects, chats, and actions…" />
     <CommandList>
       <CommandEmpty>No results found.</CommandEmpty>
-      <CommandGroup
-        v-for="group in groupedItems"
-        :key="group.name"
-        :heading="group.name"
-      >
+      <CommandGroup>
         <CommandItem
-          v-for="item in group.items"
+          v-for="item in filteredItems"
           :key="item.id"
           :value="item.subtitle ? `${item.label} ${item.subtitle}` : item.label"
           @select="handleSelect(item)"

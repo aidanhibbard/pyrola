@@ -36,6 +36,7 @@ open = "5"
 lazy_static = "1"
 portable-pty = "0.9"
 notify = "7.0"
+base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

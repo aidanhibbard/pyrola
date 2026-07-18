@@ -11,6 +11,8 @@ use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
+use super::fs::resolve_workspace_path;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySessionInfo {
@@ -45,6 +47,7 @@ pub fn shell_spawn_pty(
   project_root: String,
   cols: u16,
   rows: u16,
+  cwd: Option<String>,
 ) -> Result<PtySessionInfo, String> {
   let pty_system = native_pty_system();
   let pair = pty_system
@@ -58,7 +61,13 @@ pub fn shell_spawn_pty(
 
   let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
   let mut cmd = CommandBuilder::new(shell);
-  cmd.cwd(project_root);
+  let work_dir = match cwd {
+    Some(relative_cwd) => resolve_workspace_path(&project_root, &relative_cwd)?
+      .to_string_lossy()
+      .to_string(),
+    None => project_root,
+  };
+  cmd.cwd(work_dir);
   cmd.env("TERM", "xterm-256color");
 
   let child = pair

@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { Copy, File, FolderOpen } from '@lucide/vue'
+import {
+  ClipboardCopy,
+  ClipboardPaste,
+  Copy,
+  File,
+  FilePlus,
+  FolderOpen,
+  MessageSquarePlus,
+  Pencil,
+  Scissors,
+  Terminal,
+  Trash2,
+} from '@lucide/vue'
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -15,11 +27,20 @@ const props = defineProps<{
 }>()
 
 const {
+  clipboard,
   copyRelativePath,
   copyAbsolutePath,
   copyName,
   revealInFinder,
   openInEditor,
+  handleRename,
+  handleDelete,
+  handleCut,
+  handleCopy,
+  handlePaste,
+  handleAddFileToChat,
+  handleAddFileToNewChat,
+  handleOpenInTerminal,
 } = useFileTreeNodeMenu()
 
 const handleCopyRelativePath = async (): Promise<void> => {
@@ -41,11 +62,91 @@ const handleRevealInFinder = async (): Promise<void> => {
 const handleOpenInEditor = (): void => {
   openInEditor(props.path)
 }
+
+const handleRenameSelect = (): void => {
+  handleRename(props.path)
+}
+
+const handleDeleteSelect = (): void => {
+  handleDelete(props.path, props.isDirectory)
+}
+
+const handleCutSelect = (): void => {
+  handleCut(props.path)
+}
+
+const handleCopySelect = (): void => {
+  handleCopy(props.path)
+}
+
+const handlePasteSelect = async (): Promise<void> => {
+  await handlePaste(props.path)
+}
+
+const handleAddFileToChatSelect = (): void => {
+  handleAddFileToChat(props.path)
+}
+
+const handleAddFileToNewChatSelect = async (): Promise<void> => {
+  await handleAddFileToNewChat(props.path)
+}
+
+const handleOpenInTerminalSelect = async (): Promise<void> => {
+  await handleOpenInTerminal(props.path, props.isDirectory)
+}
 </script>
 
 <template>
   <ContextMenuContent class="w-56">
     <ContextMenuLabel>{{ name }}</ContextMenuLabel>
+    <ContextMenuSeparator />
+    <ContextMenuItem @select="handleRenameSelect">
+      <Pencil />
+      Rename
+    </ContextMenuItem>
+    <ContextMenuItem
+      variant="destructive"
+      @select="handleDeleteSelect"
+    >
+      <Trash2 />
+      Delete
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem @select="handleCutSelect">
+      <Scissors />
+      Cut
+    </ContextMenuItem>
+    <ContextMenuItem @select="handleCopySelect">
+      <ClipboardCopy />
+      Copy
+    </ContextMenuItem>
+    <ContextMenuItem
+      v-if="isDirectory"
+      :disabled="!clipboard.hasClipboard.value"
+      @select="handlePasteSelect"
+    >
+      <ClipboardPaste />
+      Paste
+    </ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem
+      v-if="!isDirectory"
+      @select="handleAddFileToChatSelect"
+    >
+      <File />
+      Add file to chat
+    </ContextMenuItem>
+    <ContextMenuItem
+      v-if="!isDirectory"
+      @select="handleAddFileToNewChatSelect"
+    >
+      <MessageSquarePlus />
+      Add file to new chat
+    </ContextMenuItem>
+    <ContextMenuItem @select="handleOpenInTerminalSelect">
+      <Terminal />
+      Open in terminal
+    </ContextMenuItem>
     <ContextMenuSeparator />
     <ContextMenuItem @select="handleCopyRelativePath">
       <Copy />
@@ -67,7 +168,7 @@ const handleOpenInEditor = (): void => {
       v-if="!isDirectory"
       @select="handleOpenInEditor"
     >
-      <File />
+      <FilePlus />
       Open in editor
     </ContextMenuItem>
   </ContextMenuContent>

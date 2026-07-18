@@ -24,8 +24,12 @@ import {
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
+import ChatMcpServerPicker from '@/components/chat/ChatMcpServerPicker.vue'
+import ChatSkillsPicker from '@/components/chat/ChatSkillsPicker.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
+import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
+import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
 import ModelsSearchModelSearchPicker from '@/components/models/search/ModelSearchPicker.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -323,6 +327,8 @@ watch(
     >
       <PromptInputBody>
         <ChatPromptEditSync />
+        <ChatPromptMentionSync />
+        <ChatPromptSkillSync />
         <PromptInputTextarea
           class="max-h-28 min-h-10 resize-none py-2.5"
           placeholder="Plan, build, / for skills, @ for context"
@@ -386,16 +392,17 @@ watch(
         </PromptInputTools>
       </PromptInputFooter>
     </PromptInput>
-    <div
-      v-if="git.isRepo.value || showContextUsage"
-      class="mt-1 flex items-center justify-between gap-2 px-1"
-    >
+    <div class="mt-1 flex items-center gap-2 px-1">
       <ChatGitBranchSelect v-if="git.isRepo.value" />
       <div v-else />
-      <ChatContextUsageBar
-        v-if="showContextUsage"
-        :trigger-disabled="disabled"
-      />
+      <div class="ml-auto flex items-center gap-2">
+        <ChatMcpServerPicker />
+        <ChatSkillsPicker :mode="session.selectedMode" />
+        <ChatContextUsageBar
+          v-if="showContextUsage"
+          :trigger-disabled="disabled"
+        />
+      </div>
     </div>
   </div>
 </template>

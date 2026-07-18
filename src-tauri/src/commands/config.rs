@@ -105,6 +105,68 @@ fn mcp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<P
   base_path(app, scope, root_path).map(|p| p.join("mcp.json"))
 }
 
+fn lsp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<PathBuf, String> {
+  base_path(app, scope, root_path).map(|p| p.join("lsp.json"))
+}
+
+pub(crate) fn read_lsp_config(
+  app: &AppHandle,
+  scope: &str,
+  root_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+  let path = lsp_path(app, scope, root_path)?;
+  read_json(&path)
+}
+
+pub(crate) fn read_lsp_scope_configs(
+  app: &AppHandle,
+  project_root: Option<String>,
+) -> Result<(serde_json::Value, serde_json::Value), String> {
+  let personal = read_lsp_config(app, "personal", None)?;
+  let project = match project_root {
+    Some(root) => read_lsp_config(app, "project", Some(root))?,
+    None => serde_json::json!({}),
+  };
+  Ok((personal, project))
+}
+
+pub(crate) fn lsp_enabled_in_settings(
+  app: &AppHandle,
+  project_root: Option<&str>,
+) -> bool {
+  let personal = match read_settings_internal(app, "personal", None) {
+    Ok(settings) => settings,
+    Err(error) => {
+      log::warn!("Failed to read personal settings for LSP: {error}");
+      return false;
+    }
+  };
+
+  let mut enabled = personal
+    .get("lsp.enabled")
+    .and_then(|value| value.as_bool())
+    .unwrap_or(false);
+
+  if let Some(root) = project_root {
+    if let Ok(project_settings) = read_settings_internal(app, "project", Some(root.to_string())) {
+      if let Some(value) = project_settings.get("lsp.enabled").and_then(|v| v.as_bool()) {
+        enabled = value;
+      }
+    }
+  }
+
+  enabled
+}
+
+fn read_settings_internal(
+  app: &AppHandle,
+  scope: &str,
+  root_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+  let path = settings_path(app, scope, root_path)?;
+  read_json(&path)
+}
+
 fn base_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<PathBuf, String> {
   match scope {
     "personal" => user_pyrola_dir(app),

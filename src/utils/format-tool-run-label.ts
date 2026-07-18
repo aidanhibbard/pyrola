@@ -5,6 +5,8 @@ const TOOL_LABELS: Record<string, string> = {
   write_file: 'Edited',
   edit_file: 'Edited',
   apply_patch: 'Patched',
+  delete_file: 'Deleted',
+  move_file: 'Moved',
   list_dir: 'Listed',
   glob_files: 'Searched files',
   grep: 'Searched',
@@ -12,16 +14,21 @@ const TOOL_LABELS: Record<string, string> = {
   git_diff: 'Viewed diff',
   git_log: 'Viewed git log',
   git_branch: 'Checked branch',
+  git_checkout: 'Checked out branch',
+  git_branch_create: 'Created branch',
+  git_commit: 'Committed changes',
   run_terminal: 'Ran command',
   terminal_output: 'Read shell output',
   stop_terminal: 'Stopped shell',
   web_fetch: 'Fetched URL',
+  web_search: 'Searched web',
   call_mcp_tool: 'Called MCP tool',
   get_mcp_tools: 'Listed MCP tools',
   create_plan: 'Created plan',
   update_plan_todo: 'Updated plan',
   spawn_subagent: 'Spawned sub-agent',
   lsp: 'LSP lookup',
+  diagnostics: 'Read diagnostics',
 }
 
 const formatArgsHint = (args: unknown): string | null => {
@@ -40,6 +47,12 @@ const formatArgsHint = (args: unknown): string | null => {
   }
   if (typeof record.command === 'string' && record.command.length > 0) {
     return record.command
+  }
+  if (typeof record.query === 'string' && record.query.length > 0) {
+    return record.query
+  }
+  if (typeof record.from === 'string' && record.from.length > 0) {
+    return record.from
   }
   return null
 }

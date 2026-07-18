@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent'])
+const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator'])
 
 export const chatMetaSchema = z.object({
   id: z.string(),

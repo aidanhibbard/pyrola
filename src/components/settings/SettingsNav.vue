@@ -24,13 +24,13 @@ const sections = computed(() =>
 </script>
 
 <template>
-  <nav class="flex w-48 shrink-0 flex-col gap-1">
+  <nav class="flex shrink-0 gap-1 overflow-x-auto md:w-48 md:flex-col md:overflow-x-visible">
     <Button
       v-for="section in sections"
       :key="section"
       variant="ghost"
       :class="activeSection === section ? 'bg-muted' : ''"
-      class="justify-start"
+      class="shrink-0 justify-start whitespace-nowrap"
       @click="emit('select', section)"
     >
       {{ SECTION_LABELS[section] }}

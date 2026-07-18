@@ -7,6 +7,7 @@ import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const router = useRouter()
 const fleet = useFleetRegistry()
@@ -15,7 +16,7 @@ const sending = ref(false)
 
 const handleSubmit = async (payload: {
   text: string
-  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  mode: PyrolaChatMode
   model: string
 }): Promise<void> => {
   const project = fleet.activeProject.value

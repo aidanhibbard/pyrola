@@ -5,13 +5,19 @@ import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-r
 import gitRepoInfo from '@/services/git/git-repo-info'
 import {
   fsApplyPatch,
+  fsDelete,
   fsEditFile,
   fsListDir,
+  fsMove,
   fsReadFile,
   fsStagePreviewApplyPatch,
+  fsStagePreviewDelete,
   fsStagePreviewEdit,
   fsStagePreviewWrite,
   fsWriteFile,
+  gitBranchCreate,
+  gitCheckoutBranch,
+  gitCommit,
   gitDiff,
   gitLog,
   gitStatus,
@@ -53,6 +59,12 @@ import validateStudioSlug from '@/services/studio/validate-studio-slug'
 import studioDataSchema from '@/schemas/studio/studio-data'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 import { requestQuestion } from '@/services/harness/question-gate'
+import webSearch from '@/services/web/web-search'
+import {
+  fail as failSubagent,
+  register as registerSubagent,
+  resolve as resolveSubagent,
+} from '@/services/harness/subagent-registry'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -84,6 +96,29 @@ const DEFAULT_BLOCKING_TIMEOUT_MS = 120_000
 const SUBAGENT_MAX_OUTPUT_TOKENS = 8192
 const SUBAGENT_MAX_STEPS = 15
 
+const LSP_DIAGNOSTICS_METHODS = new Set([
+  'diagnostics',
+  'publishDiagnostics',
+  'textDocument/diagnostic',
+])
+
+const parseLspDiagnosticItems = (result: unknown): unknown[] => {
+  if (Array.isArray(result)) {
+    return result
+  }
+  if (!result || typeof result !== 'object') {
+    return []
+  }
+  const payload = result as Record<string, unknown>
+  if (Array.isArray(payload.items)) {
+    return payload.items
+  }
+  if (Array.isArray(payload.diagnostics)) {
+    return payload.diagnostics
+  }
+  return []
+}
+
 const SUBAGENT_READ_ONLY_TOOLS = [
   'read_file',
   'list_dir',
@@ -94,7 +129,9 @@ const SUBAGENT_READ_ONLY_TOOLS = [
   'git_log',
   'git_branch',
   'lsp',
+  'diagnostics',
   'web_fetch',
+  'web_search',
   'load_skill',
   'call_mcp_tool',
   'get_mcp_tools',
@@ -187,14 +224,36 @@ const readTerminalOutput = async (
 
 const buildHarnessTools = (ctx: HarnessToolContext) => ({
   read_file: tool({
-    description: 'Read a file from the workspace',
+    description:
+      'Read a file from the workspace. For image files (.png, .jpg, .jpeg, .gif, .webp, .svg), returns image metadata and optional base64 instead of plain text.',
     inputSchema: z.object({
       path: z.string(),
       offset: z.number().optional(),
       limit: z.number().optional(),
+      include_base64: z.boolean().optional(),
     }),
-    execute: async ({ path, offset, limit }) =>
-      fsReadFile({ projectRoot: ctx.projectRoot, path, offset, limit }),
+    execute: async ({ path, offset, limit, include_base64 }) => {
+      const result = await fsReadFile({
+        projectRoot: ctx.projectRoot,
+        path,
+        offset,
+        limit,
+        includeBase64: include_base64,
+      })
+
+      if (result.isImage) {
+        return {
+          path: result.path,
+          isImage: true,
+          mimeType: result.mimeType ?? null,
+          sizeBytes: result.sizeBytes ?? null,
+          content: result.content || null,
+          base64: result.base64 ?? null,
+        }
+      }
+
+      return result
+    },
   }),
   list_dir: tool({
     description: 'List a directory',
@@ -234,6 +293,115 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     description: 'Current git branch',
     inputSchema: z.object({}),
     execute: async () => gitRepoInfo(ctx.projectRoot),
+  }),
+  git_checkout: tool({
+    description: 'Checkout a git branch or ref',
+    inputSchema: z.object({ branch: z.string() }),
+    execute: async ({ branch }) => {
+      await gitCheckoutBranch(ctx.projectRoot, branch)
+      return { branch, checkedOut: true }
+    },
+  }),
+  git_branch_create: tool({
+    description: 'Create a new git branch',
+    inputSchema: z.object({
+      name: z.string(),
+      checkout: z.boolean().optional(),
+    }),
+    execute: async ({ name, checkout }) => {
+      await gitBranchCreate({
+        projectRoot: ctx.projectRoot,
+        name,
+        checkout,
+      })
+      return { name, checkout: checkout ?? true }
+    },
+  }),
+  git_commit: tool({
+    description: 'Stage and commit changes with a message',
+    inputSchema: z.object({
+      message: z.string(),
+      paths: z.array(z.string()).optional(),
+    }),
+    execute: async ({ message, paths }) =>
+      gitCommit({
+        projectRoot: ctx.projectRoot,
+        message,
+        paths,
+      }),
+  }),
+  delete_file: tool({
+    description: 'Delete a file from the workspace (requires approval)',
+    inputSchema: z.object({
+      path: z.string(),
+      recursive: z.boolean().optional(),
+    }),
+    execute: async ({ path, recursive }, { toolCallId }) => {
+      let diffs: FileDiff[]
+      try {
+        diffs = mapDiffs(
+          await fsStagePreviewDelete({ projectRoot: ctx.projectRoot, path }),
+        )
+      } catch {
+        diffs = [{ path, operation: 'delete', hunks: [] }]
+      }
+
+      const auto = shouldAutoApprove(
+        [path],
+        ctx.settings['agent.autoApproveGlobs'] ?? [],
+      )
+      if (!auto) {
+        ctx.onPendingApproval(toolCallId, 'delete_file', diffs)
+        const approved = await requestApproval(toolCallId, 'delete_file', diffs)
+        if (!approved) {
+          return { rejected: true }
+        }
+      }
+
+      await fsDelete({ projectRoot: ctx.projectRoot, path, recursive })
+      return { ok: true, path, diffs }
+    },
+  }),
+  move_file: tool({
+    description: 'Move or rename a workspace file (requires approval)',
+    inputSchema: z.object({
+      from: z.string(),
+      to: z.string(),
+    }),
+    execute: async ({ from, to }, { toolCallId }) => {
+      const diffs: FileDiff[] = [
+        {
+          path: from,
+          operation: 'rename',
+          newContent: to,
+          hunks: [
+            {
+              oldStart: 1,
+              newStart: 1,
+              lines: [
+                { kind: 'remove', content: from },
+                { kind: 'add', content: to },
+              ],
+            },
+          ],
+        },
+      ]
+
+      const auto = shouldAutoApprove(
+        [from, to],
+        ctx.settings['agent.autoApproveGlobs'] ?? [],
+      )
+      if (!auto) {
+        ctx.onPendingApproval(toolCallId, 'move_file', diffs)
+        const approved = await requestApproval(toolCallId, 'move_file', diffs)
+        if (!approved) {
+          return { rejected: true }
+        }
+      }
+
+      await fsMove({ projectRoot: ctx.projectRoot, from, to })
+      return { ok: true, from, to, diffs }
+    },
   }),
   write_file: tool({
     description: 'Write a file (requires approval)',
@@ -553,7 +721,8 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   lsp: tool({
-    description: 'LSP query (goToDefinition, hover, findReferences, symbols)',
+    description:
+      'LSP query (goToDefinition, hover, findReferences, symbols, diagnostics)',
     inputSchema: z.object({
       method: z.string(),
       path: z.string(),
@@ -570,7 +739,40 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         path,
         ...params,
       }).catch(() => null)
+      if (LSP_DIAGNOSTICS_METHODS.has(method)) {
+        return { method, path, diagnostics: parseLspDiagnosticItems(result), result }
+      }
       return { method, path, result }
+    },
+  }),
+  diagnostics: tool({
+    description: 'Read linter and diagnostic errors for a file',
+    inputSchema: z.object({
+      path: z.string(),
+      extension: z.string().optional(),
+    }),
+    execute: async ({ path, extension }) => {
+      const ext = extension ?? path.split('.').pop() ?? ''
+      const server = await lspEnsureServer(ext).catch(() => null)
+      if (!server?.running) {
+        return { path, diagnostics: [], error: server?.error ?? 'LSP unavailable' }
+      }
+
+      const result = await lspRequest(server.id, 'diagnostics', { path }).catch(
+        (error: unknown) => ({
+          error: error instanceof Error ? error.message : 'Diagnostics request failed',
+        }),
+      )
+
+      if (result && typeof result === 'object' && 'error' in result) {
+        return {
+          path,
+          diagnostics: [],
+          error: String((result as { error: string }).error),
+        }
+      }
+
+      return { path, diagnostics: parseLspDiagnosticItems(result) }
     },
   }),
   web_fetch: tool({
@@ -581,12 +783,107 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       return { url, status: response.status, body: response.body }
     },
   }),
+  web_search: tool({
+    description: 'Search the web for real-time information',
+    inputSchema: z.object({
+      query: z.string(),
+      limit: z.number().optional(),
+    }),
+    execute: async ({ query, limit }) => webSearch(query, limit),
+  }),
 })
+
+const runSubagentGenerate = async (args: {
+  ctx: HarnessToolContext
+  subagentId: string
+  agentName: string
+  prompt: string
+  toolCallId: string
+  signal: AbortSignal
+}): Promise<string> => {
+  const { ctx, subagentId, agentName, prompt, toolCallId, signal } = args
+
+  const modelRef = resolveParsedModelForRole('agent', ctx.settings)
+  if (!modelRef) {
+    throw new Error('No model configured for agent role')
+  }
+
+  const model = await createModel({
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    settings: ctx.settings,
+  })
+
+  const emitNestedEvent = (event: HarnessEvent): void => {
+    ctx.onHarnessEvent?.({
+      type: 'subagent-event',
+      parentToolCallId: toolCallId,
+      event,
+    })
+  }
+
+  const nestedCtx: HarnessToolContext = {
+    ...ctx,
+    onHarnessEvent: emitNestedEvent,
+    signal,
+  }
+  const allow = new Set<string>(SUBAGENT_READ_ONLY_TOOLS)
+  const nestedTools = Object.fromEntries(
+    Object.entries(buildHarnessTools(nestedCtx)).filter(([name]) => allow.has(name)),
+  )
+
+  if (signal.aborted) {
+    throw new Error('Subagent aborted')
+  }
+
+  const result = await generateText({
+    model,
+    system: `You are a read-only sub-agent named "${agentName}". Explore the codebase with read-only tools. Do not modify files or run commands. Provide a concise summary when finished.`,
+    prompt,
+    tools: nestedTools,
+    stopWhen: stepCountIs(SUBAGENT_MAX_STEPS),
+    maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
+    abortSignal: signal,
+    onToolExecutionStart: (event) => {
+      emitNestedEvent({
+        type: 'tool-start',
+        toolCallId: event.toolCall.toolCallId,
+        name: event.toolCall.toolName,
+        args: event.toolCall.input,
+      })
+    },
+    onToolExecutionEnd: (event) => {
+      const { toolCall, toolOutput } = event
+      if (toolOutput.type === 'tool-error') {
+        emitNestedEvent({
+          type: 'tool-result',
+          toolCallId: toolCall.toolCallId,
+          result: { error: toolOutput.error },
+          isError: true,
+        })
+        return
+      }
+      emitNestedEvent({
+        type: 'tool-result',
+        toolCallId: toolCall.toolCallId,
+        result: toolOutput.output,
+        isError: false,
+      })
+    },
+  })
+
+  if (signal.aborted) {
+    throw new Error('Subagent aborted')
+  }
+
+  return result.text
+}
 
 const buildTools = (ctx: HarnessToolContext) => ({
   ...buildHarnessTools(ctx),
   spawn_subagent: tool({
-    description: 'Spawn a blocking subagent',
+    description:
+      'Spawn a subagent. Default is blocking until complete. Set blocking to false to run in the background and continue the parent turn; the harness resumes when the subagent finishes.',
     inputSchema: z.object({
       agentName: z.string(),
       prompt: z.string(),
@@ -595,7 +892,10 @@ const buildTools = (ctx: HarnessToolContext) => ({
     execute: async (
       { agentName, prompt, blocking },
       { toolCallId },
-    ): Promise<{ subagentId: string; name: string; summary: string }> => {
+    ): Promise<
+      | { subagentId: string; name: string; summary: string }
+      | { subagentId: string; status: 'running' }
+    > => {
       if (ctx.signal?.aborted) {
         throw new Error('Subagent aborted')
       }
@@ -609,86 +909,73 @@ const buildTools = (ctx: HarnessToolContext) => ({
         blocking,
       })
 
-      const modelRef = resolveParsedModelForRole('agent', ctx.settings)
-      if (!modelRef) {
-        throw new Error('No model configured for agent role')
-      }
+      if (!blocking) {
+        const controller = new AbortController()
+        ctx.signal?.addEventListener('abort', () => controller.abort(), { once: true })
 
-      const model = await createModel({
-        providerId: modelRef.providerId,
-        modelId: modelRef.modelId,
-        settings: ctx.settings,
-      })
-
-      const emitNestedEvent = (event: HarnessEvent): void => {
-        ctx.onHarnessEvent?.({
-          type: 'subagent-event',
-          parentToolCallId: toolCallId,
-          event,
+        registerSubagent(ctx.chatId, subagentId, controller, {
+          toolCallId,
+          agentName,
         })
-      }
 
-      const nestedCtx: HarnessToolContext = {
-        ...ctx,
-        onHarnessEvent: emitNestedEvent,
+        ctx.onHarnessEvent?.({
+          type: 'pending-subagent',
+          toolCallId,
+          subagentId,
+          agentName,
+          prompt,
+        })
+
+        const completeSubagent = async (): Promise<void> => {
+          try {
+            const summary = await runSubagentGenerate({
+              ctx,
+              subagentId,
+              agentName,
+              prompt,
+              toolCallId,
+              signal: controller.signal,
+            })
+
+            resolveSubagent(subagentId, { subagentId, name: agentName, summary })
+            ctx.onHarnessEvent?.({
+              type: 'subagent-result',
+              subagentId,
+              summary,
+              blocking: false,
+            })
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Subagent failed'
+            failSubagent(subagentId, message)
+            ctx.onHarnessEvent?.({
+              type: 'subagent-result',
+              subagentId,
+              summary: message,
+              blocking: false,
+            })
+          }
+        }
+
+        void completeSubagent()
+
+        return { subagentId, status: 'running' }
       }
-      const allow = new Set<string>(SUBAGENT_READ_ONLY_TOOLS)
-      const nestedTools = Object.fromEntries(
-        Object.entries(buildHarnessTools(nestedCtx)).filter(([name]) => allow.has(name)),
-      )
 
       try {
-        if (ctx.signal?.aborted) {
-          throw new Error('Subagent aborted')
-        }
-
-        const result = await generateText({
-          model,
-          system: `You are a read-only sub-agent named "${agentName}". Explore the codebase with read-only tools. Do not modify files or run commands. Provide a concise summary when finished.`,
+        const summary = await runSubagentGenerate({
+          ctx,
+          subagentId,
+          agentName,
           prompt,
-          tools: nestedTools,
-          stopWhen: stepCountIs(SUBAGENT_MAX_STEPS),
-          maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
-          abortSignal: ctx.signal,
-          onToolExecutionStart: (event) => {
-            emitNestedEvent({
-              type: 'tool-start',
-              toolCallId: event.toolCall.toolCallId,
-              name: event.toolCall.toolName,
-              args: event.toolCall.input,
-            })
-          },
-          onToolExecutionEnd: (event) => {
-            const { toolCall, toolOutput } = event
-            if (toolOutput.type === 'tool-error') {
-              emitNestedEvent({
-                type: 'tool-result',
-                toolCallId: toolCall.toolCallId,
-                result: { error: toolOutput.error },
-                isError: true,
-              })
-              return
-            }
-            emitNestedEvent({
-              type: 'tool-result',
-              toolCallId: toolCall.toolCallId,
-              result: toolOutput.output,
-              isError: false,
-            })
-          },
+          toolCallId,
+          signal: ctx.signal ?? new AbortController().signal,
         })
-
-        if (ctx.signal?.aborted) {
-          throw new Error('Subagent aborted')
-        }
-
-        const summary = result.text
 
         ctx.onHarnessEvent?.({
           type: 'subagent-result',
           subagentId,
           summary,
-          blocking,
+          blocking: true,
         })
 
         return { subagentId, name: agentName, summary }
@@ -698,7 +985,7 @@ const buildTools = (ctx: HarnessToolContext) => ({
           type: 'subagent-result',
           subagentId,
           summary: message,
-          blocking,
+          blocking: true,
         })
         throw error
       }

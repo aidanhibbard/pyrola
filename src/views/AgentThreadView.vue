@@ -11,6 +11,7 @@ import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import { consumePendingChatMessage } from '@/services/chat/pending-message'
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const route = useRoute()
 const fleet = useFleetRegistry()
@@ -83,7 +84,7 @@ const loadThread = async (): Promise<void> => {
 
 const handleSubmit = async (payload: {
   text: string
-  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  mode: PyrolaChatMode
   model: string
 }): Promise<void> => {
   if (!payload.model) {
@@ -106,7 +107,7 @@ const handleSubmit = async (payload: {
 
 const handleSubmitEdit = async (payload: {
   text: string
-  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  mode: PyrolaChatMode
   model: string
 }): Promise<void> => {
   if (!harness.value) {
@@ -124,7 +125,7 @@ const handleSubmitEdit = async (payload: {
 }
 
 const handleReset = async (payload: {
-  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  mode: PyrolaChatMode
   model: string
 }): Promise<void> => {
   if (!harness.value) {

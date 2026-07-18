@@ -5,7 +5,7 @@ import parseModelRef from '@/utils/parse-model-ref'
 import { MODEL_REF_SEPARATOR } from '@/types/models/model-ref'
 
 const themeSchema = z.enum(['light', 'dark', 'system'])
-const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent'])
+const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator'])
 const duplicateTabBehaviorSchema = z.enum(['ask', 'open-existing', 'open-new'])
 
 const customProviderSchema = z.object({
@@ -34,6 +34,7 @@ export const pyrolaSettingsSchema = z
     'models.plan': modelRefStringSchema.optional(),
     'models.studio': modelRefStringSchema.optional(),
     'models.agent': modelRefStringSchema.optional(),
+    'models.orchestrator': modelRefStringSchema.optional(),
     'models.title': modelRefStringSchema.optional(),
     'models.compaction': modelRefStringSchema.optional(),
   })

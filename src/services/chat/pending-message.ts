@@ -1,8 +1,10 @@
+import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+
 const PENDING_MESSAGE_KEY = 'pyrola:pending-chat-message'
 
 export type PendingChatMessage = {
   text: string
-  mode: 'ask' | 'plan' | 'studio' | 'agent'
+  mode: PyrolaChatMode
   model: string
 }
 

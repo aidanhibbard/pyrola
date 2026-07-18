@@ -21,11 +21,12 @@ pub use config::{
   write_settings,
 };
 pub use fs::{
-  fs_apply_patch, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_read_file, fs_stage_preview,
-  fs_stat, fs_write_file,
+  fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir,
+  fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file,
 };
 pub use git::{
-  git_checkout_branch, git_diff, git_list_branches, git_log, git_repo_info, git_status,
+  git_branch_create, git_checkout_branch, git_commit, git_diff, git_list_branches, git_log,
+  git_repo_info, git_status,
 };
 pub use glob::workspace_glob;
 pub use grep::workspace_grep;

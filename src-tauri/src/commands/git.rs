@@ -92,6 +92,78 @@ pub fn git_checkout_branch(root_path: String, branch: String) -> Result<(), Stri
   Ok(())
 }
 
+#[tauri::command]
+pub fn git_branch_create(
+  project_root: String,
+  name: String,
+  checkout: Option<bool>,
+) -> Result<(), String> {
+  let branch = name.trim();
+  if branch.is_empty() {
+    return Err("Branch name is required".to_string());
+  }
+
+  if !is_git_repo(&project_root) {
+    return Err("Not a git repository".to_string());
+  }
+
+  if checkout.unwrap_or(true) {
+    run_git(&project_root, &["checkout", "-b", branch])?;
+  } else {
+    run_git(&project_root, &["branch", branch])?;
+  }
+
+  Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitResult {
+  pub hash: String,
+  pub message: String,
+  pub output: String,
+}
+
+#[tauri::command]
+pub async fn git_commit(
+  project_root: String,
+  message: String,
+  paths: Option<Vec<String>>,
+) -> Result<GitCommitResult, String> {
+  let commit_message = message.trim();
+  if commit_message.is_empty() {
+    return Err("Commit message is required".to_string());
+  }
+
+  if !is_git_repo(&project_root) {
+    return Err("Not a git repository".to_string());
+  }
+
+  if let Some(paths) = paths {
+    if paths.is_empty() {
+      return Err("At least one path is required when paths are provided".to_string());
+    }
+    for path in paths {
+      let trimmed = path.trim();
+      if trimmed.is_empty() {
+        continue;
+      }
+      run_git_async(&project_root, &["add", "--", trimmed]).await?;
+    }
+  } else {
+    run_git_async(&project_root, &["add", "-A"]).await?;
+  }
+
+  let output = run_git_async(&project_root, &["commit", "-m", commit_message]).await?;
+  let hash = run_git_async(&project_root, &["rev-parse", "HEAD"]).await?;
+
+  Ok(GitCommitResult {
+    hash,
+    message: commit_message.to_string(),
+    output,
+  })
+}
+
 use tokio::process::Command as AsyncCommand;
 
 #[derive(Debug, Serialize)]

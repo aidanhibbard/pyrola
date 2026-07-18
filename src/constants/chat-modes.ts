@@ -3,6 +3,7 @@ import {
   BotIcon,
   CircleHelpIcon,
   ListTodoIcon,
+  NetworkIcon,
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
@@ -18,6 +19,7 @@ export const CHAT_MODES: ChatModeMeta[] = [
   { value: 'plan', label: 'Plan', icon: ListTodoIcon },
   { value: 'studio', label: 'Studio', icon: BarChart3Icon },
   { value: 'agent', label: 'Agent', icon: BotIcon },
+  { value: 'orchestrator', label: 'Orchestrator', icon: NetworkIcon },
 ]
 
 export const getChatModeMeta = (mode: PyrolaChatMode): ChatModeMeta =>

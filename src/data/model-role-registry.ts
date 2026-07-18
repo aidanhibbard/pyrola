@@ -57,7 +57,14 @@ export const MODEL_ROLE_REGISTRY: ModelRoleDefinition[] = [
     id: 'agent',
     settingsKey: 'models.agent',
     label: 'Agent',
-    description: 'Default model for Agent mode chats and plan execution.',
+    description: 'Default model for Agent mode chats and single-agent plan execution.',
+    group: 'chatModes',
+  },
+  {
+    id: 'orchestrator',
+    settingsKey: 'models.orchestrator',
+    label: 'Orchestrator',
+    description: 'Default model for Orchestrator mode chats and plan orchestration.',
     group: 'chatModes',
   },
   {

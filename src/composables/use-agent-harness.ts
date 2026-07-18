@@ -6,15 +6,22 @@ import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { FileDiff } from '@/types/harness/file-diff'
 import type { ToolRun } from '@/types/harness/tool-run'
-import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
-import runOrchestrator, { mapMetaStatusToChatStatus } from '@/services/harness/orchestrator'
+import runOrchestrator, {
+  mapMetaStatusToChatStatus,
+  resumeOrchestrator,
+} from '@/services/harness/orchestrator'
 import { resolveApproval } from '@/services/harness/approval-gate'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
+import {
+  abort as abortSubagentsForChat,
+  getSubagent,
+} from '@/services/harness/subagent-registry'
 
 export type AgentHarnessOptions = {
   projectSlug: string
@@ -40,6 +47,13 @@ export default (options: AgentHarnessOptions) => {
   const subagents = shallowRef<SubagentEntry[]>([])
   const abortController = ref<AbortController | null>(null)
   const liveEvents = ref<HarnessEvent[]>([])
+  const lastRunConfig = ref<{
+    mode: PyrolaChatMode
+    model: string
+    mentions: ContextMention[]
+    effectiveSettings: PyrolaSettings
+  } | null>(null)
+  const resumingSubagents = new Set<string>()
 
   const handleEvent = (event: HarnessEvent): void => {
     liveEvents.value = [...liveEvents.value, event]
@@ -120,6 +134,12 @@ export default (options: AgentHarnessOptions) => {
           : item,
       )
       chatStore.completeLocalSubagent(event.subagentId, event.summary)
+      if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
+        resumingSubagents.add(event.subagentId)
+        void resumeAfterSubagent(event.subagentId, event.summary).finally(() => {
+          resumingSubagents.delete(event.subagentId)
+        })
+      }
     }
     if (event.type === 'question-request') {
       chatStore.setPendingQuestion({
@@ -179,6 +199,78 @@ export default (options: AgentHarnessOptions) => {
     chatStore.submitAnswer(toolCallId, answer)
   }
 
+  const resumeAfterSubagent = async (
+    subagentId: string,
+    summary: string,
+  ): Promise<void> => {
+    if (status.value === 'streaming' || status.value === 'submitted') {
+      return
+    }
+
+    const record = getSubagent(subagentId)
+    const config = lastRunConfig.value
+    if (!record || !config) {
+      return
+    }
+
+    if (!config.model) {
+      toast.error('Select a model before resuming')
+      return
+    }
+
+    const parsedModel = parseModelRef(config.model)
+    if (!parsedModel) {
+      toast.error('Select a valid model before resuming')
+      return
+    }
+
+    error.value = null
+    status.value = 'submitted'
+
+    const turnId = crypto.randomUUID()
+    chatStore.startAgentTurn(turnId)
+
+    const controller = new AbortController()
+    abortController.value = controller
+
+    try {
+      await resumeOrchestrator({
+        projectSlug: options.projectSlug,
+        chatId: options.chatId,
+        projectRoot: options.projectRoot,
+        projectName: options.projectName,
+        mode: config.mode,
+        modelId: parsedModel.modelId,
+        providerId: parsedModel.providerId,
+        settings: config.effectiveSettings,
+        messages: chatStore.messages.value,
+        mentions: config.mentions,
+        signal: controller.signal,
+        onEvent: handleEvent,
+        assistantId: turnId,
+        toolCallId: record.toolCallId,
+        completedResult: {
+          subagentId,
+          name: record.agentName,
+          summary,
+        },
+        skipUserPersist: true,
+      })
+      status.value = 'ready'
+      chatStore.finishAgentTurn()
+      await refreshFleetSidebar()
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error'
+      status.value = 'error'
+      chatStore.finishAgentTurn()
+      toast.error('Agent resume failed', {
+        description: error.value,
+      })
+    } finally {
+      abortController.value = null
+    }
+  }
+
   const send = async (args: {
     text: string
     mode: PyrolaChatMode
@@ -218,6 +310,13 @@ export default (options: AgentHarnessOptions) => {
     status.value = 'submitted'
     toolRuns.value = []
     subagents.value = []
+
+    lastRunConfig.value = {
+      mode: args.mode,
+      model: args.model,
+      mentions: args.mentions ?? [],
+      effectiveSettings: config.effectiveSettings.value,
+    }
 
     if (!args.skipUserMessage) {
       chatStore.appendLocalMessage({
@@ -347,6 +446,7 @@ export default (options: AgentHarnessOptions) => {
 
   const stop = (): void => {
     abortController.value?.abort()
+    abortSubagentsForChat(options.chatId)
     status.value = 'ready'
   }
 

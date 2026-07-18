@@ -12,6 +12,14 @@ pub struct FsReadFileResult {
   pub total_lines: u32,
   pub offset: u32,
   pub limit: u32,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub is_image: Option<bool>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub mime_type: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub size_bytes: Option<u64>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub base64: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -502,15 +510,89 @@ fn apply_patch_operations(project_root: &str, patch: &str) -> Result<Vec<FileDif
   Ok(diffs)
 }
 
+fn image_mime_type(path: &Path) -> Option<&'static str> {
+  match path
+    .extension()
+    .and_then(|value| value.to_str())
+    .unwrap_or_default()
+    .to_ascii_lowercase()
+    .as_str()
+  {
+    "png" => Some("image/png"),
+    "jpg" | "jpeg" => Some("image/jpeg"),
+    "gif" => Some("image/gif"),
+    "webp" => Some("image/webp"),
+    "svg" => Some("image/svg+xml"),
+    _ => None,
+  }
+}
+
+fn is_image_path(path: &Path) -> bool {
+  image_mime_type(path).is_some()
+}
+
 #[tauri::command]
 pub fn fs_read_file(
   project_root: String,
   path: String,
   offset: Option<u32>,
   limit: Option<u32>,
+  include_base64: Option<bool>,
 ) -> Result<FsReadFileResult, String> {
   let root = canonical_project_root(&project_root)?;
   let absolute = resolve_workspace_path(&project_root, &path)?;
+  let rel = relative_path(&root, &absolute);
+
+  if is_image_path(&absolute) {
+    let metadata = fs::metadata(&absolute).map_err(|error| error.to_string())?;
+    let mime_type = image_mime_type(&absolute).map(str::to_string);
+    let is_svg = mime_type.as_deref() == Some("image/svg+xml");
+
+    if is_svg {
+      let content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
+      let lines: Vec<&str> = content.lines().collect();
+      let total_lines = lines.len() as u32;
+      let start = (offset.unwrap_or(1).saturating_sub(1) as usize).min(lines.len());
+      let max = limit.unwrap_or(total_lines.max(1)) as usize;
+      let end = start.saturating_add(max).min(lines.len());
+      let slice = lines[start..end].join("\n");
+
+      return Ok(FsReadFileResult {
+        path: rel,
+        content: slice,
+        total_lines,
+        offset: (start as u32) + 1,
+        limit: (end - start) as u32,
+        is_image: Some(true),
+        mime_type,
+        size_bytes: Some(metadata.len()),
+        base64: None,
+      });
+    }
+
+    let encoded = if include_base64.unwrap_or(true) {
+      let bytes = fs::read(&absolute).map_err(|error| error.to_string())?;
+      Some(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        bytes,
+      ))
+    } else {
+      None
+    };
+
+    return Ok(FsReadFileResult {
+      path: rel,
+      content: String::new(),
+      total_lines: 0,
+      offset: 0,
+      limit: 0,
+      is_image: Some(true),
+      mime_type,
+      size_bytes: Some(metadata.len()),
+      base64: encoded,
+    });
+  }
+
   let content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
   let lines: Vec<&str> = content.lines().collect();
   let total_lines = lines.len() as u32;
@@ -518,7 +600,6 @@ pub fn fs_read_file(
   let max = limit.unwrap_or(total_lines.max(1)) as usize;
   let end = start.saturating_add(max).min(lines.len());
   let slice = lines[start..end].join("\n");
-  let rel = relative_path(&root, &absolute);
 
   Ok(FsReadFileResult {
     path: rel,
@@ -526,6 +607,10 @@ pub fn fs_read_file(
     total_lines,
     offset: (start as u32) + 1,
     limit: (end - start) as u32,
+    is_image: None,
+    mime_type: None,
+    size_bytes: None,
+    base64: None,
   })
 }
 
@@ -669,6 +754,126 @@ pub fn fs_edit_file(
 #[tauri::command]
 pub fn fs_apply_patch(project_root: String, patch: String) -> Result<Vec<FileDiff>, String> {
   apply_patch_operations(&project_root, &patch)
+}
+
+fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
+  if from.is_dir() {
+    fs::create_dir_all(to).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(from).map_err(|error| error.to_string())? {
+      let entry = entry.map_err(|error| error.to_string())?;
+      copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
+    }
+    Ok(())
+  } else {
+    if let Some(parent) = to.parent() {
+      fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::copy(from, to).map_err(|error| error.to_string())?;
+    Ok(())
+  }
+}
+
+fn resolve_copy_destination(from: &Path, to: &Path) -> PathBuf {
+  if to.exists() && to.is_dir() {
+    let file_name = from
+      .file_name()
+      .map(|value| value.to_owned())
+      .unwrap_or_default();
+    to.join(file_name)
+  } else {
+    to.to_path_buf()
+  }
+}
+
+#[tauri::command]
+pub fn fs_rename(project_root: String, from: String, to: String) -> Result<(), String> {
+  let absolute_from = resolve_workspace_path(&project_root, &from)?;
+  let absolute_to = resolve_workspace_path(&project_root, &to)?;
+  if !absolute_from.exists() {
+    return Err("Source path does not exist".to_string());
+  }
+  if absolute_to.exists() {
+    return Err("Destination already exists".to_string());
+  }
+  if let Some(parent) = absolute_to.parent() {
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+  }
+  fs::rename(&absolute_from, &absolute_to).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn fs_delete(
+  project_root: String,
+  path: String,
+  recursive: Option<bool>,
+) -> Result<(), String> {
+  let absolute = resolve_workspace_path(&project_root, &path)?;
+  if !absolute.exists() {
+    return Err("Path does not exist".to_string());
+  }
+
+  let meta = fs::symlink_metadata(&absolute).map_err(|error| error.to_string())?;
+  if meta.is_dir() {
+    if recursive.unwrap_or(false) {
+      fs::remove_dir_all(&absolute).map_err(|error| error.to_string())
+    } else {
+      fs::remove_dir(&absolute).map_err(|error| error.to_string())
+    }
+  } else {
+    fs::remove_file(&absolute).map_err(|error| error.to_string())
+  }
+}
+
+#[tauri::command]
+pub fn fs_copy(project_root: String, from: String, to: String) -> Result<(), String> {
+  let absolute_from = resolve_workspace_path(&project_root, &from)?;
+  let absolute_to = resolve_workspace_path(&project_root, &to)?;
+  if !absolute_from.exists() {
+    return Err("Source path does not exist".to_string());
+  }
+
+  let destination = resolve_copy_destination(&absolute_from, &absolute_to);
+  if destination.exists() {
+    return Err("Destination already exists".to_string());
+  }
+
+  copy_recursive(&absolute_from, &destination)
+}
+
+#[tauri::command]
+pub fn fs_move(project_root: String, from: String, to: String) -> Result<(), String> {
+  let absolute_from = resolve_workspace_path(&project_root, &from)?;
+  let absolute_to = resolve_workspace_path(&project_root, &to)?;
+  if !absolute_from.exists() {
+    return Err("Source path does not exist".to_string());
+  }
+
+  let destination = resolve_copy_destination(&absolute_from, &absolute_to);
+  if destination.exists() {
+    return Err("Destination already exists".to_string());
+  }
+  if let Some(parent) = destination.parent() {
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+  }
+
+  match fs::rename(&absolute_from, &destination) {
+    Ok(()) => Ok(()),
+    Err(_) => {
+      copy_recursive(&absolute_from, &destination)?;
+      if absolute_from.is_dir() {
+        fs::remove_dir_all(&absolute_from).map_err(|error| error.to_string())?;
+      } else {
+        fs::remove_file(&absolute_from).map_err(|error| error.to_string())?;
+      }
+      Ok(())
+    }
+  }
+}
+
+#[tauri::command]
+pub fn fs_mkdir(project_root: String, path: String) -> Result<(), String> {
+  let absolute = resolve_workspace_path(&project_root, &path)?;
+  fs::create_dir_all(&absolute).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

@@ -12,7 +12,7 @@ import {
   shellWritePty,
 } from '@/services/pyrola/pyrola-tauri'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import type { WorkbenchTab } from '@/types/workbench/workbench-tab'
+import type { TerminalPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
 
 const props = defineProps<{
   tab: WorkbenchTab
@@ -57,10 +57,12 @@ const initTerminal = async (): Promise<void> => {
   terminal.open(containerRef.value)
   fitAddon.fit()
 
+  const payload = props.tab.payload as TerminalPayload
   const { sessionId: id } = await shellSpawnPty({
     projectRoot: root,
     cols: terminal.cols,
     rows: terminal.rows,
+    cwd: payload.cwd ?? undefined,
   })
   sessionId = id
   workbench.registerTerminalSession(props.tab.id, id)

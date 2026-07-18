@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { Input } from '@/components/shadcn/ui/input'
 import { Label } from '@/components/shadcn/ui/label'
 import {
@@ -349,9 +355,20 @@ watch(
 <template>
   <SettingsSectionScroll title="Providers">
     <template #actions>
-      <Button v-if="!hasProviders" variant="outline" size="sm" @click="openAddDialog">
-        + Add provider
-      </Button>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8"
+            aria-label="Add provider"
+            @click="openAddDialog"
+          >
+            <Plus class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Add provider</TooltipContent>
+      </Tooltip>
     </template>
 
     <div
@@ -362,56 +379,90 @@ watch(
     </div>
 
     <template v-else>
-      <div class="space-y-3">
-        <div class="flex items-center justify-between gap-4">
-          <h3 class="text-sm font-medium">Configured providers</h3>
-          <Button variant="outline" size="sm" @click="openAddDialog">+ Add provider</Button>
-        </div>
-
-        <div class="space-y-2">
-          <div
-            v-for="providerId in configuredProviders"
-            :key="providerId"
-            class="flex flex-col gap-3 rounded-lg border border-border/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <p class="font-medium">
-                {{ getProviderDisplayName(providerId) }}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {{
-                  hasApiKeyInKeychain(providerId)
-                    ? 'API key configured'
-                    : providerRequiresApiKey(providerId)
-                      ? 'No API key'
-                      : 'API key optional'
-                }}
-              </p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" @click="openApiKeyDialog(providerId)">
+      <div class="space-y-2">
+        <div
+          v-for="providerId in configuredProviders"
+          :key="providerId"
+          class="flex flex-col gap-3 rounded-lg border border-border/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p class="font-medium">
+              {{ getProviderDisplayName(providerId) }}
+            </p>
+            <p class="text-xs text-muted-foreground">
+              {{
+                hasApiKeyInKeychain(providerId)
+                  ? 'API key configured'
+                  : providerRequiresApiKey(providerId)
+                    ? 'No API key'
+                    : 'API key optional'
+              }}
+            </p>
+          </div>
+          <div class="flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  :aria-label="hasApiKeyInKeychain(providerId) ? 'Edit key' : 'Add key'"
+                  @click="openApiKeyDialog(providerId)"
+                >
+                  <Pencil class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
                 {{ hasApiKeyInKeychain(providerId) ? 'Edit key' : 'Add key' }}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="testingProviderId === providerId"
-                @click="testConnection(providerId)"
-              >
-                Test connection
-              </Button>
-              <Button
-                v-if="hasApiKeyInKeychain(providerId)"
-                variant="ghost"
-                size="sm"
-                @click="clearApiKey(providerId)"
-              >
-                Clear key
-              </Button>
-              <Button variant="ghost" size="sm" class="text-destructive" @click="removeProvider(providerId)">
-                Remove
-              </Button>
-            </div>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  aria-label="Test connection"
+                  :disabled="testingProviderId === providerId"
+                  @click="testConnection(providerId)"
+                >
+                  <Loader2
+                    v-if="testingProviderId === providerId"
+                    class="h-4 w-4 animate-spin"
+                  />
+                  <RefreshCw v-else class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Test connection</TooltipContent>
+            </Tooltip>
+            <Tooltip v-if="hasApiKeyInKeychain(providerId)">
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  aria-label="Clear key"
+                  @click="clearApiKey(providerId)"
+                >
+                  <KeyRound class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Clear key</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8 text-destructive hover:text-destructive"
+                  aria-label="Remove provider"
+                  @click="removeProvider(providerId)"
+                >
+                  <Trash2 class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>

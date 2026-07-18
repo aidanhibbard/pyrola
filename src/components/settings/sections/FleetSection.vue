@@ -107,6 +107,7 @@ const setTrayBackground = async (value: boolean): Promise<void> => {
           <SelectItem value="plan">Plan</SelectItem>
           <SelectItem value="studio">Studio</SelectItem>
           <SelectItem value="agent">Agent</SelectItem>
+          <SelectItem value="orchestrator">Orchestrator</SelectItem>
         </SelectContent>
       </Select>
     </div>

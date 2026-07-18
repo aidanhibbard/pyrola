@@ -1,6 +1,6 @@
 export type PyrolaTheme = 'light' | 'dark' | 'system'
 
-export type PyrolaChatMode = 'ask' | 'plan' | 'studio' | 'agent'
+export type PyrolaChatMode = 'ask' | 'plan' | 'studio' | 'agent' | 'orchestrator'
 
 export type PyrolaDuplicateTabBehavior = 'ask' | 'open-existing' | 'open-new'
 
@@ -27,6 +27,7 @@ export type PyrolaSettings = {
   'models.plan'?: string
   'models.studio'?: string
   'models.agent'?: string
+  'models.orchestrator'?: string
   'models.title'?: string
   'models.compaction'?: string
   [key: `providers.${string}.apiKeyRef`]: string | undefined

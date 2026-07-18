@@ -15,6 +15,7 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
 import { shellKillPty, shellWritePty } from '@/services/pyrola/pyrola-tauri'
+import workbenchTabLabel from '@/utils/workbench-tab-label'
 
 type DuplicateTabResolution = 'existing' | 'new'
 
@@ -127,7 +128,11 @@ const closeEditorFile = async (tabId: string, path: string): Promise<void> => {
   const openPaths = payload.openPaths.filter((item) => item !== path)
 
   if (openPaths.length === 0) {
-    await closeTab(tabId)
+    updateTab(tabId, {
+      label: workbenchTabLabel('editor'),
+      dirty: false,
+      payload: { path: '', openPaths: [] } satisfies EditorPayload,
+    })
     return
   }
 
@@ -240,7 +245,11 @@ const openEditor = async (projectId: string, path: string): Promise<void> => {
   focusTab(tab.id)
 }
 
-const openTerminal = async (projectId: string, label?: string): Promise<void> => {
+const openTerminal = async (
+  projectId: string,
+  label?: string,
+  cwd?: string,
+): Promise<void> => {
   const predicate = (tab: WorkbenchTab) => tab.type === 'terminal' && tab.projectId === projectId
   const existing = findTab(predicate)
 
@@ -263,7 +272,7 @@ const openTerminal = async (projectId: string, label?: string): Promise<void> =>
     type: 'terminal',
     projectId,
     label: tabLabel,
-    payload: { sessionId: null } satisfies TerminalPayload,
+    payload: { sessionId: null, cwd: cwd ?? null } satisfies TerminalPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)

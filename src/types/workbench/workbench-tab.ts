@@ -13,6 +13,7 @@ export type EditorPayload = {
 
 export type TerminalPayload = {
   sessionId: string | null
+  cwd?: string | null
 }
 
 export type PlanPayload = {
