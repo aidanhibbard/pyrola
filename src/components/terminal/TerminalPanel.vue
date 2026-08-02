@@ -13,6 +13,7 @@ import {
 } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
+import observeDocumentTheme from '@/utils/observe-document-theme'
 
 const TERMINAL_FONT_FAMILY = "'JetBrains Mono', 'SF Mono', ui-monospace, monospace"
 const TERMINAL_FONT_SIZE = 13
@@ -31,6 +32,7 @@ let sessionId: string | null = null
 let unlisten: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let pendingSizeObserver: ResizeObserver | null = null
+let stopThemeObserver: (() => void) | null = null
 let ptyErrorShown = false
 let initialized = false
 let initFailed = false
@@ -53,6 +55,12 @@ const buildTerminalTheme = (): ITheme => {
     selectionBackground: accent,
     selectionForeground: accentForeground,
     selectionInactiveBackground: readCssVariable('--muted'),
+  }
+}
+
+const applyDocumentTheme = (): void => {
+  if (terminal) {
+    terminal.options.theme = buildTerminalTheme()
   }
 }
 
@@ -200,6 +208,7 @@ const ensureInitWhenReady = (): void => {
 }
 
 onMounted(async () => {
+  stopThemeObserver = observeDocumentTheme(applyDocumentTheme)
   await nextTick()
   ensureInitWhenReady()
 })
@@ -212,6 +221,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  stopThemeObserver?.()
+  stopThemeObserver = null
   cleanupPendingSizeObserver()
   if (unlisten) {
     unlisten()

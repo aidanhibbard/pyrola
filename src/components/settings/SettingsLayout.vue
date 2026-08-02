@@ -62,36 +62,31 @@ const sectionComponent = computed(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
-    <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
+      <Tabs
+        :model-value="activeTab"
+        @update:model-value="(value) => emit('update:tab', value as SettingsTab)"
+      >
+        <TabsList>
+          <TabsTrigger value="personal">Personal</TabsTrigger>
+          <TabsTrigger v-if="showProjectTab" value="project">Project</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-6 md:flex-row">
-      <SettingsNav
-        :active-tab="activeTab"
-        :active-section="activeSection"
-        @select="emit('update:section', $event)"
+    <SettingsNav
+      :active-tab="activeTab"
+      :active-section="activeSection"
+      @select="emit('update:section', $event)"
+    />
+
+    <div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <component
+        :is="sectionComponent"
+        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+        :tab="activeTab"
       />
-      <div class="flex min-h-0 max-w-xl flex-1 flex-col overflow-hidden">
-        <div class="shrink-0 pb-4">
-          <div class="flex justify-end">
-            <Tabs
-              :model-value="activeTab"
-              @update:model-value="(value) => emit('update:tab', value as SettingsTab)"
-            >
-              <TabsList>
-                <TabsTrigger value="personal">Personal</TabsTrigger>
-                <TabsTrigger v-if="showProjectTab" value="project">Project</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <component
-            :is="sectionComponent"
-            class="flex min-h-0 flex-1 flex-col overflow-hidden"
-            :tab="activeTab"
-          />
-        </div>
-      </div>
     </div>
   </div>
 </template>

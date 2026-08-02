@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
+  ClipboardCopy,
   FileCode,
+  FolderSearch,
+  GitCompareArrows,
   List,
+  ListOrdered,
   MoreHorizontal,
+  Save,
+  SaveAll,
   Search,
+  WandSparkles,
+  WrapText,
   X,
+  Zap,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
@@ -22,7 +32,6 @@ import {
 import { Button } from '@/components/shadcn/ui/button'
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -42,6 +51,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/shadcn/ui/resizable'
+import { ScrollArea, ScrollBar } from '@/components/shadcn/ui/scroll-area'
 import {
   Tooltip,
   TooltipContent,
@@ -116,14 +126,6 @@ const isMarkdownFile = computed(() => {
 const showPreview = computed(() => isMarkdownFile.value && editorMode.value === 'preview')
 const showEditor = computed(() => !isMarkdownFile.value || editorMode.value === 'edit')
 
-const activeFileName = computed(() => {
-  const path = selectedPath.value
-  if (!path) {
-    return ''
-  }
-  return fileName(path)
-})
-
 const canGoBack = computed(() => historyIndex.value > 0)
 const canGoForward = computed(() => historyIndex.value < pathHistory.value.length - 1)
 
@@ -170,6 +172,21 @@ const syncWorkbenchDirty = (): void => {
 
 const handleSelect = (path: string): void => {
   workbench.openEditor(props.tab.projectId, path)
+}
+
+const handleSelectFileTab = (path: string): void => {
+  if (path === selectedPath.value) {
+    return
+  }
+  workbench.setEditorActivePath(props.tab.id, path)
+}
+
+const handleFileTabMiddleClick = (event: MouseEvent, path: string): void => {
+  if (event.button !== 1) {
+    return
+  }
+  event.preventDefault()
+  handleSubTabClose(path)
 }
 
 const handleOpenSearch = (): void => {
@@ -419,7 +436,7 @@ watch(
                   <ChevronLeft class="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Go back</TooltipContent>
+              <TooltipContent class="z-60">Go back</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger as-child>
@@ -434,25 +451,41 @@ watch(
                   <ChevronRight class="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Go forward</TooltipContent>
+              <TooltipContent class="z-60">Go forward</TooltipContent>
             </Tooltip>
-            <span
-              v-if="fileDirty[selectedPath]"
-              class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-              aria-label="Unsaved changes"
-            />
-            <span class="truncate text-xs text-muted-foreground">
-              {{ activeFileName }}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-5 w-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Close file"
-              @click="handleSubTabClose(selectedPath)"
-            >
-              <X class="h-3 w-3" />
-            </Button>
+            <ScrollArea class="h-full min-w-0 flex-1">
+              <div class="flex h-7 items-center gap-0.5">
+                <button
+                  v-for="path in openPaths"
+                  :key="path"
+                  type="button"
+                  class="group/tab flex h-6 max-w-35 shrink-0 items-center gap-1 rounded-sm px-1.5 text-xs transition-colors"
+                  :class="
+                    path === selectedPath
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground/50 hover:bg-accent/30 hover:text-muted-foreground/80'
+                  "
+                  @click="handleSelectFileTab(path)"
+                  @auxclick="handleFileTabMiddleClick($event, path)"
+                >
+                  <span
+                    v-if="fileDirty[path]"
+                    class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                    aria-label="Unsaved changes"
+                  />
+                  <span class="truncate">{{ fileName(path) }}</span>
+                  <span
+                    class="shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover/tab:opacity-100"
+                    role="button"
+                    aria-label="Close file"
+                    @click.stop="handleSubTabClose(path)"
+                  >
+                    <X class="h-3 w-3" />
+                  </span>
+                </button>
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           </div>
 
           <div
@@ -500,7 +533,7 @@ watch(
                   <List class="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Toggle file list</TooltipContent>
+              <TooltipContent class="z-60">Toggle file list</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -580,53 +613,75 @@ watch(
       >
         <template #toolbar>
           <div class="flex shrink-0 items-center gap-0.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-6 w-6 text-muted-foreground"
-                  aria-label="File actions"
-                >
-                  <MoreHorizontal class="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" class="w-56">
-                <DropdownMenuLabel>File</DropdownMenuLabel>
-                <DropdownMenuItem @click="handleSave">
-                  Save
-                  <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="handleRevealInFinder">
-                  Reveal in Finder
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="handleCopyRelativePath">
-                  Copy Relative Path
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>View</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem v-model:checked="diffView">
-                  Diff View
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem v-model:checked="lspEnabled">
-                  LSP
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem v-model:checked="lineNumbers">
-                  Line Numbers
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem v-model:checked="wordWrap">
-                  Word Wrap
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Editor</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem v-model:checked="autoSave">
-                  Auto Save
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem v-model:checked="formatOnSave">
-                  Format on Save
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Tooltip :disable-closing-trigger="true">
+              <TooltipTrigger as-child>
+                <span class="inline-flex shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-6 w-6 text-muted-foreground"
+                        aria-label="File actions"
+                      >
+                        <MoreHorizontal class="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" class="w-56">
+                      <DropdownMenuLabel>File</DropdownMenuLabel>
+                      <DropdownMenuItem @click="handleSave">
+                        <Save class="mr-2 h-4 w-4" />
+                        Save
+                        <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="handleRevealInFinder">
+                        <FolderSearch class="mr-2 h-4 w-4" />
+                        Reveal in Finder
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="handleCopyRelativePath">
+                        <ClipboardCopy class="mr-2 h-4 w-4" />
+                        Copy Relative Path
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>View</DropdownMenuLabel>
+                      <DropdownMenuItem @click="diffView = !diffView">
+                        <GitCompareArrows class="mr-2 h-4 w-4" />
+                        Diff View
+                        <Check v-if="diffView" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="lspEnabled = !lspEnabled">
+                        <Zap class="mr-2 h-4 w-4" />
+                        LSP
+                        <Check v-if="lspEnabled" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="lineNumbers = !lineNumbers">
+                        <ListOrdered class="mr-2 h-4 w-4" />
+                        Line Numbers
+                        <Check v-if="lineNumbers" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="wordWrap = !wordWrap">
+                        <WrapText class="mr-2 h-4 w-4" />
+                        Word Wrap
+                        <Check v-if="wordWrap" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Editor</DropdownMenuLabel>
+                      <DropdownMenuItem @click="autoSave = !autoSave">
+                        <SaveAll class="mr-2 h-4 w-4" />
+                        Auto Save
+                        <Check v-if="autoSave" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="formatOnSave = !formatOnSave">
+                        <WandSparkles class="mr-2 h-4 w-4" />
+                        Format on Save
+                        <Check v-if="formatOnSave" class="ml-auto h-4 w-4" />
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent class="z-60">File actions</TooltipContent>
+            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger as-child>
@@ -640,7 +695,7 @@ watch(
                   <Search class="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Search files</TooltipContent>
+              <TooltipContent class="z-60">Search files</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -656,7 +711,7 @@ watch(
                   <List class="h-3.5 w-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Toggle file list</TooltipContent>
+              <TooltipContent class="z-60">Toggle file list</TooltipContent>
             </Tooltip>
           </div>
         </template>

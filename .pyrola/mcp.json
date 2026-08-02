@@ -1,24 +1,19 @@
 {
   "servers": {
-    "shadcn": {
-      "command": "npx",
-      "args": ["shadcn-vue@latest", "mcp"]
-    },
     "ai-elements-vue": {
-      "command": "npx",
       "args": [
         "-y",
         "mcp-remote",
         "https://registry.ai-elements-vue.com/mcp"
-      ]
+      ],
+      "command": "npx"
     },
-    "bullmq": {
-      "command": "npx",
+    "shadcn": {
       "args": [
-        "-y",
-        "mcp-remote",
-        "https://docs.bullmq.io/~gitbook/mcp"
-      ]
+        "shadcn-vue@latest",
+        "mcp"
+      ],
+      "command": "npx"
     }
   }
 }

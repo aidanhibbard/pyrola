@@ -24,7 +24,7 @@ const sections = computed(() =>
 </script>
 
 <template>
-  <nav class="flex shrink-0 gap-1 overflow-x-auto md:w-48 md:flex-col md:overflow-x-visible">
+  <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 pb-3">
     <Button
       v-for="section in sections"
       :key="section"
