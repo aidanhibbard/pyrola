@@ -75,6 +75,9 @@
 
 :root {
   --radius: 0.625rem;
+  /* Width of the title bar control clusters; keeps title content clear of them */
+  --titlebar-safe-left: 8.75rem;
+  --titlebar-safe-right: 3.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

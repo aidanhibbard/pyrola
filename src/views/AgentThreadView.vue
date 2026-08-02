@@ -6,10 +6,12 @@ import type { ChatStatus } from 'ai'
 import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
 import ChatChatBreadcrumbs from '@/components/chat/ChatBreadcrumbs.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
+import { useSidebar } from '@/components/shadcn/ui/sidebar'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
+import useWorkbenchStore from '@/composables/use-workbench-store'
 import { consumePendingChatMessage } from '@/services/chat/pending-message'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
@@ -17,6 +19,8 @@ const route = useRoute()
 const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
+const { open: leftSidebarOpen, isMobile } = useSidebar()
+const { rightSidebarOpen } = useWorkbenchStore()
 
 const harness = ref<ReturnType<typeof useAgentHarness> | null>(null)
 const threadReady = ref(false)
@@ -33,6 +37,13 @@ const harnessPendingApprovals = computed(
 )
 const pendingQuestion = computed(() => chatStore.pendingQuestion.value)
 const timeline = computed(() => chatStore.timeline.value)
+
+// Keep the breadcrumb clear of the TitleBar controls (traffic lights, toggles).
+// Desktop sidebar open (non-sheet) already offsets the chat column past them.
+const titleSafePadding = computed(() => [
+  leftSidebarOpen.value && !isMobile.value ? 'pl-4' : 'pl-(--titlebar-safe-left)',
+  rightSidebarOpen.value ? 'pr-4' : 'pr-(--titlebar-safe-right)',
+])
 
 const initHarness = (): void => {
   if (!project.value || !chatId.value) {
@@ -181,7 +192,10 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
       class="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-(--titlebar-height) -translate-y-full items-center"
       style="--titlebar-height: 40px"
     >
-      <div class="pointer-events-auto mx-auto flex w-full min-w-0 max-w-3xl px-4">
+      <div
+        class="pointer-events-auto mx-auto flex w-full min-w-0 max-w-3xl"
+        :class="titleSafePadding"
+      >
         <ChatChatBreadcrumbs class="min-w-0 flex-1" />
       </div>
     </div>

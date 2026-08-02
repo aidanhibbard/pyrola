@@ -4,7 +4,6 @@ import { PanelRight } from '@lucide/vue'
 import WorkbenchTabContent from '@/components/workbench/WorkbenchTabContent.vue'
 import {
   Empty,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -24,9 +23,6 @@ const hasTabs = computed(() => workbench.tabs.value.length > 0)
           <PanelRight />
         </EmptyMedia>
         <EmptyTitle>No tabs open</EmptyTitle>
-        <EmptyDescription>
-          Use + to open an editor, terminal, browser, or changes tab — or start a Plan or Studio chat.
-        </EmptyDescription>
       </EmptyHeader>
     </Empty>
     <WorkbenchTabContent v-else class="min-h-0 flex-1" />

@@ -20,27 +20,29 @@ const activeTabId = computed(() => workbench.activeTabId.value)
 </script>
 
 <template>
-  <DropdownMenu>
-    <Tooltip>
-      <TooltipTrigger as-child>
-        <DropdownMenuTrigger as-child>
-          <Button variant="ghost" size="icon" class="h-7 w-7" aria-label="Tab menu">
-            <span class="text-xs">⋯</span>
-          </Button>
-        </DropdownMenuTrigger>
-      </TooltipTrigger>
-      <TooltipContent>Tab menu</TooltipContent>
-    </Tooltip>
-    <DropdownMenuContent align="end">
-      <DropdownMenuItem
-        :disabled="!activeTabId"
-        @click="activeTabId && workbench.closeOthers(activeTabId)"
-      >
-        Close others
-      </DropdownMenuItem>
-      <DropdownMenuItem @click="workbench.closeAll()">
-        Close all
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+  <Tooltip :disable-closing-trigger="true">
+    <TooltipTrigger as-child>
+      <span class="inline-flex shrink-0">
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" size="icon" class="h-7 w-7" aria-label="Tab menu">
+              <span class="text-xs">⋯</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              :disabled="!activeTabId"
+              @click="activeTabId && workbench.closeOthers(activeTabId)"
+            >
+              Close others
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="workbench.closeAll()">
+              Close all
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    </TooltipTrigger>
+    <TooltipContent>Tab menu</TooltipContent>
+  </Tooltip>
 </template>

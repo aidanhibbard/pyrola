@@ -67,25 +67,27 @@ const handleExportPdf = (): void => {
 
 <template>
   <div class="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-2 py-1">
-    <Tooltip>
-      <DropdownMenu>
-        <TooltipTrigger as-child>
-          <DropdownMenuTrigger as-child>
-            <Button variant="ghost" size="icon" class="h-8 w-8" aria-label="New studio artifact">
-              <FilePlus class="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem
-            v-for="template in STUDIO_TEMPLATE_OPTIONS"
-            :key="template.docType"
-            @click="handleNewFromTemplate(template.docType)"
-          >
-            {{ template.label }}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+    <Tooltip :disable-closing-trigger="true">
+      <TooltipTrigger as-child>
+        <span class="inline-flex shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button variant="ghost" size="icon" class="h-8 w-8" aria-label="New studio artifact">
+                <FilePlus class="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem
+                v-for="template in STUDIO_TEMPLATE_OPTIONS"
+                :key="template.docType"
+                @click="handleNewFromTemplate(template.docType)"
+              >
+                {{ template.label }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
+      </TooltipTrigger>
       <TooltipContent>New from template</TooltipContent>
     </Tooltip>
 

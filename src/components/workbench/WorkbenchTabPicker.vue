@@ -70,34 +70,36 @@ const handleOpen = (type: (typeof items)[number]['id']): void => {
 </script>
 
 <template>
-  <DropdownMenu v-model:open="open">
-    <Tooltip>
-      <TooltipTrigger as-child>
-        <DropdownMenuTrigger as-child>
-          <slot>
-            <Button
-              variant="ghost"
-              size="icon"
-              :class="props.triggerClass"
-              :aria-label="props.tooltip"
+  <Tooltip :disable-closing-trigger="true">
+    <TooltipTrigger as-child>
+      <span class="inline-flex shrink-0">
+        <DropdownMenu v-model:open="open">
+          <DropdownMenuTrigger as-child>
+            <slot>
+              <Button
+                variant="ghost"
+                size="icon"
+                :class="props.triggerClass"
+                :aria-label="props.tooltip"
+              >
+                <span class="text-lg leading-none">+</span>
+              </Button>
+            </slot>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-40">
+            <DropdownMenuItem
+              v-for="item in items"
+              :key="item.id"
+              :disabled="!activeProjectId"
+              @click="handleOpen(item.id)"
             >
-              <span class="text-lg leading-none">+</span>
-            </Button>
-          </slot>
-        </DropdownMenuTrigger>
-      </TooltipTrigger>
-      <TooltipContent>{{ props.tooltip }}</TooltipContent>
-    </Tooltip>
-    <DropdownMenuContent align="start" class="w-40">
-      <DropdownMenuItem
-        v-for="item in items"
-        :key="item.id"
-        :disabled="!activeProjectId"
-        @click="handleOpen(item.id)"
-      >
-        <component :is="item.icon" class="mr-2 h-4 w-4" />
-        {{ item.label }}
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+              <component :is="item.icon" class="mr-2 h-4 w-4" />
+              {{ item.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    </TooltipTrigger>
+    <TooltipContent>{{ props.tooltip }}</TooltipContent>
+  </Tooltip>
 </template>

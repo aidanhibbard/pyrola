@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/shadcn/ui/dialog'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
+import SettingsInputPasswordInput from '@/components/settings/input/PasswordInput.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
@@ -550,10 +551,9 @@ watch(
           </div>
           <div class="space-y-2">
             <Label for="custom-provider-api-key">API key (optional)</Label>
-            <Input
+            <SettingsInputPasswordInput
               id="custom-provider-api-key"
               v-model="customApiKeyInput"
-              type="password"
               placeholder="sk-..."
             />
             <p class="text-xs text-muted-foreground">
@@ -575,7 +575,7 @@ watch(
             {{ editProviderId && hasApiKeyInKeychain(editProviderId) ? 'Edit API key' : 'Add API key' }}
           </DialogTitle>
         </DialogHeader>
-        <Input v-model="apiKeyInput" type="password" placeholder="sk-..." />
+        <SettingsInputPasswordInput v-model="apiKeyInput" placeholder="sk-..." />
         <DialogFooter>
           <Button @click="editProviderId && saveApiKey(editProviderId)">Save</Button>
         </DialogFooter>
