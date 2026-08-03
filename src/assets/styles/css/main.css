@@ -43,3 +43,9 @@ html {
 .chat-markdown [data-stream-markdown='table-inner-wrapper'] {
   max-width: 100%;
 }
+
+/* vue-stream-markdown hardcodes sticky on code headers (.stream-markdown .sticky).
+   Beat that specificity so headers scroll away with the fence. */
+.stream-markdown [data-stream-markdown='code-block-header'].sticky {
+  position: static;
+}
