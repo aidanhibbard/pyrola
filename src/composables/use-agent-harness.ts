@@ -138,9 +138,15 @@ export default (options: AgentHarnessOptions) => {
       chatStore.completeLocalSubagent(event.subagentId, event.summary)
       if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
         resumingSubagents.add(event.subagentId)
-        void resumeAfterSubagent(event.subagentId, event.summary).finally(() => {
-          resumingSubagents.delete(event.subagentId)
-        })
+        resumeAfterSubagent(event.subagentId, event.summary)
+          .catch((error) => {
+            toast.error('Agent resume failed', {
+              description: error instanceof Error ? error.message : 'Unknown error',
+            })
+          })
+          .finally(() => {
+            resumingSubagents.delete(event.subagentId)
+          })
       }
     }
     if (event.type === 'question-request') {

@@ -124,8 +124,10 @@ export default () => {
     for (const removedId of previousIds) {
       try {
         await mcpStop(removedId)
-      } catch {
-        // Best-effort cleanup for servers removed from config.
+      } catch (error) {
+        toast.error('Failed to stop MCP server', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
       if (generation !== refreshGeneration) {
         return

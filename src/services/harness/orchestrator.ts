@@ -39,6 +39,7 @@ import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   resolveModelCallOptions,
 } from '@/services/models/resolve-model-call-options'
+import { toast } from 'vue-sonner'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -378,10 +379,18 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 
   const handleHarnessEvent = (event: HarnessEvent): void => {
     if (event.type === 'subagent-start' || event.type === 'subagent-result') {
-      void persistSubagentHarnessEvent(projectSlug, chatId, event)
+      persistSubagentHarnessEvent(projectSlug, chatId, event).catch((error) => {
+        toast.error('Failed to save subagent event', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
     }
     if (event.type === 'pending-subagent') {
-      void persistPendingSubagent(projectSlug, chatId, event)
+      persistPendingSubagent(projectSlug, chatId, event).catch((error) => {
+        toast.error('Failed to save pending subagent', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
     }
     onEvent(event)
   }
@@ -767,16 +776,22 @@ export default async (input: OrchestratorInput): Promise<void> => {
       emitTitleChange(fallbackTitle)
     }
 
-    void runSideTask({
+    runSideTask({
       projectSlug,
       chatId,
       prompt: userText,
       settings: input.settings,
-    }).then((generatedTitle) => {
-      if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
-        emitTitleChange(generatedTitle)
-      }
     })
+      .then((generatedTitle) => {
+        if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
+          emitTitleChange(generatedTitle)
+        }
+      })
+      .catch((error) => {
+        toast.error('Chat title generation failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
   }
 
   const modelMessages = await convertToModelMessages(messages)

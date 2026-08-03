@@ -1,5 +1,11 @@
 # Conventions
 
+## Writing
+
+- **No em dashes.** Do not use `—` (U+2014) in docs, comments, UI strings, toasts, commits, or PR text. Prefer commas, periods, colons, or parentheses.
+- **No dot separators.** Do not use middle-dot or interpunct separators (`·`, inline ` • `, or `Foo · Bar` / `Foo • Bar` label chains). Prefer plain words, commas, or separate lines/labels.
+- **No vibe text.** No filler, throat-clearing, or AI-flavored prose ("let's dive in", "in today's fast-paced…", "robust/seamless/delightful" fluff, performative empathy, padded summaries). Be direct, concrete, and specific.
+
 ## Components
 
 Vite/Vue projects do not auto-import components by default, so **use explicit `import` statements** for all components used in templates.
@@ -8,7 +14,7 @@ Vite/Vue projects do not auto-import components by default, so **use explicit `i
 import AppHeader from '@/components/navigation/header/AppHeader.vue'
 ```
 
-> If the project has added `unplugin-vue-components` (or similar) for auto-import, follow that plugin's own resolver/naming rules instead of the manual pattern below — don't mix both approaches in the same codebase.
+> If the project has added `unplugin-vue-components` (or similar) for auto-import, follow that plugin's own resolver/naming rules instead of the manual pattern below: don't mix both approaches in the same codebase.
 
 ### Path-based names
 
@@ -48,7 +54,7 @@ const NavigationHeaderAppHeader = defineAsyncComponent(
 This is a client-rendered Vite SPA by default, so there is no server/client split to manage per component. For code that must only run in the browser (e.g. depends on `window`, `document`, third-party widgets):
 
 - Guard access inside `onMounted` / lifecycle hooks rather than at module scope, so the code never runs during any build-time prerendering step.
-- If the project uses `vite-plugin-ssr`, `@vitejs/plugin-vue` SSR, or similar for server rendering, treat any such code as needing an explicit client-only boundary (e.g. a wrapper component that only renders after mount) — confirm the project's SSR setup before assuming plain CSR.
+- If the project uses `vite-plugin-ssr`, `@vitejs/plugin-vue` SSR, or similar for server rendering, treat any such code as needing an explicit client-only boundary (e.g. a wrapper component that only renders after mount): confirm the project's SSR setup before assuming plain CSR.
 - Set page `<title>` / meta tags via `@vueuse/head` (or `unhead`) inside `setup()`; keep this logic in the component/page itself rather than scattering DOM manipulation across the app.
 
 ## File naming (TypeScript and modules)
@@ -222,9 +228,9 @@ First-party UI must be built with **shadcn-vue** primitives and **Tailwind utili
 
 - Do **not** add `<style>` blocks (scoped or unscoped) to first-party Vue components.
 - Do **not** use `@apply` in first-party component code.
-- Do **not** use `:deep()` or other CSS overrides to patch shadcn internals — pass supported `class` props, compose wrappers, or consult the shadcn Vue MCP for the correct primitive.
+- Do **not** use `:deep()` or other CSS overrides to patch shadcn internals: pass supported `class` props, compose wrappers, or consult the shadcn Vue MCP for the correct primitive.
 - Prefer shadcn layout patterns (for example sidebar blocks with `SidebarMenuButton`, icons beside labels, `variant="floating"`) over bespoke markup.
-- Glass / translucent surfaces: use Tailwind utilities such as `bg-white/85`, `dark:bg-black/85`, `backdrop-blur-xl`, and `border-border/50` on shadcn components — not custom CSS.
+- Glass / translucent surfaces: use Tailwind utilities such as `bg-white/85`, `dark:bg-black/85`, `backdrop-blur-xl`, and `border-border/50` on shadcn components, not custom CSS.
 - Global base styles and design tokens belong in `src/assets/css/` only (`tailwind.css`, `main.css`).
 - Consult the **shadcn Vue MCP** before adding or substantially changing UI.
 
@@ -241,18 +247,18 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 ## User Feedback, Loading, And Errors
 
 - For user-triggered async actions, use explicit loading state that makes the UI look intentional while work is in progress.
-- **Never use the `void` operator on promises** (e.g. `void saveSettings()`). It fires async work without handling outcomes and gives the user no feedback when something fails. Always `await` inside `try` / `catch` (and `finally` when loading state must be cleared).
-- Wrap async mutations and user actions in **`try` / `catch`**. Add **`finally`** only when needed — typically to reset loading state so buttons and controls recover whether the action succeeds or throws.
-- **On failure:** always notify with **`toast.error()`** from `vue-sonner`. Include a brief title and, when available, the error message in the `description` field.
-- **On success:** show **`toast.success()`** when the user needs confirmation the action completed (save, delete, copy, test connection, etc.). Skip a success toast when the outcome is already obvious from the UI — for example `router.push` to another page, closing a dialog, or inline state that updates immediately.
+- **Never use the `void` operator in TypeScript** (e.g. `void saveSettings()`). It discards the promise and gives the user no feedback when something fails. `void` is allowed only as a **type** (`Promise<void>`, `: void`, `() => void`). Always `await` inside `try` / `catch` (and `finally` when loading state must be cleared), or attach an explicit `.catch(...)` that toasts, recovers, or re-throws.
+- Wrap async mutations and user actions in **`try` / `catch`**. Add **`finally`** only when needed: typically to reset loading state so buttons and controls recover whether the action succeeds or throws.
+- **On failure:** always notify with **`toast.error()`** from `vue-sonner`, or surface the error in chat / agent UI. Include a brief title and, when available, the error message in the `description` field.
+- **On success:** show **`toast.success()`** when the user needs confirmation the action completed (save, delete, copy, test connection, etc.). Skip a success toast when the outcome is already obvious from the UI: for example `router.push` to another page, closing a dialog, or inline state that updates immediately.
 - Keep toast messages short, specific, and user-facing.
 
 ## Error Handling
 
-- **No `void` on promises.** Do not prefix async calls with `void` to silence floating-promise lint warnings. Handle the promise explicitly so failures surface to the user.
-- **No empty catch blocks — under no circumstances.** Every `catch` must notify the user with `toast.error()`, recover with real handling logic, or re-throw. Never leave a `catch` empty, comment-only, or filled with `console.log` / `console.error` as a substitute for user feedback.
+- **No `void` operator.** Do not use `void` to silence floating-promise lint warnings or fire-and-forget async work. Handle the promise with `await` in `try` / `catch`, or `.catch(...)` that notifies the user, recovers, or re-throws.
+- **No empty catch blocks under any circumstances.** Every `catch` must notify the user with `toast.error()`, recover with real handling logic, or re-throw. Never leave a `catch` empty, comment-only, or filled with `console.log` / `console.error` as a substitute for user feedback.
 - **Use `finally` only when needed.** Prefer `try` / `catch` alone when there is no loading flag or other cleanup. Use `try` / `catch` / `finally` when a `ref` (or similar) must be cleared whether the action succeeds or throws.
-- **Example — mutation with loading and success toast:**
+- **Example: mutation with loading and success toast:**
   ```ts
   const saving = ref(false)
 
@@ -271,7 +277,7 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
     }
   }
   ```
-- **Example — navigation without success toast:**
+- **Example: navigation without success toast:**
   ```ts
   const handleOpenSettings = async (): Promise<void> => {
     try {
@@ -287,7 +293,7 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 
 ## Logging
 
-- **No `console.log` (or `console.warn`, `console.error`, `console.debug`, etc.) in first-party app code — under no circumstances.** Do not add client-side logging for debugging, error handling, or any other reason. Remove any `console.*` calls before finishing a task; do not leave them behind "temporarily."
+- **No `console.log` (or `console.warn`, `console.error`, `console.debug`, etc.) in first-party app code under any circumstances.** Do not add client-side logging for debugging, error handling, or any other reason. Remove any `console.*` calls before finishing a task; do not leave them behind "temporarily."
 - Logging belongs on the backend/API only, where logs can use a scoped server logger and avoid leaking browser/user details.
 - Do not prefix log messages with service names such as `[service-name]`.
 - If the backend has a logger utility, create a scoped logger per file with `logger.withTag('name')` and use that tagged logger for all logs in the file.

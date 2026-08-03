@@ -4,6 +4,7 @@ import type { PromptInputMessage } from './types'
 import { InputGroup } from '@/components/ui/input-group'
 import { cn } from '@/lib/utils'
 import { getCurrentInstance, inject, onMounted, onUnmounted, ref } from 'vue'
+import { toast } from 'vue-sonner'
 import { usePromptInputProvider } from './context'
 import { PROMPT_INPUT_KEY } from './types'
 
@@ -58,8 +59,10 @@ const localContext = inheritedContext
       onError: (err) => {
         const listener = getListener('onError')
         if (listener) {
-          void Promise.resolve(callListener(listener, err)).catch((error) => {
-            console.error('PromptInput onError listener failed:', error)
+          Promise.resolve(callListener(listener, err)).catch((error) => {
+            toast.error('Prompt input error handler failed', {
+              description: error instanceof Error ? error.message : 'Unknown error',
+            })
           })
           return
         }

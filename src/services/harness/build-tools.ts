@@ -970,7 +970,16 @@ const buildTools = (ctx: HarnessToolContext) => ({
           }
         }
 
-        void completeSubagent()
+        completeSubagent().catch((error) => {
+          const message = error instanceof Error ? error.message : 'Subagent failed'
+          failSubagent(subagentId, message)
+          ctx.onHarnessEvent?.({
+            type: 'subagent-result',
+            subagentId,
+            summary: message,
+            blocking: false,
+          })
+        })
 
         return { subagentId, status: 'running' }
       }

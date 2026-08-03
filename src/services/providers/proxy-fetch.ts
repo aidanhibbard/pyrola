@@ -1,4 +1,5 @@
 import { Channel, invoke } from '@tauri-apps/api/core'
+import { toast } from 'vue-sonner'
 import { httpProxyRequest, isTauri } from '@/services/pyrola/pyrola-tauri'
 
 type HttpProxyStreamEvent =
@@ -89,8 +90,13 @@ const streamProxyFetch = async (
       return
     }
     cancelled = true
-    invoke('http_proxy_stream_cancel', { requestId }).catch(() => {
-      // Best-effort; stream may already be finished.
+    invoke('http_proxy_stream_cancel', { requestId }).catch((error) => {
+      if (streamController === null) {
+        return
+      }
+      toast.error('Failed to cancel proxy stream', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
     })
   }
 
@@ -100,7 +106,7 @@ const streamProxyFetch = async (
     try {
       streamController?.error(abortError())
     } catch {
-      // Stream may already be errored or closed.
+      streamController = null
     }
   }
 
@@ -135,7 +141,7 @@ const streamProxyFetch = async (
           try {
             controller.error(error)
           } catch {
-            // Stream may already be errored or closed.
+            streamController = null
           }
         }
       }
@@ -153,7 +159,7 @@ const streamProxyFetch = async (
         try {
           controller.error(err)
         } catch {
-          // Stream may already be errored or closed.
+          streamController = null
         }
       })
     },

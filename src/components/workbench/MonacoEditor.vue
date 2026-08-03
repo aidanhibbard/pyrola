@@ -334,8 +334,6 @@ const closeLspDocument = async (path: string): Promise<void> => {
 
   try {
     await lspRequest(serverId, 'textDocument/didClose', { path })
-  } catch {
-    // Silent no-op when closing documents.
   } finally {
     lspServerByPath.delete(path)
   }
@@ -525,7 +523,8 @@ const disposeModel = (path: string): void => {
   }
 
   teardownLspForPath(path, model).catch(() => {
-    // Silent no-op when tearing down LSP state.
+    clearLspMarkers(model)
+    lspServerByPath.delete(path)
   })
 
   if (editor?.getModel() === model) {
@@ -681,7 +680,7 @@ onBeforeUnmount(() => {
   for (const [path, model] of models.entries()) {
     clearLspMarkers(model)
     closeLspDocument(path).catch(() => {
-      // Silent no-op during unmount.
+      lspServerByPath.delete(path)
     })
     pathByModel.delete(model)
     model.dispose()

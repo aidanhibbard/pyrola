@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PromptInputMessage } from './types'
 import { getCurrentInstance } from 'vue'
+import { toast } from 'vue-sonner'
 import { usePromptInputProvider } from './context'
 
 const props = defineProps<{
@@ -46,8 +47,10 @@ usePromptInputProvider({
   onError: (err) => {
     const listener = getListener('onError')
     if (listener) {
-      void Promise.resolve(callListener(listener, err)).catch((error) => {
-        console.error('PromptInputProvider onError listener failed:', error)
+      Promise.resolve(callListener(listener, err)).catch((error) => {
+        toast.error('Prompt input error handler failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
       })
       return
     }
