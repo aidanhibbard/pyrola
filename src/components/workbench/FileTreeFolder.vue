@@ -115,6 +115,7 @@ const handleRenameBlur = (): void => {
                 )
               "
               type="button"
+              :data-path="props.path"
             >
               <ChevronRightIcon
                 :class="

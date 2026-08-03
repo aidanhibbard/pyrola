@@ -183,12 +183,15 @@ const persistSubagentHarnessEvent = async (
   chatId: string,
   event:
     | Extract<HarnessEvent, { type: 'subagent-start' }>
-    | Extract<HarnessEvent, { type: 'subagent-result' }>,
+    | Extract<HarnessEvent, { type: 'subagent-result' }>
+    | Extract<HarnessEvent, { type: 'subagent-event' }>,
 ): Promise<void> => {
   const lineId =
     event.type === 'subagent-start'
       ? event.subagentId
-      : `${event.subagentId}-result`
+      : event.type === 'subagent-result'
+        ? `${event.subagentId}-result`
+        : `${event.subagentId}-event-${crypto.randomUUID()}`
   await persistLine(projectSlug, chatId, {
     id: lineId,
     role: 'assistant',
@@ -378,7 +381,11 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   })
 
   const handleHarnessEvent = (event: HarnessEvent): void => {
-    if (event.type === 'subagent-start' || event.type === 'subagent-result') {
+    if (
+      event.type === 'subagent-start' ||
+      event.type === 'subagent-result' ||
+      event.type === 'subagent-event'
+    ) {
       persistSubagentHarnessEvent(projectSlug, chatId, event).catch((error) => {
         toast.error('Failed to save subagent event', {
           description: error instanceof Error ? error.message : 'Unknown error',
@@ -583,6 +590,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
           type: 'reasoning-delta',
           delta: part.text,
           messageId: assistantId,
+          stepId: currentStepId,
         })
         continue
       }

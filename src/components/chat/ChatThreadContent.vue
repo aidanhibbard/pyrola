@@ -3,13 +3,13 @@ import { computed, nextTick, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import type { FileDiff } from '@/types/harness/file-diff'
-import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
+import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PendingQuestionState } from '@/types/chat/pending-question'
 import ChatAgentTurn from '@/components/chat/ChatAgentTurn.vue'
 import ChatMessageTurn from '@/components/chat/ChatMessageTurn.vue'
 import ChatQuestionCard from '@/components/chat/ChatQuestionCard.vue'
-import ChatToolCard from '@/components/chat/ChatToolCard.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
+import ChatToolCard from '@/components/chat/ChatToolCard.vue'
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -46,6 +46,33 @@ const approvalMap = computed(() => {
 
 const isLive = computed(() => props.status === 'streaming' || props.status === 'submitted')
 
+const subagentsByToolCallId = computed(() => {
+  const map = new Map<string, SubagentTimelineItem>()
+  for (const item of props.timeline) {
+    if (item.type === 'subagent' && item.toolCallId) {
+      map.set(item.toolCallId, item)
+    }
+  }
+  return map
+})
+
+const subagentsById = computed(() => {
+  const map = new Map<string, SubagentTimelineItem>()
+  for (const item of props.timeline) {
+    if (item.type === 'subagent') {
+      map.set(item.subagentId, item)
+    }
+  }
+  return map
+})
+
+const subagentRevision = computed(() =>
+  props.timeline
+    .filter((item): item is SubagentTimelineItem => item.type === 'subagent')
+    .map((item) => `${item.subagentId}:${item.status}:${item.summary?.length ?? 0}`)
+    .join('|'),
+)
+
 const streamRevision = computed(() => {
   const last = props.timeline.at(-1)
   if (last?.type === 'subagent') {
@@ -54,6 +81,7 @@ const streamRevision = computed(() => {
       last.subagentId,
       last.status,
       last.summary?.length ?? 0,
+      subagentRevision.value,
     ].join(':')
   }
   if (last?.type === 'todo') {
@@ -69,12 +97,13 @@ const streamRevision = computed(() => {
               `${step.text.length}:${step.reasoning.length}:${step.tools.length}`,
           )
           .join(';'),
+        subagentRevision.value,
       ].join(':')
     }
-    return props.timeline.length
+    return `${props.timeline.length}:${subagentRevision.value}`
   }
   if (last?.type !== 'agent-turn') {
-    return props.timeline.length
+    return `${props.timeline.length}:${subagentRevision.value}`
   }
   const turn = last.turn
   return [
@@ -88,12 +117,62 @@ const streamRevision = computed(() => {
             .join('|')}`,
       )
       .join(';'),
+    subagentRevision.value,
   ].join(':')
 })
 
-const visibleTimeline = computed(() =>
-  props.timeline.filter((item) => item.type !== 'todo'),
-)
+const claimedSubagentKeys = computed(() => {
+  const toolCallIds = new Set<string>()
+  const subagentIds = new Set<string>()
+  for (const item of props.timeline) {
+    if (item.type !== 'agent-turn') {
+      continue
+    }
+    for (const step of item.turn.steps) {
+      for (const tool of step.tools) {
+        if (tool.name !== 'spawn_subagent') {
+          continue
+        }
+        toolCallIds.add(tool.toolCallId)
+        if (tool.result && typeof tool.result === 'object') {
+          const result = tool.result as Record<string, unknown>
+          if (typeof result.subagentId === 'string' && result.subagentId.length > 0) {
+            subagentIds.add(result.subagentId)
+          }
+        }
+      }
+    }
+  }
+  for (const item of props.timeline) {
+    if (
+      item.type === 'subagent' &&
+      item.toolCallId &&
+      toolCallIds.has(item.toolCallId)
+    ) {
+      subagentIds.add(item.subagentId)
+    }
+  }
+  return { toolCallIds, subagentIds }
+})
+
+const visibleTimeline = computed(() => {
+  const claimed = claimedSubagentKeys.value
+  return props.timeline.filter((item) => {
+    if (item.type === 'todo') {
+      return false
+    }
+    if (item.type !== 'subagent') {
+      return true
+    }
+    if (item.toolCallId && claimed.toolCallIds.has(item.toolCallId)) {
+      return false
+    }
+    if (claimed.subagentIds.has(item.subagentId)) {
+      return false
+    }
+    return true
+  })
+})
 
 const timelineItemId = (item: ChatTimelineItem, index: number): string => {
   if (item.type === 'user') {
@@ -165,6 +244,8 @@ watch(
             v-else-if="item.type === 'agent-turn'"
             :turn="item.turn"
             :status="isLastItem(index) ? status : 'ready'"
+            :subagents-by-tool-call-id="subagentsByToolCallId"
+            :subagents-by-id="subagentsById"
             @retry="emit('retry')"
           />
         </MessageScrollerItem>

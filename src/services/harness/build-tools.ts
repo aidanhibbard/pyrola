@@ -824,6 +824,7 @@ const runSubagentGenerate = async (args: {
   const emitNestedEvent = (event: HarnessEvent): void => {
     ctx.onHarnessEvent?.({
       type: 'subagent-event',
+      subagentId,
       parentToolCallId: toolCallId,
       event,
     })
@@ -919,8 +920,10 @@ const buildTools = (ctx: HarnessToolContext) => ({
       ctx.onHarnessEvent?.({
         type: 'subagent-start',
         subagentId,
+        toolCallId,
         name: agentName,
         blocking,
+        prompt,
       })
 
       if (!blocking) {

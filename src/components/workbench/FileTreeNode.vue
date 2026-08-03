@@ -106,6 +106,7 @@ const handleRenameBlur = (): void => {
       <FileTreeFile
         :path="node.path"
         :name="node.name"
+        :data-path="node.path"
         class="font-sans text-[13px]"
       >
         <template #default>

@@ -1,6 +1,7 @@
-use std::time::UNIX_EPOCH;
+use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 use super::fs::canonical_project_root;
@@ -36,52 +37,79 @@ pub async fn workspace_glob(request: WorkspaceGlobRequest) -> Result<WorkspaceGl
 
   let root = canonical_project_root(&request.project_root)?;
   let limit = request.limit.unwrap_or(500) as usize;
+  let collect_limit = limit.saturating_add(1);
 
-  let output = Command::new("rg")
+  let mut child = Command::new("rg")
     .arg("--files")
-    .arg("-g")
+    .arg("--iglob")
     .arg(&request.pattern)
     .arg(&root)
-    .output()
-    .await
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true)
+    .spawn()
     .map_err(|error| format!("Failed to run rg: {error}"))?;
 
-  if !output.status.success() {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    return Err(if stderr.is_empty() {
-      format!("rg failed with status {}", output.status)
-    } else {
-      stderr
-    });
-  }
-
-  let stdout = String::from_utf8_lossy(&output.stdout);
+  let stdout = child
+    .stdout
+    .take()
+    .ok_or_else(|| "Failed to capture rg stdout".to_string())?;
+  let stderr = child.stderr.take();
+  let mut lines = BufReader::new(stdout).lines();
   let mut files = Vec::new();
+  let mut truncated = false;
 
-  for line in stdout.lines() {
-    let path = std::path::PathBuf::from(line.trim());
-    if path.strip_prefix(&root).is_err() {
+  while let Some(line) = lines
+    .next_line()
+    .await
+    .map_err(|error| format!("Failed to read rg output: {error}"))?
+  {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
       continue;
     }
-    let rel = path
-      .strip_prefix(&root)
-      .map(|value| value.to_string_lossy().to_string())
-      .unwrap_or_else(|_| line.trim().to_string());
-    let modified_ms = std::fs::metadata(&path)
-      .ok()
-      .and_then(|meta| meta.modified().ok())
-      .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-      .map(|duration| duration.as_millis() as u64);
+
+    let path = std::path::PathBuf::from(trimmed);
+    let Ok(rel) = path.strip_prefix(&root) else {
+      continue;
+    };
+
     files.push(GlobFileEntry {
-      path: rel,
-      modified_ms,
+      path: rel.to_string_lossy().to_string(),
+      modified_ms: None,
     });
+
+    if files.len() >= collect_limit {
+      truncated = true;
+      let _ = child.start_kill();
+      break;
+    }
   }
 
-  files.sort_by(|left, right| right.modified_ms.cmp(&left.modified_ms).then_with(|| left.path.cmp(&right.path)));
+  if truncated {
+    let _ = child.wait().await;
+    files.truncate(limit);
+  } else {
+    let status = child
+      .wait()
+      .await
+      .map_err(|error| format!("Failed to wait for rg: {error}"))?;
 
-  let truncated = files.len() > limit;
-  files.truncate(limit);
+    if !status.success() {
+      let mut stderr_text = String::new();
+      if let Some(stderr) = stderr {
+        let _ = BufReader::new(stderr).read_to_string(&mut stderr_text).await;
+      }
+      let stderr_text = stderr_text.trim().to_string();
+      return Err(if stderr_text.is_empty() {
+        format!("rg failed with status {status}")
+      } else {
+        stderr_text
+      });
+    }
+  }
+
+  files.sort_by(|left, right| left.path.cmp(&right.path));
 
   Ok(WorkspaceGlobResult { files, truncated })
 }

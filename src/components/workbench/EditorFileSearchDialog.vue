@@ -43,6 +43,34 @@ const fileDirectory = (path: string): string => {
 const escapeGlob = (value: string): string =>
   value.replace(/[\\*?[\]]/g, '\\$&')
 
+const normalizeQuery = (value: string): string =>
+  value.trim().replace(/\s+/g, '*')
+
+const rankFiles = (paths: string[], rawQuery: string): string[] => {
+  const needle = rawQuery.trim().toLowerCase()
+  if (!needle) {
+    return paths
+  }
+
+  return [...paths].sort((left, right) => {
+    const leftName = fileName(left).toLowerCase()
+    const rightName = fileName(right).toLowerCase()
+    const leftNameMatch = leftName.includes(needle)
+    const rightNameMatch = rightName.includes(needle)
+    if (leftNameMatch !== rightNameMatch) {
+      return leftNameMatch ? -1 : 1
+    }
+    const leftPath = left.toLowerCase()
+    const rightPath = right.toLowerCase()
+    const leftPathMatch = leftPath.includes(needle)
+    const rightPathMatch = rightPath.includes(needle)
+    if (leftPathMatch !== rightPathMatch) {
+      return leftPathMatch ? -1 : 1
+    }
+    return left.localeCompare(right)
+  })
+}
+
 const resetResults = (): void => {
   files.value = []
   truncated.value = false
@@ -50,10 +78,10 @@ const resetResults = (): void => {
 }
 
 const runSearch = async (rawQuery: string): Promise<void> => {
-  const trimmed = rawQuery.trim()
+  const normalized = normalizeQuery(rawQuery)
   const root = props.projectRoot
 
-  if (!trimmed || !root) {
+  if (!normalized || !root) {
     resetResults()
     return
   }
@@ -64,13 +92,16 @@ const runSearch = async (rawQuery: string): Promise<void> => {
   try {
     const result = await workspaceGlob(
       root,
-      `*${escapeGlob(trimmed)}*`,
+      `*${escapeGlob(normalized)}*`,
       FILE_SEARCH_LIMIT,
     )
     if (generation !== searchGeneration.value) {
       return
     }
-    files.value = result.files.map((entry) => entry.path)
+    files.value = rankFiles(
+      result.files.map((entry) => entry.path),
+      rawQuery,
+    )
     truncated.value = result.truncated
   } catch (error) {
     if (generation !== searchGeneration.value) {
@@ -114,6 +145,8 @@ watch(query, (value) => {
     resetResults()
     return
   }
+  files.value = []
+  truncated.value = false
   loading.value = true
   debouncedSearch(value)
 })
@@ -176,7 +209,7 @@ watch(
         No files found.
       </p>
       <CommandGroup
-        v-if="files.length > 0"
+        v-if="query.trim() && !loading && files.length > 0"
         :heading="truncated ? `Files (first ${FILE_SEARCH_LIMIT})` : undefined"
       >
         <CommandItem

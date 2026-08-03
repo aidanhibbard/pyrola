@@ -12,7 +12,7 @@ export type TodoItem = {
 
 export type HarnessEvent =
   | { type: 'text-delta'; delta: string; messageId?: string; stepId?: string }
-  | { type: 'reasoning-delta'; delta: string; messageId?: string }
+  | { type: 'reasoning-delta'; delta: string; messageId?: string; stepId?: string }
   | { type: 'tool-start'; toolCallId: string; name: string; args: unknown }
   | { type: 'tool-pending-approval'; toolCallId: string; name: string; diff: FileDiff[] }
   | {
@@ -28,8 +28,20 @@ export type HarnessEvent =
   | { type: 'tool-rejected'; toolCallId: string; reason: string }
   | { type: 'todo-update'; todos: TodoItem[] }
   | { type: 'plan-write'; planPath: string }
-  | { type: 'subagent-start'; subagentId: string; name: string; blocking: boolean }
-  | { type: 'subagent-event'; parentToolCallId: string; event: HarnessEvent }
+  | {
+      type: 'subagent-start'
+      subagentId: string
+      toolCallId: string
+      name: string
+      blocking: boolean
+      prompt?: string
+    }
+  | {
+      type: 'subagent-event'
+      subagentId: string
+      parentToolCallId: string
+      event: HarnessEvent
+    }
   | { type: 'subagent-result'; subagentId: string; summary: string; blocking: boolean }
   | {
       type: 'pending-subagent'

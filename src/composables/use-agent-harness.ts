@@ -64,7 +64,7 @@ export default (options: AgentHarnessOptions) => {
       status.value = 'streaming'
     }
     if (event.type === 'reasoning-delta') {
-      chatStore.appendLocalReasoningDelta(event.delta, event.messageId)
+      chatStore.appendLocalReasoningDelta(event.delta, event.messageId, event.stepId)
       status.value = 'streaming'
     }
     if (event.type === 'tool-start') {
@@ -115,19 +115,28 @@ export default (options: AgentHarnessOptions) => {
       ]
       chatStore.upsertLocalSubagentStart({
         subagentId: event.subagentId,
+        toolCallId: event.toolCallId,
         name: event.name,
         blocking: event.blocking,
+        prompt: event.prompt,
       })
     }
     if (event.type === 'subagent-event') {
-      const running = [...subagents.value].reverse().find((item) => item.status === 'running')
-      if (running) {
+      const targetId =
+        event.subagentId ||
+        [...subagents.value].reverse().find((item) => item.status === 'running')
+          ?.subagentId
+      if (targetId) {
         subagents.value = subagents.value.map((item) =>
-          item.subagentId === running.subagentId
+          item.subagentId === targetId
             ? { ...item, events: [...item.events, event.event] }
             : item,
         )
+        chatStore.appendLocalSubagentToolEvent(targetId, event.event)
       }
+    }
+    if (event.type === 'pending-subagent') {
+      chatStore.setLocalSubagentPrompt(event.subagentId, event.prompt)
     }
     if (event.type === 'subagent-result') {
       subagents.value = subagents.value.map((item) =>

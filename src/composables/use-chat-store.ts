@@ -9,12 +9,13 @@ import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { PendingQuestionState } from '@/types/chat/pending-question'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ToolRun } from '@/types/harness/tool-run'
-import type { TodoItem } from '@/types/harness/harness-event'
+import type { TodoItem, HarnessEvent } from '@/types/harness/harness-event'
 import type { FileDiff } from '@/types/harness/file-diff'
 import { resolveQuestion } from '@/services/harness/question-gate'
 import { chatMetaSchema } from '@/schemas/chat-meta'
 import { chatMessageLineSchema } from '@/schemas/chat-message-line'
 import { fileDiffListSchema } from '@/schemas/file-diff'
+import applySubagentToolEvent from '@/utils/apply-subagent-tool-event'
 import {
   createChat,
   listChats,
@@ -106,7 +107,9 @@ const upsertTodoTimelineItem = (items: ChatTimelineItem[], todos: TodoItem[]): C
 
 const upsertSubagentStart = (
   items: ChatTimelineItem[],
-  subagent: Omit<SubagentTimelineItem, 'type' | 'status'>,
+  subagent: Omit<SubagentTimelineItem, 'type' | 'status' | 'tools'> & {
+    tools?: SubagentTimelineItem['tools']
+  },
 ): ChatTimelineItem[] => {
   const index = items.findIndex(
     (item) => item.type === 'subagent' && item.subagentId === subagent.subagentId,
@@ -117,8 +120,11 @@ const upsertSubagentStart = (
     if (existing?.type === 'subagent') {
       next[index] = {
         ...existing,
+        toolCallId: subagent.toolCallId ?? existing.toolCallId,
         name: subagent.name,
         blocking: subagent.blocking,
+        prompt: subagent.prompt ?? existing.prompt,
+        tools: subagent.tools ?? existing.tools,
       }
     }
     return next
@@ -128,9 +134,12 @@ const upsertSubagentStart = (
     {
       type: 'subagent',
       subagentId: subagent.subagentId,
+      toolCallId: subagent.toolCallId,
       name: subagent.name,
       blocking: subagent.blocking,
+      prompt: subagent.prompt,
       status: 'running',
+      tools: subagent.tools ?? [],
     },
   ]
 }
@@ -164,8 +173,55 @@ const completeSubagentTimelineItem = (
       blocking: false,
       status: 'done',
       summary,
+      tools: [],
     },
   ]
+}
+
+const appendSubagentToolEvent = (
+  items: ChatTimelineItem[],
+  subagentId: string,
+  event: HarnessEvent,
+): ChatTimelineItem[] => {
+  const index = items.findIndex(
+    (item) => item.type === 'subagent' && item.subagentId === subagentId,
+  )
+  if (index < 0) {
+    return items
+  }
+  const existing = items[index]
+  if (existing?.type !== 'subagent') {
+    return items
+  }
+  const next = [...items]
+  next[index] = {
+    ...existing,
+    tools: applySubagentToolEvent(existing.tools, event),
+  }
+  return next
+}
+
+const setSubagentPrompt = (
+  items: ChatTimelineItem[],
+  subagentId: string,
+  prompt: string,
+): ChatTimelineItem[] => {
+  const index = items.findIndex(
+    (item) => item.type === 'subagent' && item.subagentId === subagentId,
+  )
+  if (index < 0) {
+    return items
+  }
+  const existing = items[index]
+  if (existing?.type !== 'subagent') {
+    return items
+  }
+  const next = [...items]
+  next[index] = {
+    ...existing,
+    prompt,
+  }
+  return next
 }
 
 const mapMeta = (record: {
@@ -424,9 +480,14 @@ export default () => {
       const nextTimeline: ChatTimelineItem[] = []
       let pendingTurn: AgentTurn | null = null
       let currentStepId: string | null = null
+      let pendingSubagents: ChatTimelineItem[] = []
 
       const flushTurn = (): void => {
         if (!pendingTurn) {
+          if (pendingSubagents.length > 0) {
+            nextTimeline.push(...pendingSubagents)
+            pendingSubagents = []
+          }
           return
         }
         if (currentStepId) {
@@ -462,6 +523,10 @@ export default () => {
             ],
           })
         }
+        if (pendingSubagents.length > 0) {
+          nextTimeline.push(...pendingSubagents)
+          pendingSubagents = []
+        }
         pendingTurn = null
         currentStepId = null
       }
@@ -482,16 +547,32 @@ export default () => {
 
         if (harnessEvent?.type === 'subagent-start') {
           const subagentId = String(harnessEvent.subagentId ?? '')
+          const toolCallId =
+            typeof harnessEvent.toolCallId === 'string' &&
+            harnessEvent.toolCallId.length > 0
+              ? harnessEvent.toolCallId
+              : undefined
           const name = String(harnessEvent.name ?? 'Sub-agent')
           const blocking = Boolean(harnessEvent.blocking)
+          const prompt =
+            typeof harnessEvent.prompt === 'string' && harnessEvent.prompt.length > 0
+              ? harnessEvent.prompt
+              : undefined
           if (subagentId) {
-            const merged = upsertSubagentStart(nextTimeline, {
+            const target = pendingTurn ? pendingSubagents : nextTimeline
+            const merged = upsertSubagentStart(target, {
               subagentId,
+              toolCallId,
               name,
               blocking,
+              prompt,
             })
-            nextTimeline.length = 0
-            nextTimeline.push(...merged)
+            if (pendingTurn) {
+              pendingSubagents = merged
+            } else {
+              nextTimeline.length = 0
+              nextTimeline.push(...merged)
+            }
           }
           continue
         }
@@ -500,9 +581,74 @@ export default () => {
           const subagentId = String(harnessEvent.subagentId ?? '')
           const summary = String(harnessEvent.summary ?? '')
           if (subagentId) {
-            const merged = completeSubagentTimelineItem(nextTimeline, subagentId, summary)
-            nextTimeline.length = 0
-            nextTimeline.push(...merged)
+            const inPending = pendingSubagents.some(
+              (item) => item.type === 'subagent' && item.subagentId === subagentId,
+            )
+            if (inPending) {
+              pendingSubagents = completeSubagentTimelineItem(
+                pendingSubagents,
+                subagentId,
+                summary,
+              )
+            } else {
+              const merged = completeSubagentTimelineItem(
+                nextTimeline,
+                subagentId,
+                summary,
+              )
+              nextTimeline.length = 0
+              nextTimeline.push(...merged)
+            }
+          }
+          continue
+        }
+
+        if (harnessEvent?.type === 'subagent-event') {
+          const subagentId = String(harnessEvent.subagentId ?? '')
+          const nested = harnessEvent.event
+          if (
+            subagentId &&
+            nested &&
+            typeof nested === 'object' &&
+            'type' in (nested as Record<string, unknown>)
+          ) {
+            const nestedEvent = nested as HarnessEvent
+            const inPending = pendingSubagents.some(
+              (item) => item.type === 'subagent' && item.subagentId === subagentId,
+            )
+            if (inPending) {
+              pendingSubagents = appendSubagentToolEvent(
+                pendingSubagents,
+                subagentId,
+                nestedEvent,
+              )
+            } else {
+              const merged = appendSubagentToolEvent(
+                nextTimeline,
+                subagentId,
+                nestedEvent,
+              )
+              nextTimeline.length = 0
+              nextTimeline.push(...merged)
+            }
+          }
+          continue
+        }
+
+        if (harnessEvent?.type === 'pending-subagent') {
+          const subagentId = String(harnessEvent.subagentId ?? '')
+          const prompt = String(harnessEvent.prompt ?? '')
+          if (subagentId && prompt) {
+            const inPending = pendingSubagents.some(
+              (item) => item.type === 'subagent' && item.subagentId === subagentId,
+            )
+            if (inPending) {
+              pendingSubagents = setSubagentPrompt(pendingSubagents, subagentId, prompt)
+            } else {
+              const merged = setSubagentPrompt(nextTimeline, subagentId, prompt)
+              nextTimeline.length = 0
+              nextTimeline.push(...merged)
+            }
           }
           continue
         }
@@ -622,7 +768,9 @@ export default () => {
           } else {
             let nextTurn: AgentTurn = pendingTurn
             if (reasoning) {
-              const stepId = currentStepId ?? parsed.id
+              // Aggregate assistant reasoning is not persisted per-step. Attach it
+              // to the earliest step so it renders before tools (e.g. spawn_subagent).
+              const stepId = nextTurn.steps[0]?.id ?? currentStepId ?? parsed.id
               nextTurn = patchStep(nextTurn, stepId, {
                 reasoning:
                   (nextTurn.steps.find((step: AgentStep) => step.id === stepId)
@@ -813,7 +961,11 @@ export default () => {
     pendingStepText.value += delta
   }
 
-  const appendLocalReasoningDelta = (delta: string, messageId?: string): void => {
+  const appendLocalReasoningDelta = (
+    delta: string,
+    messageId?: string,
+    stepId?: string,
+  ): void => {
     const turnId = messageId ?? activeTurnId.value
     if (!turnId) {
       return
@@ -821,7 +973,10 @@ export default () => {
     if (turnId !== activeTurnId.value) {
       activeTurnId.value = turnId
     }
-    const stepId = ensureActiveStep()
+    const targetStepId = stepId ?? ensureActiveStep()
+    if (stepId && activeStepId.value !== stepId) {
+      activeStepId.value = stepId
+    }
     const current =
       getActiveTurn() ??
       ({
@@ -829,10 +984,12 @@ export default () => {
         steps: [],
         text: '',
       } satisfies AgentTurn)
+    const withStep = ensureStep(current, targetStepId)
     const step =
-      current.steps.find((item) => item.id === stepId) ?? createStep(stepId)
+      withStep.steps.find((item) => item.id === targetStepId) ??
+      createStep(targetStepId)
     patchActiveTurn(
-      patchStep(current, stepId, {
+      patchStep(withStep, targetStepId, {
         reasoning: step.reasoning + delta,
       }),
     )
@@ -902,14 +1059,34 @@ export default () => {
 
   const upsertLocalSubagentStart = (subagent: {
     subagentId: string
+    toolCallId?: string
     name: string
     blocking: boolean
+    prompt?: string
   }): void => {
     timeline.value = upsertSubagentStart(timeline.value, subagent)
   }
 
+  const appendLocalSubagentToolEvent = (
+    subagentId: string,
+    event: HarnessEvent,
+  ): void => {
+    timeline.value = appendSubagentToolEvent(timeline.value, subagentId, event)
+  }
+
+  const setLocalSubagentPrompt = (subagentId: string, prompt: string): void => {
+    timeline.value = setSubagentPrompt(timeline.value, subagentId, prompt)
+  }
+
   const completeLocalSubagent = (subagentId: string, summary: string): void => {
     timeline.value = completeSubagentTimelineItem(timeline.value, subagentId, summary)
+  }
+
+  const getSubagent = (subagentId: string): SubagentTimelineItem | null => {
+    const item = timeline.value.find(
+      (entry) => entry.type === 'subagent' && entry.subagentId === subagentId,
+    )
+    return item?.type === 'subagent' ? item : null
   }
 
   const setPendingQuestion = (question: PendingQuestionState): void => {
@@ -1059,7 +1236,10 @@ export default () => {
     setAgentTurnError,
     appendLocalTodoUpdate,
     upsertLocalSubagentStart,
+    appendLocalSubagentToolEvent,
+    setLocalSubagentPrompt,
     completeLocalSubagent,
+    getSubagent,
     setPendingQuestion,
     clearPendingQuestion,
     submitAnswer,

@@ -2,8 +2,9 @@
 import { computed } from 'vue'
 import type { ChatStatus } from 'ai'
 import { RotateCcwIcon } from '@lucide/vue'
-import type { AgentStep } from '@/types/chat/agent-step'
 import type { AgentTurn } from '@/types/chat/agent-turn'
+import type { SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
+import type { ToolRun } from '@/types/harness/tool-run'
 import AiElementsChainOfThoughtChainOfThought from '@/components/ai-elements/chain-of-thought/ChainOfThought.vue'
 import AiElementsChainOfThoughtChainOfThoughtContent from '@/components/ai-elements/chain-of-thought/ChainOfThoughtContent.vue'
 import AiElementsChainOfThoughtChainOfThoughtHeader from '@/components/ai-elements/chain-of-thought/ChainOfThoughtHeader.vue'
@@ -13,6 +14,7 @@ import AiElementsReasoningReasoning from '@/components/ai-elements/reasoning/Rea
 import AiElementsReasoningReasoningContent from '@/components/ai-elements/reasoning/ReasoningContent.vue'
 import AiElementsReasoningReasoningTrigger from '@/components/ai-elements/reasoning/ReasoningTrigger.vue'
 import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
+import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
 import ChatToolRun from '@/components/chat/ChatToolRun.vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -20,10 +22,14 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/shadcn/ui/alert'
+import resolveSpawnSubagent from '@/utils/resolve-spawn-subagent'
+import segmentStepTools from '@/utils/segment-step-tools'
 
 const props = defineProps<{
   turn: AgentTurn
   status?: ChatStatus
+  subagentsByToolCallId?: Map<string, SubagentTimelineItem>
+  subagentsById?: Map<string, SubagentTimelineItem>
 }>()
 
 const emit = defineEmits<{
@@ -35,7 +41,12 @@ const isStreaming = computed(
 )
 
 const stepEntries = computed(() =>
-  props.turn.steps.map((step, index) => ({ step, index })),
+  props.turn.steps.map((step, index) => ({
+    step,
+    index,
+    segments: segmentStepTools(step.tools),
+    hasSpawnSubagent: step.tools.some((tool) => tool.name === 'spawn_subagent'),
+  })),
 )
 
 const hasVisibleContent = computed(() =>
@@ -56,13 +67,19 @@ const isStepStreaming = (index: number): boolean => {
   return index === props.turn.steps.length - 1
 }
 
-const toolHeaderLabel = (step: AgentStep, index: number): string => {
-  const count = step.tools.length
+const toolHeaderLabel = (count: number, index: number): string => {
   if (isStepStreaming(index)) {
     return count === 1 ? 'Using tool' : `Using ${count} tools`
   }
   return `Used ${count} tool${count === 1 ? '' : 's'}`
 }
+
+const resolveSubagent = (run: ToolRun): SubagentTimelineItem =>
+  resolveSpawnSubagent(
+    run,
+    props.subagentsByToolCallId ?? new Map(),
+    props.subagentsById ?? new Map(),
+  )
 
 const errorTitle = computed(() => {
   const kind = props.turn.error?.kind
@@ -89,16 +106,20 @@ const errorTitle = computed(() => {
 
     <!--
       AI SDK parts order per step: reasoning → text → tools.
-      Rendering chronologically avoids tools jumping above earlier text.
+      Spawned sub-agents render inline at their tool call site so later
+      assistant text stays below them instead of pushing a bottom stack.
     -->
     <template
-      v-for="{ step, index } in stepEntries"
+      v-for="{ step, index, segments, hasSpawnSubagent } in stepEntries"
       :key="step.id"
     >
       <AiElementsReasoningReasoning
         v-if="step.reasoning.trim().length > 0"
         :is-streaming="isStepStreaming(index) && step.text.trim().length === 0 && step.tools.length === 0"
-        :default-open="isStepStreaming(index) && step.text.trim().length === 0 && step.tools.length === 0"
+        :default-open="
+          (isStepStreaming(index) && step.text.trim().length === 0 && step.tools.length === 0)
+          || hasSpawnSubagent
+        "
         class="mb-0 w-full max-w-prose"
       >
         <AiElementsReasoningReasoningTrigger />
@@ -119,31 +140,40 @@ const errorTitle = computed(() => {
         />
       </AiElementsMessageMessage>
 
-      <AiElementsChainOfThoughtChainOfThought
-        v-if="step.tools.length > 0"
-        :default-open="isStepStreaming(index)"
-        class="w-full max-w-full"
+      <template
+        v-for="(segment, segmentIndex) in segments"
+        :key="`${step.id}-seg-${segmentIndex}`"
       >
-        <AiElementsChainOfThoughtChainOfThoughtHeader>
-          <AiElementsShimmerShimmer
-            v-if="isStepStreaming(index)"
-            :duration="1"
-            as="span"
-          >
-            {{ toolHeaderLabel(step, index) }}
-          </AiElementsShimmerShimmer>
-          <span v-else>{{ toolHeaderLabel(step, index) }}</span>
-        </AiElementsChainOfThoughtChainOfThoughtHeader>
-        <AiElementsChainOfThoughtChainOfThoughtContent class="space-y-2">
-          <div class="flex flex-col gap-0.5">
-            <ChatToolRun
-              v-for="tool in step.tools"
-              :key="tool.toolCallId"
-              :run="tool"
-            />
-          </div>
-        </AiElementsChainOfThoughtChainOfThoughtContent>
-      </AiElementsChainOfThoughtChainOfThought>
+        <ChatSubAgentTurn
+          v-if="segment.type === 'subagent'"
+          :subagent="resolveSubagent(segment.run)"
+        />
+        <AiElementsChainOfThoughtChainOfThought
+          v-else
+          :default-open="isStepStreaming(index)"
+          class="w-full max-w-full"
+        >
+          <AiElementsChainOfThoughtChainOfThoughtHeader>
+            <AiElementsShimmerShimmer
+              v-if="isStepStreaming(index)"
+              :duration="1"
+              as="span"
+            >
+              {{ toolHeaderLabel(segment.tools.length, index) }}
+            </AiElementsShimmerShimmer>
+            <span v-else>{{ toolHeaderLabel(segment.tools.length, index) }}</span>
+          </AiElementsChainOfThoughtChainOfThoughtHeader>
+          <AiElementsChainOfThoughtChainOfThoughtContent class="space-y-2">
+            <div class="flex flex-col gap-0.5">
+              <ChatToolRun
+                v-for="tool in segment.tools"
+                :key="tool.toolCallId"
+                :run="tool"
+              />
+            </div>
+          </AiElementsChainOfThoughtChainOfThoughtContent>
+        </AiElementsChainOfThoughtChainOfThought>
+      </template>
     </template>
 
     <AiElementsMessageMessage

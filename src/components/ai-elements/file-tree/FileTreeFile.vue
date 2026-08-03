@@ -37,6 +37,7 @@ provide(FileTreeFileKey, {
     "
     role="treeitem"
     tabindex="0"
+    :data-path="props.path"
     v-bind="$attrs"
     @click="() => onSelect(props.path)"
     @keydown.enter="() => onSelect(props.path)"

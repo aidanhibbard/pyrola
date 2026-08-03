@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { FilePlus, FolderPlus, RefreshCw } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
@@ -28,7 +28,14 @@ import {
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
 import { FileTree } from '@/components/ai-elements/file-tree'
-import { fsDelete, fsListDirTree, fsMkdir, fsRename, fsWriteFile } from '@/services/pyrola/pyrola-tauri'
+import {
+  fsDelete,
+  fsListDir,
+  fsListDirTree,
+  fsMkdir,
+  fsRename,
+  fsWriteFile,
+} from '@/services/pyrola/pyrola-tauri'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { isHomeChatSlug } from '@/constants/home-chat'
 import {
@@ -88,23 +95,40 @@ const projectIdRef = computed(() => props.projectId)
 provide(FileTreeProjectRootKey, projectRoot)
 provide(FileTreeProjectIdKey, projectIdRef)
 
-const findNodeKind = (
+const findNode = (
   nodes: TreeNode[] | undefined,
   path: string,
-): string | null => {
+): TreeNode | null => {
   if (!nodes) {
     return null
   }
   for (const node of nodes) {
     if (node.path === path) {
-      return node.kind
+      return node
     }
-    const childKind = findNodeKind(node.children, path)
-    if (childKind) {
-      return childKind
+    const child = findNode(node.children, path)
+    if (child) {
+      return child
     }
   }
   return null
+}
+
+const findNodeKind = (
+  nodes: TreeNode[] | undefined,
+  path: string,
+): string | null => findNode(nodes, path)?.kind ?? null
+
+const ancestorDirectoryPaths = (path: string): string[] => {
+  const segments = path.split('/').filter(Boolean)
+  if (segments.length === 0) {
+    return ['.']
+  }
+  const ancestors = ['.']
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    ancestors.push(segments.slice(0, index + 1).join('/'))
+  }
+  return ancestors
 }
 
 const treeErrorMessage = (error: unknown): string => {
@@ -126,6 +150,77 @@ const loadTree = async (): Promise<void> => {
   // Home is huge and has many unreadable system dirs; keep the initial walk shallow.
   const maxDepth = isHomeChatSlug(props.projectId) ? 2 : 4
   tree.value = (await fsListDirTree(root, '.', maxDepth)) as TreeNode
+  const path = props.selectedPath
+  if (!path) {
+    return
+  }
+  selectedPath.value = path
+  try {
+    await revealPath(path)
+  } catch (error) {
+    toast.error('Failed to reveal file in tree', {
+      description: treeErrorMessage(error),
+    })
+  }
+}
+
+const ensureChildrenLoaded = async (directoryPath: string): Promise<void> => {
+  const root = projectRoot.value
+  const currentTree = tree.value
+  if (!root || !currentTree) {
+    return
+  }
+
+  const node =
+    directoryPath === '.' || directoryPath === ''
+      ? currentTree
+      : findNode(currentTree.children, directoryPath)
+
+  if (!node || node.kind !== 'directory') {
+    return
+  }
+  if (node.children !== undefined) {
+    return
+  }
+
+  const entries = await fsListDir(root, directoryPath)
+  node.children = entries.map((entry) => ({
+    name: entry.name,
+    path: entry.path,
+    kind: entry.kind,
+  }))
+}
+
+const scrollPathIntoView = async (path: string): Promise<void> => {
+  await nextTick()
+  const escaped = CSS.escape(path)
+  let element = document.querySelector(`[data-path="${escaped}"]`)
+  if (!(element instanceof HTMLElement)) {
+    await nextTick()
+    element = document.querySelector(`[data-path="${escaped}"]`)
+  }
+  if (element instanceof HTMLElement) {
+    element.scrollIntoView({ block: 'nearest' })
+  }
+}
+
+const revealPath = async (path: string): Promise<void> => {
+  if (!path || !tree.value) {
+    return
+  }
+
+  const ancestors = ancestorDirectoryPaths(path)
+  for (const directoryPath of ancestors) {
+    await ensureChildrenLoaded(directoryPath)
+  }
+
+  const nextExpanded = new Set(expandedPaths.value)
+  for (const directoryPath of ancestors) {
+    nextExpanded.add(directoryPath)
+  }
+  expandedPaths.value = nextExpanded
+
+  await scrollPathIntoView(path)
 }
 
 const refresh = async (): Promise<void> => {
@@ -318,6 +413,13 @@ const handleSelect = (path: string): void => {
 
 const handleExpandedChange = (expanded: Set<string>): void => {
   expandedPaths.value = expanded
+  for (const path of expanded) {
+    ensureChildrenLoaded(path).catch((error) => {
+      toast.error('Failed to load folder', {
+        description: treeErrorMessage(error),
+      })
+    })
+  }
 }
 
 const handlePointerDownOutsideRename = (event: PointerEvent): void => {
@@ -358,9 +460,15 @@ watch(
 watch(
   () => props.selectedPath,
   (path) => {
-    if (path) {
-      selectedPath.value = path
+    if (!path) {
+      return
     }
+    selectedPath.value = path
+    revealPath(path).catch((error) => {
+      toast.error('Failed to reveal file in tree', {
+        description: treeErrorMessage(error),
+      })
+    })
   },
 )
 
