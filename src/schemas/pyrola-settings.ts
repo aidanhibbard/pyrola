@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PermissionCapabilityKey } from '@/types/harness/permission'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import parseModelRef from '@/utils/parse-model-ref'
@@ -15,6 +16,9 @@ const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator']
 const duplicateTabBehaviorSchema = z.enum(['ask', 'open-existing', 'open-new'])
 
 const modelRefStringSchema = z.string().min(1)
+const permissionCapabilitySchema = z.custom<PermissionCapabilityKey>(
+  (value): value is PermissionCapabilityKey => typeof value === 'string' && value.length > 0,
+)
 
 export const pyrolaSettingsSchema = z
   .object({
@@ -27,7 +31,7 @@ export const pyrolaSettingsSchema = z
     'agent.permissions': z
       .array(
         z.object({
-          capability: z.string(),
+          capability: permissionCapabilitySchema,
           verdict: z.enum(['allow', 'deny']),
           scope: z.enum(['workspace', 'always']),
         }),

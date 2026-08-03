@@ -157,7 +157,7 @@ export const abort = (chatId: string): void => {
     return
   }
 
-  for (const subagentId of [...ids]) {
+  for (const subagentId of ids) {
     const record = subagents.get(subagentId)
     if (!record || record.status !== 'running') {
       continue

@@ -44,5 +44,6 @@ export default (
     blocking,
     status,
     summary,
+    tools: [],
   }
 }

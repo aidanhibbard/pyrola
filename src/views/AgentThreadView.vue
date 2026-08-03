@@ -77,9 +77,10 @@ const todos = computed(() =>
 )
 
 const runningShells = computed(() => {
-  // Access liveEvents to re-derive whenever a terminal event fires.
-  harness.value?.liveEvents.value
-  return listShellsForChat(chatId.value).filter((shell) => shell.status === 'running')
+  // Touch liveEvents so terminal lifecycle events re-run this computed.
+  const liveEventCount = unref(harness.value?.liveEvents)?.length ?? 0
+  const shells = listShellsForChat(chatId.value).filter((shell) => shell.status === 'running')
+  return liveEventCount < 0 ? [] : shells
 })
 
 const activePermissionLevel = computed((): PermissionLevel => {
@@ -91,14 +92,15 @@ const initHarness = (root: string, name: string): void => {
     harness.value = null
     return
   }
-  harness.value = useAgentHarness({
+  const nextHarness = useAgentHarness({
     projectSlug: projectSlug.value,
     chatId: chatId.value,
     projectRoot: root,
     projectName: name,
     standalone: isStandalone.value,
   })
-  harness.value.setPermissionLevel(sessionPermissionLevel.value)
+  harness.value = nextHarness
+  nextHarness.setPermissionLevel(sessionPermissionLevel.value)
 }
 
 const loadThread = async (): Promise<void> => {

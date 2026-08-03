@@ -87,7 +87,10 @@ const buildActiveWindowMessages = (
   }
 
   if (kept.length === 0 && messages.length > 0) {
-    kept.push(messages[messages.length - 1])
+    const last = messages[messages.length - 1]
+    if (last) {
+      kept.push(last)
+    }
   }
 
   const checkpointMessage: UIMessage = {

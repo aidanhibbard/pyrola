@@ -288,7 +288,8 @@ const injectContextIntoLastUserMessage = (
   }
   let lastUserIdx = -1
   for (let i = modelMessages.length - 1; i >= 0; i--) {
-    if (modelMessages[i].role === 'user') {
+    const candidate = modelMessages[i]
+    if (candidate?.role === 'user') {
       lastUserIdx = i
       break
     }
@@ -297,22 +298,35 @@ const injectContextIntoLastUserMessage = (
     return modelMessages
   }
   const msg = modelMessages[lastUserIdx]
+  if (!msg || msg.role !== 'user') {
+    return modelMessages
+  }
   const result = [...modelMessages]
   if (typeof msg.content === 'string') {
-    result[lastUserIdx] = { ...msg, content: `${contextText}\n\n${msg.content}` }
+    result[lastUserIdx] = {
+      ...msg,
+      role: 'user',
+      content: `${contextText}\n\n${msg.content}`,
+    }
     return result
   }
   if (Array.isArray(msg.content)) {
-    const parts = msg.content as Array<{ type: string; text?: string }>
-    const textIdx = parts.findIndex((p) => p.type === 'text')
+    const parts = [...msg.content]
+    const textIdx = parts.findIndex((part) => part.type === 'text')
     if (textIdx >= 0) {
-      const updated = [...parts]
-      updated[textIdx] = { ...updated[textIdx], text: `${contextText}\n\n${updated[textIdx].text ?? ''}` }
-      result[lastUserIdx] = { ...msg, content: updated as ModelMessage['content'] }
+      const existing = parts[textIdx]
+      if (existing?.type === 'text') {
+        parts[textIdx] = {
+          ...existing,
+          text: `${contextText}\n\n${existing.text ?? ''}`,
+        }
+        result[lastUserIdx] = { ...msg, role: 'user', content: parts }
+      }
     } else {
       result[lastUserIdx] = {
         ...msg,
-        content: [{ type: 'text', text: contextText }, ...parts] as ModelMessage['content'],
+        role: 'user',
+        content: [{ type: 'text', text: contextText }, ...parts],
       }
     }
     return result
