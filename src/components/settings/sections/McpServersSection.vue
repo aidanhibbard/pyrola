@@ -50,7 +50,6 @@ const {
   serverStates,
   loadingServers,
   startServer,
-  stopServer,
   refreshServer,
   refreshAllServers,
   logoutServer,

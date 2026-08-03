@@ -15,7 +15,7 @@ import {
 import { Marker, MarkerContent } from '@/components/shadcn/ui/marker'
 import { Separator } from '@/components/shadcn/ui/separator'
 
-const props = defineProps<{
+defineProps<{
   approval: PendingApprovalView
 }>()
 
