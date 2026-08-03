@@ -45,7 +45,7 @@ const thinkingMessage = computed(() => {
       </template>
 
       <template v-else>
-        <span>Thought for {{ duration }} seconds</span>
+        <span>Thought for {{ duration }} {{ duration === 1 ? 'second' : 'seconds' }}</span>
       </template>
 
       <ChevronDownIcon

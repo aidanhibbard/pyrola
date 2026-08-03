@@ -94,7 +94,7 @@ const errorTitle = computed(() => {
 </script>
 
 <template>
-  <div class="flex w-full min-w-0 max-w-full flex-col gap-4">
+  <div class="flex w-full min-w-0 max-w-full flex-col gap-2">
     <AiElementsShimmerShimmer
       v-if="isPendingAck"
       :duration="1.5"
@@ -150,6 +150,7 @@ const errorTitle = computed(() => {
         />
         <AiElementsChainOfThoughtChainOfThought
           v-else
+          :is-streaming="isStepStreaming(index)"
           :default-open="isStepStreaming(index)"
           class="w-full max-w-full"
         >
