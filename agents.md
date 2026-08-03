@@ -4,6 +4,7 @@
 
 - **No em dashes.** Do not use `—` (U+2014) in docs, comments, UI strings, toasts, commits, or PR text. Prefer commas, periods, colons, or parentheses.
 - **No dot separators.** Do not use middle-dot or interpunct separators (`·`, inline ` • `, or `Foo · Bar` / `Foo • Bar` label chains). Prefer plain words, commas, or separate lines/labels.
+- **No emojis.** Do not use emoji in docs, comments, UI strings, toasts, commits, PR text, or agent output. An emoji costs about 4 tokens; prefer plain text.
 - **No vibe text.** No filler, throat-clearing, or AI-flavored prose ("let's dive in", "in today's fast-paced…", "robust/seamless/delightful" fluff, performative empathy, padded summaries). Be direct, concrete, and specific.
 
 ## Components

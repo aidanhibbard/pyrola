@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useMagicKeys, whenever } from '@vueuse/core'
 import AppSidebar from '@/components/navigation/aside/left/LeftSidebar.vue'
 import NavigationCommandPalette from '@/components/navigation/CommandPalette.vue'
@@ -22,12 +23,41 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { RouterView } from 'vue-router'
 
+type CollapsiblePanelApi = {
+  collapse: () => void
+  expand: () => void
+  resize: (size: number) => void
+}
+
+const RIGHT_SIDEBAR_DEFAULT_SIZE = 35
+const RIGHT_SIDEBAR_MIN_SIZE = 20
+
 useFleetRegistry()
 useAppearance()
 usePyrolaLiveSync()
 
-const { rightSidebarOpen } = useWorkbenchStore()
+const { rightSidebarOpen, setRightSidebarOpen } = useWorkbenchStore()
 const commandPalette = useCommandPalette()
+const rightSidebarPanelRef = ref<CollapsiblePanelApi | null>(null)
+let rightSidebarHasExpanded = rightSidebarOpen.value
+
+const syncRightSidebarPanel = (open: boolean): void => {
+  const panel = rightSidebarPanelRef.value
+  if (!panel) {
+    return
+  }
+  if (open) {
+    panel.expand()
+    // Cold start begins collapsed at size 0; expand falls back to minSize.
+    // After the first expand we restore the pre-collapse width instead.
+    if (!rightSidebarHasExpanded) {
+      panel.resize(RIGHT_SIDEBAR_DEFAULT_SIZE)
+      rightSidebarHasExpanded = true
+    }
+  } else {
+    panel.collapse()
+  }
+}
 
 const keys = useMagicKeys({
   passive: false,
@@ -44,6 +74,15 @@ whenever(
     commandPalette.togglePalette()
   },
 )
+
+onMounted(async () => {
+  await nextTick()
+  syncRightSidebarPanel(rightSidebarOpen.value)
+})
+
+watch(rightSidebarOpen, (open) => {
+  syncRightSidebarPanel(open)
+})
 </script>
 
 <template>
@@ -64,13 +103,17 @@ whenever(
               <RouterView class="min-h-0 flex-1" />
             </main>
           </ResizablePanel>
-          <ResizableHandle v-if="rightSidebarOpen" />
+          <ResizableHandle v-show="rightSidebarOpen" />
           <ResizablePanel
-            v-if="rightSidebarOpen"
-            :default-size="35"
-            :min-size="20"
+            ref="rightSidebarPanelRef"
+            collapsible
+            :collapsed-size="0"
+            :default-size="rightSidebarOpen ? RIGHT_SIDEBAR_DEFAULT_SIZE : 0"
+            :min-size="RIGHT_SIDEBAR_MIN_SIZE"
             :max-size="65"
             class="min-h-0 min-w-0 overflow-hidden"
+            @collapse="setRightSidebarOpen(false)"
+            @expand="setRightSidebarOpen(true)"
           >
             <RightSidebar class="relative pt-(--titlebar-height)" style="--titlebar-height: 40px">
               <WorkbenchHeader />
