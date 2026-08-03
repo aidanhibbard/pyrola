@@ -28,11 +28,11 @@ import {
 import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import compactSession from '@/services/harness/compact-session'
 import writeHandoff from '@/services/harness/write-handoff'
-import { useRouter } from 'vue-router'
 import { createChat } from '@/services/pyrola/pyrola-tauri'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import chatRouteFor from '@/utils/chat-route-for'
 import formatUnknownError from '@/utils/format-unknown-error'
+import router from '@/router'
 
 export type AgentHarnessOptions = {
   projectSlug: string
@@ -557,8 +557,6 @@ export default (options: AgentHarnessOptions) => {
       })
     }
   }
-
-  const router = useRouter()
 
   const approve = (toolCallId: string): void => {
     resolveApprovalDecision(toolCallId, { approved: true, scope: 'once' })
