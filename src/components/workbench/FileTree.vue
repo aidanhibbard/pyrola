@@ -29,7 +29,8 @@ import {
 } from '@/components/shadcn/ui/tooltip'
 import { FileTree } from '@/components/ai-elements/file-tree'
 import { fsDelete, fsListDirTree, fsMkdir, fsRename, fsWriteFile } from '@/services/pyrola/pyrola-tauri'
-import useFleetRegistry from '@/composables/use-fleet-registry'
+import useWorkbenchStore from '@/composables/use-workbench-store'
+import { isHomeChatSlug } from '@/constants/home-chat'
 import {
   FileTreeProjectIdKey,
   FileTreeProjectRootKey,
@@ -55,7 +56,7 @@ type TreeNode = {
   children?: TreeNode[]
 }
 
-const fleet = useFleetRegistry()
+const workbench = useWorkbenchStore()
 const tree = ref<TreeNode | null>(null)
 const expandedPaths = ref(new Set<string>(['.']))
 const selectedPath = ref(props.selectedPath ?? '')
@@ -68,12 +69,18 @@ const createName = ref('')
 const creating = ref(false)
 
 const projectLabel = computed(() => {
-  const project = fleet.projects.value.find((p) => p.id === props.projectId)
-  return project?.name ?? 'Project'
+  const project = workbench.getProject(props.projectId)
+  if (!project) {
+    return 'Project'
+  }
+  if (isHomeChatSlug(project.id)) {
+    return 'Home'
+  }
+  return project.name
 })
 
 const projectRoot = computed(
-  () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
+  () => workbench.getProject(props.projectId)?.rootPath ?? null,
 )
 
 const projectIdRef = computed(() => props.projectId)
@@ -100,13 +107,25 @@ const findNodeKind = (
   return null
 }
 
+const treeErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === 'string' && error.length > 0) {
+    return error
+  }
+  return 'Unknown error'
+}
+
 const loadTree = async (): Promise<void> => {
   const root = projectRoot.value
   if (!root) {
     tree.value = null
     return
   }
-  tree.value = (await fsListDirTree(root, '.', 4)) as TreeNode
+  // Home is huge and has many unreadable system dirs; keep the initial walk shallow.
+  const maxDepth = isHomeChatSlug(props.projectId) ? 2 : 4
+  tree.value = (await fsListDirTree(root, '.', maxDepth)) as TreeNode
 }
 
 const refresh = async (): Promise<void> => {
@@ -114,7 +133,7 @@ const refresh = async (): Promise<void> => {
     await loadTree()
   } catch (error) {
     toast.error('Failed to refresh file tree', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: treeErrorMessage(error),
     })
   }
 }
@@ -316,7 +335,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDownOutsideRename)
   loadTree().catch((error) => {
     toast.error('Failed to load file tree', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: treeErrorMessage(error),
     })
   })
 })
@@ -330,7 +349,7 @@ watch(
   () => {
     loadTree().catch((error) => {
       toast.error('Failed to load file tree', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: treeErrorMessage(error),
       })
     })
   },

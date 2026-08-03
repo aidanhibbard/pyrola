@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HtmlHTMLAttributes } from 'vue'
-import { BrainIcon, ChevronDownIcon } from '@lucide/vue'
+import { ChevronDownIcon } from '@lucide/vue'
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -20,20 +20,19 @@ const { isOpen, setIsOpen } = useChainOfThought()
     <CollapsibleTrigger
       :class="
         cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
+          'flex w-fit items-center gap-1.5 text-muted-foreground text-xs font-medium transition-colors hover:text-foreground',
           props.class,
         )
       "
       v-bind="$attrs"
     >
-      <BrainIcon class="size-4" />
-      <span class="flex-1 text-left">
+      <span class="text-left">
         <slot>Chain of Thought</slot>
       </span>
       <ChevronDownIcon
         :class="
           cn(
-            'size-4 transition-transform',
+            'size-3.5 transition-transform',
             isOpen ? 'rotate-180' : 'rotate-0',
           )
         "

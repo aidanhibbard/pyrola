@@ -1,16 +1,51 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use tauri::ipc::Channel;
+use tauri::State;
+use tokio::sync::oneshot;
+use uuid::Uuid;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const BUFFERED_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Default)]
+pub struct HttpStreamRegistry {
+  cancels: Mutex<HashMap<String, oneshot::Sender<()>>>,
+}
+
+impl HttpStreamRegistry {
+  pub fn register(&self, id: String, tx: oneshot::Sender<()>) {
+    if let Ok(mut map) = self.cancels.lock() {
+      map.insert(id, tx);
+    }
+  }
+
+  pub fn take(&self, id: &str) -> Option<oneshot::Sender<()>> {
+    self.cancels.lock().ok()?.remove(id)
+  }
+
+  pub fn cancel(&self, id: &str) -> bool {
+    if let Some(tx) = self.take(id) {
+      let _ = tx.send(());
+      return true;
+    }
+    false
+  }
+}
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HttpProxyRequest {
   pub url: String,
   pub method: String,
   pub headers: Option<HashMap<String, String>>,
   pub body: Option<String>,
+  pub request_id: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -49,9 +84,17 @@ fn build_headers(map: Option<HashMap<String, String>>) -> Result<HeaderMap, Stri
   Ok(headers)
 }
 
+fn build_client(request_timeout: Option<Duration>) -> Result<reqwest::Client, String> {
+  let mut builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT);
+  if let Some(timeout) = request_timeout {
+    builder = builder.timeout(timeout);
+  }
+  builder.build().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyResponse, String> {
-  let client = reqwest::Client::new();
+  let client = build_client(Some(BUFFERED_REQUEST_TIMEOUT))?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
   let headers = build_headers(request.headers)?;
 
@@ -83,8 +126,36 @@ pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyRe
 pub async fn http_proxy_stream(
   request: HttpProxyRequest,
   on_event: Channel<HttpProxyStreamEvent>,
+  registry: State<'_, HttpStreamRegistry>,
 ) -> Result<(), String> {
-  let client = reqwest::Client::new();
+  let request_id = request
+    .request_id
+    .clone()
+    .unwrap_or_else(|| Uuid::new_v4().to_string());
+  let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+  registry.register(request_id.clone(), cancel_tx);
+
+  let result = run_proxy_stream(request, on_event, &mut cancel_rx).await;
+  registry.take(&request_id);
+  result
+}
+
+#[tauri::command]
+pub fn http_proxy_stream_cancel(
+  request_id: String,
+  registry: State<'_, HttpStreamRegistry>,
+) -> Result<(), String> {
+  let _ = registry.cancel(&request_id);
+  Ok(())
+}
+
+async fn run_proxy_stream(
+  request: HttpProxyRequest,
+  on_event: Channel<HttpProxyStreamEvent>,
+  cancel_rx: &mut oneshot::Receiver<()>,
+) -> Result<(), String> {
+  // No overall request timeout: streams can run for a long time once connected.
+  let client = build_client(None)?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
   let headers = build_headers(request.headers)?;
 
@@ -93,7 +164,15 @@ pub async fn http_proxy_stream(
     builder = builder.body(body);
   }
 
-  let response = builder.send().await.map_err(|e| e.to_string())?;
+  let response = tokio::select! {
+    response = builder.send() => response.map_err(|e| e.to_string())?,
+    _ = &mut *cancel_rx => {
+      let _ = on_event.send(HttpProxyStreamEvent::Error {
+        message: "Request aborted".to_string(),
+      });
+      return Ok(());
+    }
+  };
   let status = response.status().as_u16();
 
   let mut response_headers = HashMap::new();
@@ -103,40 +182,53 @@ pub async fn http_proxy_stream(
     }
   }
 
-  on_event
+  if on_event
     .send(HttpProxyStreamEvent::Headers {
       status,
       headers: response_headers,
     })
-    .map_err(|e| e.to_string())?;
+    .is_err()
+  {
+    return Ok(());
+  }
 
   let mut stream = response.bytes_stream();
-  while let Some(chunk) = stream.next().await {
-    match chunk {
-      Ok(bytes) => {
-        if bytes.is_empty() {
-          continue;
+  loop {
+    tokio::select! {
+      chunk = stream.next() => {
+        match chunk {
+          Some(Ok(bytes)) => {
+            if bytes.is_empty() {
+              continue;
+            }
+            if on_event
+              .send(HttpProxyStreamEvent::Chunk {
+                bytes: bytes.to_vec(),
+              })
+              .is_err()
+            {
+              break;
+            }
+          }
+          Some(Err(error)) => {
+            let _ = on_event.send(HttpProxyStreamEvent::Error {
+              message: error.to_string(),
+            });
+            return Err(error.to_string());
+          }
+          None => break,
         }
-        on_event
-          .send(HttpProxyStreamEvent::Chunk {
-            bytes: bytes.to_vec(),
-          })
-          .map_err(|e| e.to_string())?;
       }
-      Err(error) => {
-        on_event
-          .send(HttpProxyStreamEvent::Error {
-            message: error.to_string(),
-          })
-          .map_err(|e| e.to_string())?;
-        return Err(error.to_string());
+      _ = &mut *cancel_rx => {
+        let _ = on_event.send(HttpProxyStreamEvent::Error {
+          message: "Request aborted".to_string(),
+        });
+        // Dropping `stream` / `response` aborts the upstream HTTP body.
+        return Ok(());
       }
     }
   }
 
-  on_event
-    .send(HttpProxyStreamEvent::End)
-    .map_err(|e| e.to_string())?;
-
+  let _ = on_event.send(HttpProxyStreamEvent::End);
   Ok(())
 }

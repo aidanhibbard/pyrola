@@ -17,6 +17,7 @@ defineEmits<{
   approve: [toolCallId: string]
   reject: [toolCallId: string]
   submitAnswer: [toolCallId: string, answer: string]
+  retry: []
 }>()
 </script>
 
@@ -33,6 +34,7 @@ defineEmits<{
       @approve="$emit('approve', $event)"
       @reject="$emit('reject', $event)"
       @submit-answer="(toolCallId, answer) => $emit('submitAnswer', toolCallId, answer)"
+      @retry="$emit('retry')"
     />
   </MessageScrollerProvider>
 </template>

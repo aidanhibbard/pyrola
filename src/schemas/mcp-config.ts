@@ -5,6 +5,7 @@ const stdioServerSchema = z.object({
   args: z.array(z.string()).optional(),
   env: z.record(z.string()).optional(),
   envFile: z.string().optional(),
+  enabled: z.boolean().optional(),
 })
 
 const httpServerSchema = z.object({
@@ -12,6 +13,7 @@ const httpServerSchema = z.object({
   url: z.string().url(),
   headers: z.record(z.string()).optional(),
   oauth: z.record(z.unknown()).optional(),
+  enabled: z.boolean().optional(),
 })
 
 const serverSchema = z.union([stdioServerSchema, httpServerSchema])
@@ -23,6 +25,9 @@ export const mcpConfigSchema = z.object({
 export const defaultMcpConfig = (): z.infer<typeof mcpConfigSchema> => ({
   servers: {},
 })
+
+export const isMcpServerEnabled = (config: { enabled?: boolean }): boolean =>
+  config.enabled !== false
 
 export const migrateMcpConfig = (raw: unknown): z.infer<typeof mcpConfigSchema> => {
   if (typeof raw !== 'object' || raw === null) {

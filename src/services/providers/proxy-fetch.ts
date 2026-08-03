@@ -29,7 +29,21 @@ const shouldStreamRequest = (method: string, body?: string): boolean => {
   return body.includes('"stream":true') || body.includes('"stream": true')
 }
 
-const streamProxyFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+const toError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error))
+
+const abortError = (): DOMException =>
+  new DOMException('The operation was aborted.', 'AbortError')
+
+const streamProxyFetch = async (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> => {
+  const signal = init?.signal
+  if (signal?.aborted) {
+    throw abortError()
+  }
+
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   const method = init?.method ?? 'GET'
   const headers = toHeaderRecord(init?.headers)
@@ -39,22 +53,71 @@ const streamProxyFetch = async (input: RequestInfo | URL, init?: RequestInit): P
       : typeof init.body === 'string'
         ? init.body
         : await new Response(init.body).text()
+  const requestId = crypto.randomUUID()
 
   let status = 0
   let responseHeaders = new Headers()
+  let headersSettled = false
   let resolveHeaders: (() => void) | null = null
-  const headersReady = new Promise<void>((resolve) => {
+  let rejectHeaders: ((error: Error) => void) | null = null
+  const headersReady = new Promise<void>((resolve, reject) => {
     resolveHeaders = resolve
+    rejectHeaders = reject
   })
+
+  const settleHeadersError = (error: Error): void => {
+    if (headersSettled) {
+      return
+    }
+    headersSettled = true
+    rejectHeaders?.(error)
+  }
+
+  const settleHeadersOk = (): void => {
+    if (headersSettled) {
+      return
+    }
+    headersSettled = true
+    resolveHeaders?.()
+  }
+
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
+  let cancelled = false
+
+  const cancelUpstream = (): void => {
+    if (cancelled) {
+      return
+    }
+    cancelled = true
+    invoke('http_proxy_stream_cancel', { requestId }).catch(() => {
+      // Best-effort; stream may already be finished.
+    })
+  }
+
+  const onAbort = (): void => {
+    cancelUpstream()
+    settleHeadersError(abortError())
+    try {
+      streamController?.error(abortError())
+    } catch {
+      // Stream may already be errored or closed.
+    }
+  }
+
+  signal?.addEventListener('abort', onAbort, { once: true })
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      streamController = controller
       const channel = new Channel<HttpProxyStreamEvent>()
       channel.onmessage = (event) => {
+        if (cancelled || signal?.aborted) {
+          return
+        }
         if (event.kind === 'headers') {
           status = event.status
           responseHeaders = new Headers(event.headers)
-          resolveHeaders?.()
+          settleHeadersOk()
           return
         }
         if (event.kind === 'chunk') {
@@ -66,20 +129,51 @@ const streamProxyFetch = async (input: RequestInfo | URL, init?: RequestInit): P
           return
         }
         if (event.kind === 'error') {
-          controller.error(new Error(event.message))
+          const error =
+            event.message === 'Request aborted' ? abortError() : new Error(event.message)
+          settleHeadersError(error)
+          try {
+            controller.error(error)
+          } catch {
+            // Stream may already be errored or closed.
+          }
         }
       }
 
       invoke('http_proxy_stream', {
-        request: { url, method, headers, body },
+        request: { url, method, headers, body, requestId },
         onEvent: channel,
       }).catch((error: unknown) => {
-        controller.error(error instanceof Error ? error : new Error(String(error)))
+        if (cancelled || signal?.aborted) {
+          settleHeadersError(abortError())
+          return
+        }
+        const err = toError(error)
+        settleHeadersError(err)
+        try {
+          controller.error(err)
+        } catch {
+          // Stream may already be errored or closed.
+        }
       })
+    },
+    cancel() {
+      cancelUpstream()
     },
   })
 
-  await headersReady
+  try {
+    await headersReady
+  } catch (error) {
+    signal?.removeEventListener('abort', onAbort)
+    throw error
+  }
+
+  if (signal?.aborted) {
+    cancelUpstream()
+    throw abortError()
+  }
+
   return new Response(stream, {
     status,
     statusText: status >= 400 ? 'Error' : 'OK',
@@ -91,6 +185,11 @@ const bufferedProxyFetch = async (
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> => {
+  const signal = init?.signal
+  if (signal?.aborted) {
+    throw abortError()
+  }
+
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   const method = init?.method ?? 'GET'
   const headers = toHeaderRecord(init?.headers)
@@ -107,6 +206,10 @@ const bufferedProxyFetch = async (
     headers,
     body,
   })
+
+  if (signal?.aborted) {
+    throw abortError()
+  }
 
   const responseHeaders = new Headers(result.headers)
   if (!responseHeaders.has('content-type')) {
@@ -134,10 +237,20 @@ const proxyFetch: typeof fetch = async (input, init) => {
         : await new Response(init.body).text()
 
   if (shouldStreamRequest(method, body)) {
-    return streamProxyFetch(input, init)
+    return streamProxyFetch(input, {
+      ...init,
+      method,
+      body,
+      headers: init?.headers,
+    })
   }
 
-  return bufferedProxyFetch(input, init)
+  return bufferedProxyFetch(input, {
+    ...init,
+    method,
+    body,
+    headers: init?.headers,
+  })
 }
 
 export default (): typeof fetch => (isTauri() ? proxyFetch : fetch)

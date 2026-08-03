@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 
 export const isTauri = (): boolean =>
@@ -103,6 +104,15 @@ export const registryRemoveProject = (projectId: string): Promise<void> =>
 
 export const getDefaultWorkspaceRoot = (): Promise<string> =>
   call('get_default_workspace_root')
+
+export const getUserHomeDir = (): Promise<string> => {
+  if (!isTauri()) {
+    return Promise.reject(
+      new Error('Pyrola desktop APIs are only available in the Tauri app'),
+    )
+  }
+  return homeDir()
+}
 
 export const getActiveProjectId = (): Promise<string | null> => call('get_active_project')
 
@@ -327,8 +337,8 @@ export const fsListDir = (
 export const fsListDirTree = (
   projectRoot: string,
   path: string,
-  depth?: number,
-): Promise<unknown> => call('fs_list_dir_tree', { projectRoot, path, depth })
+  maxDepth?: number,
+): Promise<unknown> => call('fs_list_dir_tree', { projectRoot, path, maxDepth })
 
 export const fsRename = (args: {
   projectRoot: string

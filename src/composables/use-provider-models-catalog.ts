@@ -73,8 +73,11 @@ export default (options: UseProviderModelsCatalogOptions) => {
           key.startsWith('providers.custom.'),
       )
       .sort()
+    const customPayload = providerKeys
+      .filter((key) => key.startsWith('providers.custom.'))
+      .map((key) => JSON.stringify(settings[key as keyof typeof settings] ?? null))
       .join('|')
-    return providerKeys
+    return `${providerKeys.join('|')}::${customPayload}`
   })
 
   const refresh = async (): Promise<void> => {
@@ -136,6 +139,15 @@ export default (options: UseProviderModelsCatalogOptions) => {
     }
     const providerId = serialized.slice(0, separatorIndex)
     const modelId = serialized.slice(separatorIndex + 2)
+    for (const group of groups.value) {
+      if (group.providerId !== providerId) {
+        continue
+      }
+      const match = group.models.find((model) => model.modelId === modelId)
+      if (match) {
+        return formatModelRefLabel(match, group.providerName)
+      }
+    }
     return formatModelRefLabel({ providerId, modelId })
   }
 

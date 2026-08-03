@@ -57,10 +57,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import WorkbenchEditorFileSearchDialog from '@/components/workbench/EditorFileSearchDialog.vue'
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
 import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
-import useCommandPalette from '@/composables/use-command-palette'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
@@ -73,7 +73,6 @@ const props = defineProps<{
 }>()
 
 const workbench = useWorkbenchStore()
-const commandPalette = useCommandPalette()
 const config = usePyrolaConfig()
 
 const monacoRef = ref<InstanceType<typeof WorkbenchMonacoEditor> | null>(null)
@@ -83,6 +82,7 @@ const fileDirty = ref<Record<string, boolean>>({})
 const closeConfirmOpen = ref(false)
 const closeTargetPath = ref<string | null>(null)
 const closeSaving = ref(false)
+const fileSearchOpen = ref(false)
 const fileTreeOpen = ref(true)
 const isNavigatingHistory = ref(false)
 const pathHistory = ref<string[]>([])
@@ -190,7 +190,11 @@ const handleFileTabMiddleClick = (event: MouseEvent, path: string): void => {
 }
 
 const handleOpenSearch = (): void => {
-  commandPalette.openPalette()
+  fileSearchOpen.value = true
+}
+
+const handleFileSearchSelect = (path: string): void => {
+  workbench.openEditor(props.tab.projectId, path)
 }
 
 const handleToggleFileTree = (): void => {
@@ -718,6 +722,12 @@ watch(
       </WorkbenchFileTree>
     </ResizablePanel>
   </ResizablePanelGroup>
+
+  <WorkbenchEditorFileSearchDialog
+    v-model:open="fileSearchOpen"
+    :project-root="projectRoot"
+    @select="handleFileSearchSelect"
+  />
 
   <AlertDialog
     :open="closeConfirmOpen"

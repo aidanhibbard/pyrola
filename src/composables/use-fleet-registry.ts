@@ -3,13 +3,10 @@ import { toast } from 'vue-sonner'
 import type { FleetProject } from '@/types/fleet/fleet-project'
 import {
   getActiveProjectId,
-  getDefaultWorkspaceRoot,
   hasProjectPyrola,
-  registryAddProject,
   registryListProjects,
   registryRemoveProject,
   registrySetActiveProject,
-  registryUpdateProjectRoot,
 } from '@/services/pyrola/pyrola-tauri'
 
 const projects = ref<FleetProject[]>([])
@@ -31,23 +28,6 @@ const mapProject = (record: {
   lastOpened: record.last_opened,
 })
 
-const normalizeProjectRoots = async (): Promise<void> => {
-  const workspaceRoot = await getDefaultWorkspaceRoot()
-  for (const project of projects.value) {
-    if (project.name !== 'pyrola' || projects.value.length > 1) {
-      continue
-    }
-    if (project.rootPath === workspaceRoot) {
-      continue
-    }
-    const record = await registryUpdateProjectRoot(project.id, workspaceRoot)
-    const index = projects.value.findIndex((item) => item.id === project.id)
-    if (index >= 0) {
-      projects.value[index] = mapProject(record)
-    }
-  }
-}
-
 export default () => {
   const activeProject = computed(
     () => projects.value.find((p) => p.id === activeProjectId.value) ?? null,
@@ -64,13 +44,16 @@ export default () => {
   const refresh = async (): Promise<void> => {
     const records = await registryListProjects()
     projects.value = records.map(mapProject)
-    activeProjectId.value = await getActiveProjectId()
-    await normalizeProjectRoots()
+    const persistedActiveId = await getActiveProjectId()
+    activeProjectId.value =
+      persistedActiveId && projects.value.some((project) => project.id === persistedActiveId)
+        ? persistedActiveId
+        : null
     await refreshHasPyrola()
     loaded.value = true
   }
 
-  const setActiveProject = async (projectId: string): Promise<void> => {
+  const setActiveProject = async (projectId: string | null): Promise<void> => {
     await registrySetActiveProject(projectId)
     activeProjectId.value = projectId
     await refreshHasPyrola()
@@ -79,24 +62,23 @@ export default () => {
   const removeProject = async (projectId: string): Promise<void> => {
     await registryRemoveProject(projectId)
     await refresh()
-    if (projects.value.length === 0) {
-      await ensureDefaultProject()
-    }
   }
 
+  // Keep an active selection when projects exist; never invent one from CWD.
+  // An empty registry is valid — user adds via folder picker or home chat.
   const ensureDefaultProject = async (): Promise<void> => {
-    const workspaceRoot = await getDefaultWorkspaceRoot()
-
-    if (projects.value.length > 0) {
-      if (!activeProjectId.value) {
-        await setActiveProject(projects.value[0]!.id)
+    if (projects.value.length === 0) {
+      if (activeProjectId.value) {
+        await setActiveProject(null)
       }
       return
     }
-
-    const project = await registryAddProject('pyrola', workspaceRoot)
-    projects.value = [mapProject(project)]
-    await setActiveProject(project.id)
+    if (
+      !activeProjectId.value ||
+      !projects.value.some((project) => project.id === activeProjectId.value)
+    ) {
+      await setActiveProject(projects.value[0]!.id)
+    }
   }
 
   onMounted(async () => {

@@ -40,6 +40,7 @@ import {
   pinChat,
   updateChatMeta,
 } from '@/services/pyrola/pyrola-tauri'
+import chatRouteFor from '@/utils/chat-route-for'
 
 const props = defineProps<{
   chat: FleetSidebarChat
@@ -66,7 +67,7 @@ const isPinned = computed(() =>
 
 const openChat = async (): Promise<void> => {
   try {
-    await router.push(`/project/${props.projectSlug}/chat/${props.chat.id}`)
+    await router.push(chatRouteFor(props.projectSlug, props.chat.id))
   } catch (error) {
     toast.error('Navigation failed', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -130,7 +131,7 @@ const handleFork = async (): Promise<void> => {
   try {
     const forked = await forkChat(props.projectSlug, props.chat.id)
     await refreshFleetSidebar()
-    await router.push(`/project/${props.projectSlug}/chat/${forked.id}`)
+    await router.push(chatRouteFor(props.projectSlug, forked.id))
     toast.success('Chat forked')
   } catch (error) {
     toast.error('Could not fork chat', {
@@ -154,7 +155,8 @@ const handleDelete = async (): Promise<void> => {
     deleteOpen.value = false
 
     if (
-      route.params.slug === props.projectSlug &&
+      (route.params.slug === props.projectSlug ||
+        (props.projectSlug === '_home_' && route.name === 'home-chat')) &&
       route.params.chatId === props.chat.id
     ) {
       await router.push('/')

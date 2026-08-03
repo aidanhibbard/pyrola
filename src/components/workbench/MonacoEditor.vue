@@ -11,8 +11,8 @@ import {
   lspEnsureServer,
   lspRequest,
 } from '@/services/pyrola/pyrola-tauri'
-import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import useWorkbenchStore from '@/composables/use-workbench-store'
 import {
   fileExtension,
   LSP_MARKER_OWNER,
@@ -60,7 +60,7 @@ const LSP_LANGUAGES = [
   'json',
 ] as const
 
-const fleet = useFleetRegistry()
+const workbench = useWorkbenchStore()
 const config = usePyrolaConfig()
 const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
@@ -222,7 +222,7 @@ const syncEditorViewOptions = (): void => {
 }
 
 const projectRoot = computed(
-  () => fleet.projects.value.find((p) => p.id === props.projectId)?.rootPath ?? null,
+  () => workbench.getProject(props.projectId)?.rootPath ?? null,
 )
 
 const setPathDirty = (path: string, dirty: boolean): void => {

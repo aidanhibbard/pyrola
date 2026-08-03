@@ -2,6 +2,10 @@ import { generateText, stepCountIs, tool } from 'ai'
 import { z } from 'zod'
 import createModel from '@/services/providers/create-model'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  resolveModelCallOptions,
+} from '@/services/models/resolve-model-call-options'
 import gitRepoInfo from '@/services/git/git-repo-info'
 import {
   fsApplyPatch,
@@ -93,7 +97,7 @@ const mapDiffs = (raw: FileDiffRecord[]): FileDiff[] =>
   }))
 
 const DEFAULT_BLOCKING_TIMEOUT_MS = 120_000
-const SUBAGENT_MAX_OUTPUT_TOKENS = 8192
+const SUBAGENT_MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
 const SUBAGENT_MAX_STEPS = 15
 
 const LSP_DIAGNOSTICS_METHODS = new Set([
@@ -813,6 +817,9 @@ const runSubagentGenerate = async (args: {
     modelId: modelRef.modelId,
     settings: ctx.settings,
   })
+  const callOptions = resolveModelCallOptions(ctx.settings, modelRef, {
+    maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
+  })
 
   const emitNestedEvent = (event: HarnessEvent): void => {
     ctx.onHarnessEvent?.({
@@ -842,7 +849,14 @@ const runSubagentGenerate = async (args: {
     prompt,
     tools: nestedTools,
     stopWhen: stepCountIs(SUBAGENT_MAX_STEPS),
-    maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: callOptions.maxOutputTokens,
+    temperature: callOptions.temperature,
+    topP: callOptions.topP,
+    topK: callOptions.topK,
+    frequencyPenalty: callOptions.frequencyPenalty,
+    presencePenalty: callOptions.presencePenalty,
+    seed: callOptions.seed,
+    providerOptions: callOptions.providerOptions,
     abortSignal: signal,
     onToolExecutionStart: (event) => {
       emitNestedEvent({

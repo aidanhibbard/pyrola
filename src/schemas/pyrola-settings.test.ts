@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { migratePyrolaSettings, normalizeStoredModelRef } from '@/schemas/pyrola-settings'
+import {
+  customProviderModelSchema,
+  customProviderSchema,
+} from '@/schemas/providers/custom-provider'
+import {
+  migratePyrolaSettings,
+  normalizeStoredModelRef,
+  validatePyrolaSettings,
+} from '@/schemas/pyrola-settings'
+import { providerRequiresApiKey } from '@/services/providers/registry'
+import {
+  resolveMaxInputTokens,
+  resolveModelCallOptions,
+  resolveSideTaskCallOptions,
+} from '@/services/models/resolve-model-call-options'
+import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 
 describe('migratePyrolaSettings', () => {
   it('migrates deprecated provider and model keys', () => {
@@ -22,6 +37,28 @@ describe('migratePyrolaSettings', () => {
 
     expect(migrated['workbench.duplicateTabBehavior']).toBe('ask')
   })
+
+  it('accepts custom providers with models', () => {
+    const migrated = migratePyrolaSettings({
+      version: 1,
+      'providers.custom.kat': {
+        type: 'openai-compatible',
+        name: 'Kat',
+        baseURL: 'http://localhost:1234/v1',
+        models: [
+          {
+            id: 'kat-coder-2.5',
+            maxInputTokens: 64000,
+            maxOutputTokens: 8192,
+            toolCalling: true,
+          },
+        ],
+      },
+    })
+
+    expect(migrated['providers.custom.kat']?.models?.[0]?.id).toBe('kat-coder-2.5')
+    expect(migrated['providers.custom.kat']?.models?.[0]?.maxInputTokens).toBe(64000)
+  })
 })
 
 describe('normalizeStoredModelRef', () => {
@@ -35,5 +72,170 @@ describe('normalizeStoredModelRef', () => {
     expect(normalizeStoredModelRef('anthropic::claude-sonnet-4-5')).toBe(
       'anthropic::claude-sonnet-4-5',
     )
+  })
+})
+
+describe('customProviderSchema', () => {
+  it('validates a full custom provider', () => {
+    const parsed = customProviderSchema.safeParse({
+      type: 'openai-compatible',
+      name: 'Local',
+      baseURL: 'http://127.0.0.1:8080/v1',
+      includeUsage: true,
+      headers: { 'X-Test': '1' },
+      models: [
+        {
+          id: 'model-a',
+          temperature: 0.2,
+          modelOptions: { foo: 'bar' },
+        },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('rejects invalid model temperature', () => {
+    const parsed = customProviderModelSchema.safeParse({
+      id: 'model-a',
+      temperature: 5,
+    })
+    expect(parsed.success).toBe(false)
+  })
+})
+
+describe('validatePyrolaSettings', () => {
+  it('accepts valid settings', () => {
+    const result = validatePyrolaSettings({
+      version: 1,
+      'appearance.theme': 'dark',
+      'providers.custom.local': {
+        type: 'openai-compatible',
+        name: 'Local',
+        baseURL: 'http://localhost:1234/v1',
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects invalid custom provider base URL', () => {
+    const result = validatePyrolaSettings({
+      version: 1,
+      'providers.custom.local': {
+        type: 'openai-compatible',
+        name: 'Local',
+        baseURL: 'not-a-url',
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('providerRequiresApiKey', () => {
+  it('treats custom providers as optional', () => {
+    const settings = {
+      version: 1 as const,
+      'providers.custom.kat': {
+        type: 'openai-compatible' as const,
+        name: 'Kat',
+        baseURL: 'http://localhost:1234/v1',
+      },
+    } satisfies PyrolaSettings
+
+    expect(providerRequiresApiKey('kat', settings)).toBe(false)
+  })
+
+  it('still requires keys for unknown catalog providers without settings', () => {
+    expect(providerRequiresApiKey('unknown-cloud')).toBe(true)
+  })
+
+  it('respects catalog requiresApiKey false', () => {
+    expect(providerRequiresApiKey('ollama')).toBe(false)
+  })
+})
+
+describe('resolveModelCallOptions', () => {
+  const settings = {
+    version: 1 as const,
+    'providers.custom.kat': {
+      type: 'openai-compatible' as const,
+      name: 'Kat',
+      baseURL: 'http://localhost:1234/v1',
+      models: [
+        {
+          id: 'kat-coder-2.5',
+          maxInputTokens: 32000,
+          maxOutputTokens: 4096,
+          contextWindow: 40000,
+          temperature: 0.1,
+          reasoningEffort: 'high',
+          modelOptions: { customOption: true },
+        },
+      ],
+    },
+  } satisfies PyrolaSettings
+
+  it('resolves call options from custom model config', () => {
+    const options = resolveModelCallOptions(settings, {
+      providerId: 'kat',
+      modelId: 'kat-coder-2.5',
+    })
+    expect(options.maxOutputTokens).toBe(4096)
+    expect(options.temperature).toBe(0.1)
+    expect(options.providerOptions).toEqual({
+      kat: {
+        customOption: true,
+        reasoningEffort: 'high',
+      },
+    })
+  })
+
+  it('derives max input from context window when needed', () => {
+    const derivedSettings = {
+      version: 1 as const,
+      'providers.custom.kat': {
+        type: 'openai-compatible' as const,
+        name: 'Kat',
+        baseURL: 'http://localhost:1234/v1',
+        models: [
+          {
+            id: 'kat-coder-2.5',
+            contextWindow: 40000,
+            maxOutputTokens: 4000,
+          },
+        ],
+      },
+    } satisfies PyrolaSettings
+
+    expect(
+      resolveMaxInputTokens(derivedSettings, {
+        providerId: 'kat',
+        modelId: 'kat-coder-2.5',
+      }),
+    ).toBe(36000)
+  })
+
+  it('uses side-task default max output when unset', () => {
+    const options = resolveSideTaskCallOptions(
+      {
+        version: 1,
+        'providers.custom.kat': {
+          type: 'openai-compatible',
+          name: 'Kat',
+          baseURL: 'http://localhost:1234/v1',
+          models: [{ id: 'kat-coder-2.5' }],
+        },
+      },
+      { providerId: 'kat', modelId: 'kat-coder-2.5' },
+    )
+    expect(options.maxOutputTokens).toBe(256)
+  })
+
+  it('falls back to defaults for non-custom models', () => {
+    const options = resolveModelCallOptions(
+      { version: 1 },
+      { providerId: 'anthropic', modelId: 'claude-sonnet-4-5' },
+    )
+    expect(options.maxOutputTokens).toBe(8192)
+    expect(options.temperature).toBeUndefined()
   })
 })

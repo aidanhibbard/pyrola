@@ -11,7 +11,7 @@ use commands::{
   get_default_workspace_root, get_secret,
   get_user_pyrola_dir, get_pyrola_dir, git_branch_create, git_checkout_branch, git_commit,
   git_diff, git_list_branches, git_log, git_repo_info, git_status, has_project_pyrola,
-  http_proxy_request, http_proxy_stream,
+  http_proxy_request, http_proxy_stream, http_proxy_stream_cancel,
   list_chats,
   list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_request,
   lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_statuses, mcp_list_tools,
@@ -24,6 +24,7 @@ use commands::{
   watch_pyrola_paths, workspace_glob, workspace_grep, write_json_file, write_mcp_config,
   write_settings, WatchState,
 };
+use commands::http::HttpStreamRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,6 +41,7 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
 
   builder
     .manage(WatchState::new())
+    .manage(HttpStreamRegistry::default())
     .setup(move |app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -102,6 +104,7 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
       delete_secret,
       http_proxy_request,
       http_proxy_stream,
+      http_proxy_stream_cancel,
       reveal_in_folder,
       git_repo_info,
       git_list_branches,

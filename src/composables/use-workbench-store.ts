@@ -10,11 +10,13 @@ import type {
   WorkbenchTab,
   WorkbenchTabType,
 } from '@/types/workbench/workbench-tab'
+import type { FleetProject } from '@/types/fleet/fleet-project'
 import type { PyrolaDuplicateTabBehavior } from '@/types/pyrola/pyrola-settings'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
-import { shellKillPty, shellWritePty } from '@/services/pyrola/pyrola-tauri'
+import { getUserHomeDir, shellKillPty, shellWritePty } from '@/services/pyrola/pyrola-tauri'
+import { HOME_WORKSPACE_ID, isHomeChatSlug } from '@/constants/home-chat'
 import workbenchTabLabel from '@/utils/workbench-tab-label'
 
 type DuplicateTabResolution = 'existing' | 'new'
@@ -34,14 +36,53 @@ const terminalSessions = new Map<string, string>()
 const tabRefreshTokens = ref<Record<string, number>>({})
 const duplicateDialogOpen = ref(false)
 const duplicateDialogTabType = ref<PromptableTabType>('editor')
+const homeRootPath = ref<string | null>(null)
 
 let duplicateDialogResolve: ((value: DuplicateTabResolution) => void) | null = null
+let homeRootPromise: Promise<string> | null = null
 
 const createId = (): string => crypto.randomUUID()
 
-const getProject = (projectId: string) => {
+const ensureHomeRoot = async (): Promise<string> => {
+  if (homeRootPath.value) {
+    return homeRootPath.value
+  }
+  if (!homeRootPromise) {
+    homeRootPromise = getUserHomeDir()
+      .then((root) => {
+        homeRootPath.value = root
+        return root
+      })
+      .catch((error) => {
+        homeRootPromise = null
+        throw error
+      })
+  }
+  return homeRootPromise
+}
+
+const createHomeProject = (rootPath: string): FleetProject => ({
+  id: HOME_WORKSPACE_ID,
+  name: 'Home',
+  slug: HOME_WORKSPACE_ID,
+  rootPath,
+  lastOpened: '',
+})
+
+const getProject = (projectId: string): FleetProject | null => {
+  if (isHomeChatSlug(projectId)) {
+    if (!homeRootPath.value) {
+      return null
+    }
+    return createHomeProject(homeRootPath.value)
+  }
   const fleet = useFleetRegistry()
   return fleet.projects.value.find((p) => p.id === projectId) ?? null
+}
+
+const resolveWorkspaceProjectId = (): string => {
+  const fleet = useFleetRegistry()
+  return fleet.activeProjectId.value ?? HOME_WORKSPACE_ID
 }
 
 const resolveProjectIdByRoot = (projectRoot: string): string | null => {
@@ -223,23 +264,30 @@ const cancelDuplicateTabDialog = (): void => {
   resolve('new')
 }
 
-const openEditor = async (projectId: string, path: string): Promise<void> => {
+const openEditor = async (projectId: string, path = ''): Promise<void> => {
+  if (isHomeChatSlug(projectId)) {
+    await ensureHomeRoot()
+  }
+
   const predicate = (tab: WorkbenchTab) => tab.type === 'editor' && tab.projectId === projectId
   const existing = findTab(predicate)
 
   if (existing) {
-    addEditorFile(existing.id, path)
+    if (path) {
+      addEditorFile(existing.id, path)
+    }
     focusTab(existing.id)
     return
   }
 
-  const fileName = path.split('/').pop() ?? path
+  const openPaths = path ? [path] : []
+  const fileName = path ? (path.split('/').pop() ?? path) : 'Editor'
   const tab: WorkbenchTab = {
     id: createId(),
     type: 'editor',
     projectId,
     label: fileName,
-    payload: { path, openPaths: [path] } satisfies EditorPayload,
+    payload: { path: path || '', openPaths } satisfies EditorPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)
@@ -250,6 +298,10 @@ const openTerminal = async (
   label?: string,
   cwd?: string,
 ): Promise<void> => {
+  if (isHomeChatSlug(projectId)) {
+    await ensureHomeRoot()
+  }
+
   const predicate = (tab: WorkbenchTab) => tab.type === 'terminal' && tab.projectId === projectId
   const existing = findTab(predicate)
 
@@ -266,7 +318,7 @@ const openTerminal = async (
   }
 
   const project = getProject(projectId)
-  const tabLabel = label ?? project?.slug ?? 'Terminal'
+  const tabLabel = label ?? (isHomeChatSlug(projectId) ? 'Home' : project?.slug ?? 'Terminal')
   const tab: WorkbenchTab = {
     id: createId(),
     type: 'terminal',
@@ -539,6 +591,8 @@ export default () => ({
   toggleRightSidebar,
   getProject,
   resolveProjectIdByRoot,
+  resolveWorkspaceProjectId,
+  ensureHomeRoot,
   confirmDuplicateTabChoice,
   cancelDuplicateTabDialog,
   addEditorFile,

@@ -12,18 +12,31 @@ import {
 import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
+import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 
 const route = useRoute()
 const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
 
-const projectSlug = computed(() => String(route.params.slug ?? ''))
+const isStandalone = computed(
+  () => route.name === 'home-chat' || isHomeChatSlug(String(route.params.slug ?? '')),
+)
+const projectSlug = computed(() =>
+  isStandalone.value ? HOME_CHAT_SLUG : String(route.params.slug ?? ''),
+)
 const chatId = computed(() => String(route.params.chatId ?? ''))
 
-const isChatRoute = computed(() => route.name === 'chat' && projectSlug.value && chatId.value)
+const isChatRoute = computed(
+  () =>
+    (route.name === 'chat' || route.name === 'home-chat') &&
+    Boolean(chatId.value),
+)
 
 const projectName = computed(() => {
+  if (isStandalone.value) {
+    return 'Home'
+  }
   const project = fleet.projects.value.find((item) => item.slug === projectSlug.value)
   return project?.name ?? projectSlug.value
 })
@@ -32,6 +45,15 @@ const chatTitle = computed(() => {
   const meta = chatStore.meta.value
   if (meta?.id === chatId.value && meta.title) {
     return meta.title
+  }
+
+  if (isStandalone.value) {
+    const standalone = fleetSidebar.standaloneChats.value.find(
+      (item) => item.id === chatId.value,
+    )
+    if (standalone?.title) {
+      return standalone.title
+    }
   }
 
   const sidebarProject = fleetSidebar.sidebarProjects.value.find(
@@ -47,14 +69,14 @@ const chatTitle = computed(() => {
 </script>
 
 <template>
-  <div v-if="isChatRoute" class="flex min-w-0 flex-1 items-center gap-1">
-    <Breadcrumb class="min-w-0 flex-1">
-      <BreadcrumbList class="flex min-w-0 items-center gap-1.5">
+  <div v-if="isChatRoute" class="flex min-w-0 items-center">
+    <Breadcrumb class="min-w-0">
+      <BreadcrumbList class="flex-nowrap gap-1.5 text-xs sm:gap-1.5">
         <BreadcrumbItem class="shrink-0">
           <BreadcrumbLink as-child>
             <RouterLink
               :to="{ name: 'home' }"
-              class="block max-w-[10rem] truncate sm:max-w-[12rem]"
+              class="block max-w-[8rem] truncate text-muted-foreground sm:max-w-[10rem]"
               :title="projectName"
             >
               {{ projectName }}
@@ -62,8 +84,11 @@ const chatTitle = computed(() => {
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator class="shrink-0" />
-        <BreadcrumbItem class="min-w-0 flex-1 overflow-hidden">
-          <BreadcrumbPage class="block truncate" :title="chatTitle">
+        <BreadcrumbItem class="min-w-0">
+          <BreadcrumbPage
+            class="block truncate text-muted-foreground"
+            :title="chatTitle"
+          >
             {{ chatTitle }}
           </BreadcrumbPage>
         </BreadcrumbItem>

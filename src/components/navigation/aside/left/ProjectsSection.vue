@@ -15,9 +15,12 @@ import { Input } from '@/components/shadcn/ui/input'
 import {
   SidebarGroup,
   SidebarMenu,
+  SidebarMenuItem,
 } from '@/components/shadcn/ui/sidebar'
 import NavigationAsideLeftProjectRow from '@/components/navigation/aside/left/ProjectRow.vue'
+import NavigationAsideLeftChatListItem from '@/components/navigation/aside/left/ChatListItem.vue'
 import NavigationAsideLeftProjectsSectionHeader from '@/components/navigation/aside/left/ProjectsSectionHeader.vue'
+import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 
 const { refreshAll } = useFleetSidebar()
 const fleet = useFleetRegistry()
@@ -25,7 +28,7 @@ const {
   searchOpen,
   searchQuery,
   searchInputEl,
-  filteredProjects,
+  filteredActivityItems,
   closeSearch,
 } = useProjectsSection()
 
@@ -82,11 +85,21 @@ watch(
       </Tooltip>
     </div>
     <SidebarMenu>
-      <NavigationAsideLeftProjectRow
-        v-for="project in filteredProjects"
-        :key="project.slug"
-        :project="project"
-      />
+      <template
+        v-for="item in filteredActivityItems"
+        :key="item.kind === 'project' ? `project-${item.project.slug}` : `chat-${item.chat.id}`"
+      >
+        <NavigationAsideLeftProjectRow
+          v-if="item.kind === 'project'"
+          :project="item.project"
+        />
+        <SidebarMenuItem v-else>
+          <NavigationAsideLeftChatListItem
+            :chat="item.chat"
+            :project-slug="HOME_CHAT_SLUG"
+          />
+        </SidebarMenuItem>
+      </template>
     </SidebarMenu>
   </SidebarGroup>
 </template>

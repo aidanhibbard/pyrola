@@ -12,10 +12,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import { cn } from '@/lib/utils'
 
-defineProps<{
+const props = defineProps<{
   id?: string
   placeholder?: string
+  class?: string
 }>()
 
 const model = defineModel<string>({ default: '' })
@@ -30,7 +32,14 @@ const handleToggle = (): void => {
 </script>
 
 <template>
-  <InputGroup>
+  <InputGroup
+    :class="
+      cn(
+        'has-[[data-slot=input-group-control]:focus-visible]:ring-inset',
+        props.class,
+      )
+    "
+  >
     <InputGroupInput
       :id="id"
       v-model="model"

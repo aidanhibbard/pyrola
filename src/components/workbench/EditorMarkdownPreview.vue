@@ -98,7 +98,11 @@ watch(
       </div>
     </template>
     <div v-else class="px-4 py-3 text-sm">
-      <Markdown v-if="content.trim()" :content="content" />
+      <Markdown
+        v-if="content.trim()"
+        :content="content"
+        :enable-animate="false"
+      />
     </div>
   </div>
 </template>

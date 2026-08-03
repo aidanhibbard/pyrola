@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
-import { migrateMcpConfig } from '@/schemas/mcp-config'
+import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
 import {
   mcpListStatuses,
@@ -157,14 +157,14 @@ export default () => {
   const startServer = async (
     serverId: string,
     config: McpServerConfig,
-    options?: { quiet?: boolean },
+    options?: { quiet?: boolean; manageLoading?: boolean },
   ): Promise<void> => {
     if (!isStdioServer(config)) {
       toast.error('Only stdio MCP servers are supported in this build')
       return
     }
 
-    await withServerLoading(serverId, async () => {
+    const run = async (): Promise<void> => {
       try {
         const state = await mcpStart(serverId, config.command, config.args ?? [])
         serverStates.value = {
@@ -172,21 +172,36 @@ export default () => {
           [serverId]: state,
         }
         if (!options?.quiet) {
-          toast.success(`${serverId} connected — ${state.tools.length} tools`)
+          toast.success(`${serverId} connected (${state.tools.length} tools)`)
         }
       } catch (error) {
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: {
+            serverId,
+            status: 'error',
+            tools: [],
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }
         toast.error('Failed to start server', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
       }
-    })
+    }
+
+    if (options?.manageLoading === false) {
+      await run()
+      return
+    }
+    await withServerLoading(serverId, run)
   }
 
   const stopServer = async (
     serverId: string,
-    options?: { quiet?: boolean },
+    options?: { quiet?: boolean; manageLoading?: boolean },
   ): Promise<void> => {
-    await withServerLoading(serverId, async () => {
+    const run = async (): Promise<void> => {
       try {
         await mcpStop(serverId)
         serverStates.value = {
@@ -205,7 +220,13 @@ export default () => {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
       }
-    })
+    }
+
+    if (options?.manageLoading === false) {
+      await run()
+      return
+    }
+    await withServerLoading(serverId, run)
   }
 
   const refreshServer = async (
@@ -220,7 +241,7 @@ export default () => {
           [serverId]: state,
         }
         if (!options?.quiet) {
-          toast.success(`${serverId} refreshed — ${state.tools.length} tools`)
+          toast.success(`${serverId} refreshed (${state.tools.length} tools)`)
         }
       } catch (error) {
         toast.error('Refresh failed', {
@@ -299,6 +320,85 @@ export default () => {
     await refreshStates()
   }
 
+  const setServerEnabled = async (
+    serverId: string,
+    enabled: boolean,
+    rootPath: string | null,
+  ): Promise<void> => {
+    const effective = listEffectiveMcpServers(personalMcp.value, projectMcp.value)
+    const server = effective.find((item) => item.id === serverId)
+    if (!server) {
+      toast.error('MCP server not found', {
+        description: serverId,
+      })
+      return
+    }
+
+    const tab: SettingsTab =
+      server.scope === 'personal' ? 'personal' : 'project'
+    const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
+    const existing = scoped.servers[serverId]
+    if (!existing) {
+      toast.error('MCP server config missing', {
+        description: `${serverId} (${tab})`,
+      })
+      return
+    }
+
+    if (tab === 'project' && !rootPath) {
+      toast.error('Select a project to update this MCP server')
+      return
+    }
+
+    const nextConfig: McpServerConfig = { ...existing, enabled }
+    const nextScoped: McpConfig = {
+      servers: {
+        ...scoped.servers,
+        [serverId]: nextConfig,
+      },
+    }
+
+    // Optimistic UI so the switch moves immediately.
+    if (tab === 'personal') {
+      personalMcp.value = nextScoped
+    } else {
+      projectMcp.value = nextScoped
+    }
+
+    await withServerLoading(serverId, async () => {
+      try {
+        await saveScopedConfig(tab, nextScoped, rootPath)
+
+        if (enabled) {
+          await startServer(serverId, nextConfig, { quiet: true, manageLoading: false })
+        } else {
+          await stopServer(serverId, { quiet: true, manageLoading: false })
+        }
+        await refreshStates()
+      } catch (error) {
+        // Roll back optimistic enablement on failure.
+        if (tab === 'personal') {
+          personalMcp.value = scoped
+        } else {
+          projectMcp.value = scoped
+        }
+        throw error
+      }
+    })
+  }
+
+  const autoStartEnabledServers = async (): Promise<void> => {
+    const servers = listEffectiveMcpServers(personalMcp.value, projectMcp.value).filter(
+      (server) => isMcpServerEnabled(server.config),
+    )
+    for (const server of servers) {
+      const status = serverStates.value[server.id]?.status ?? 'stopped'
+      if (status === 'stopped' || status === 'error') {
+        await startServer(server.id, server.config, { quiet: true })
+      }
+    }
+  }
+
   return {
     personalMcp,
     projectMcp,
@@ -314,6 +414,8 @@ export default () => {
     logoutServer,
     addServer,
     deleteServer,
+    setServerEnabled,
+    autoStartEnabledServers,
     listEffectiveMcpServers,
     listScopedMcpServers,
   }

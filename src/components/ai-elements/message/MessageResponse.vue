@@ -34,15 +34,16 @@ const md = computed(() => (props.content ?? slotContent.value ?? '') as string)
 </script>
 
 <template>
-  <Markdown
-    :content="md"
-    :class="
-      cn(
-        'w-full min-w-0 max-w-full overflow-hidden break-words [&_code]:break-words [&_p]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:w-full [&_table]:table-fixed',
-        '[&>*:first-child]:mt-0! [&>*:last-child]:mb-0!',
-        props.class,
-      )
-    "
-    v-bind="$attrs"
-  />
+    <Markdown
+      :content="md"
+      :enable-animate="true"
+      :class="
+        cn(
+          'w-full min-w-0 max-w-full overflow-hidden break-words [&_code]:break-words [&_p]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:w-full [&_table]:table-fixed',
+          '[&>*:first-child]:mt-0! [&>*:last-child]:mb-0!',
+          props.class,
+        )
+      "
+      v-bind="$attrs"
+    />
 </template>

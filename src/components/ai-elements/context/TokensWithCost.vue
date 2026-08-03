@@ -8,7 +8,7 @@ const props = defineProps<{
 
 const formattedTokens = computed(() => {
   return props.tokens === undefined
-    ? '—'
+    ? 'n/a'
     : new Intl.NumberFormat('en-US', {
         notation: 'compact',
       }).format(props.tokens)
@@ -19,7 +19,7 @@ const formattedTokens = computed(() => {
   <span>
     {{ formattedTokens }}
     <span v-if="costText" class="ml-2 text-muted-foreground">
-      • {{ costText }}
+      ({{ costText }})
     </span>
   </span>
 </template>

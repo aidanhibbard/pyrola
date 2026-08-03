@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { toast } from 'vue-sonner'
 import {
   FileCode,
   GitBranch,
@@ -36,36 +37,50 @@ const workbench = useWorkbenchStore()
 const open = ref(false)
 
 const items = [
-  { id: 'editor', label: 'Editor', icon: FileCode },
-  { id: 'terminal', label: 'Terminal', icon: Terminal },
-  { id: 'browser', label: 'Browser', icon: Globe },
-  { id: 'changes', label: 'Changes', icon: GitBranch },
+  { id: 'editor', label: 'Editor', icon: FileCode, requiresProject: false },
+  { id: 'terminal', label: 'Terminal', icon: Terminal, requiresProject: false },
+  { id: 'browser', label: 'Browser', icon: Globe, requiresProject: false },
+  { id: 'changes', label: 'Changes', icon: GitBranch, requiresProject: true },
 ] as const
 
 const activeProjectId = computed(() => fleet.activeProjectId.value)
 
-const handleOpen = (type: (typeof items)[number]['id']): void => {
-  const projectId = activeProjectId.value
-  if (!projectId) {
-    return
-  }
+const isItemDisabled = (item: (typeof items)[number]): boolean =>
+  item.requiresProject && !activeProjectId.value
 
-  switch (type) {
-    case 'editor':
-      workbench.openEditor(projectId, 'README.md')
-      break
-    case 'terminal':
-      workbench.openTerminal(projectId)
-      break
-    case 'browser':
-      workbench.openBrowser(projectId, 'https://')
-      break
-    case 'changes':
-      workbench.openChanges(projectId)
-      break
-  }
+const handleOpen = async (type: (typeof items)[number]['id']): Promise<void> => {
+  const projectId = workbench.resolveWorkspaceProjectId()
 
-  open.value = false
+  try {
+    switch (type) {
+      case 'editor':
+        await workbench.openEditor(
+          projectId,
+          activeProjectId.value ? 'README.md' : '',
+        )
+        break
+      case 'terminal':
+        await workbench.openTerminal(projectId)
+        break
+      case 'browser':
+        await workbench.openBrowser(projectId, 'https://')
+        break
+      case 'changes':
+        if (!activeProjectId.value) {
+          toast.error('Select a project', {
+            description: 'Changes requires a project with a git repository.',
+          })
+          return
+        }
+        await workbench.openChanges(projectId)
+        break
+    }
+    open.value = false
+  } catch (error) {
+    toast.error('Could not open tab', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 </script>
 
@@ -90,7 +105,7 @@ const handleOpen = (type: (typeof items)[number]['id']): void => {
             <DropdownMenuItem
               v-for="item in items"
               :key="item.id"
-              :disabled="!activeProjectId"
+              :disabled="isItemDisabled(item)"
               @click="handleOpen(item.id)"
             >
               <component :is="item.icon" class="mr-2 h-4 w-4" />

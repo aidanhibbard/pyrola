@@ -12,5 +12,6 @@ const shortModelId = (modelId: string): string => {
 export default (ref: ModelRef, customProviderName?: string): string => {
   const providerName =
     customProviderName ?? getProviderCatalogEntry(ref.providerId)?.name ?? ref.providerId
-  return `${providerName} · ${shortModelId(ref.modelId)}`
+  const modelLabel = ref.name?.trim() || shortModelId(ref.modelId)
+  return `${providerName} / ${modelLabel}`
 }

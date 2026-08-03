@@ -1,29 +1,47 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronDownIcon, ServerIcon } from '@lucide/vue'
+import { useRouter } from 'vue-router'
+import {
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  CircleIcon,
+  Loader2Icon,
+  ServerIcon,
+  SettingsIcon,
+  ShieldAlertIcon,
+} from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
-import { Badge } from '@/components/shadcn/ui/badge'
 import { Switch } from '@/components/shadcn/ui/switch'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/shadcn/ui/dropdown-menu'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/shadcn/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { toast } from 'vue-sonner'
 import useMcpServers from '@/composables/use-mcp-servers'
-import type { McpServerConfig } from '@/types/pyrola/mcp-config'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
+import { isMcpServerEnabled } from '@/schemas/mcp-config'
+import type { EffectiveMcpServer } from '@/services/mcp/merge-mcp-config'
+import type { SettingsTab } from '@/composables/use-pyrola-config'
 
 const {
   personalMcp,
   projectMcp,
   serverStates,
   loadingServers,
-  startServer,
-  stopServer,
+  setServerEnabled,
   refreshStates,
   listEffectiveMcpServers,
 } = useMcpServers()
+const config = usePyrolaConfig()
+const router = useRouter()
 
 const menuOpen = ref(false)
 const searchQuery = ref('')
@@ -42,11 +60,10 @@ const filteredServers = computed(() => {
   )
 })
 
-const runningCount = computed(() =>
-  effectiveServers.value.filter((server) => statusLabel(server.id) === 'running').length,
+const enabledCount = computed(
+  () =>
+    effectiveServers.value.filter((server) => isMcpServerEnabled(server.config)).length,
 )
-
-type McpStatusLabel = 'running' | 'stopped' | 'error'
 
 const serverStatus = (serverId: string): string =>
   serverStates.value[serverId]?.status ?? 'stopped'
@@ -54,42 +71,70 @@ const serverStatus = (serverId: string): string =>
 const isServerLoading = (serverId: string): boolean =>
   loadingServers.value[serverId] === true
 
-const isServerRunning = (serverId: string): boolean => {
-  const status = serverStatus(serverId)
-  return (
-    status === 'connected' ||
-    status === 'starting' ||
-    status === 'refreshing' ||
-    status === 'error'
-  )
-}
+const isServerEnabled = (server: EffectiveMcpServer): boolean =>
+  isMcpServerEnabled(server.config)
 
-const statusLabel = (serverId: string): McpStatusLabel => {
-  const status = serverStatus(serverId)
+const statusLabel = (server: EffectiveMcpServer): string => {
+  if (isServerLoading(server.id)) {
+    return 'Loading'
+  }
+  if (!isServerEnabled(server)) {
+    return 'Disabled'
+  }
+  const status = serverStatus(server.id)
+  if (status === 'connected') {
+    return 'Connected'
+  }
   if (status === 'error') {
-    return 'error'
+    return 'Error'
   }
-  if (status === 'connected' || status === 'starting' || status === 'refreshing') {
-    return 'running'
+  if (status === 'starting' || status === 'refreshing') {
+    return 'Starting'
   }
-  return 'stopped'
+  if (status === 'auth_required') {
+    return 'Auth required'
+  }
+  return 'Stopped'
 }
 
-const statusBadgeVariant = (label: McpStatusLabel): 'default' | 'secondary' | 'destructive' => {
-  if (label === 'running') {
-    return 'default'
+const statusIconClass = (server: EffectiveMcpServer): string => {
+  if (isServerLoading(server.id)) {
+    return 'text-muted-foreground'
   }
-  if (label === 'error') {
-    return 'destructive'
+  if (!isServerEnabled(server)) {
+    return 'text-muted-foreground/50'
   }
-  return 'secondary'
+  const status = serverStatus(server.id)
+  if (status === 'connected') {
+    return 'text-emerald-600 dark:text-emerald-400'
+  }
+  if (status === 'error') {
+    return 'text-destructive'
+  }
+  if (status === 'starting' || status === 'refreshing') {
+    return 'text-muted-foreground'
+  }
+  if (status === 'auth_required') {
+    return 'text-amber-600 dark:text-amber-400'
+  }
+  return 'text-muted-foreground'
 }
 
-const handleOpenChange = async (open: boolean): Promise<void> => {
+const settingsTabForServer = (server: EffectiveMcpServer): SettingsTab =>
+  server.scope === 'personal' ? 'personal' : 'project'
+
+const refreshOnOpen = async (open: boolean): Promise<void> => {
   menuOpen.value = open
-  if (open) {
-    searchQuery.value = ''
+  if (!open) {
+    return
+  }
+  searchQuery.value = ''
+  try {
     await refreshStates()
+  } catch (error) {
+    toast.error('Failed to refresh MCP server status', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
 }
 
@@ -103,62 +148,71 @@ onMounted(async () => {
   }
 })
 
-const toggleServerPower = async (
-  serverId: string,
-  serverConfig: McpServerConfig,
-): Promise<void> => {
-  if (isServerLoading(serverId)) {
-    return
-  }
-  if (isServerRunning(serverId)) {
-    await stopServer(serverId)
-    return
-  }
-  await startServer(serverId, serverConfig)
-}
-
 const handleToggleChange = async (
-  serverId: string,
-  serverConfig: McpServerConfig,
+  server: EffectiveMcpServer,
   checked: boolean,
 ): Promise<void> => {
-  const running = isServerRunning(serverId)
-  if (checked === running) {
+  if (isServerLoading(server.id)) {
     return
   }
-  await toggleServerPower(serverId, serverConfig)
+  if (checked === isServerEnabled(server)) {
+    return
+  }
+  try {
+    await setServerEnabled(server.id, checked, config.activeRootPath.value)
+  } catch (error) {
+    toast.error('Failed to update MCP server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> => {
+  menuOpen.value = false
+  try {
+    await router.push({
+      path: '/settings',
+      query: {
+        tab: settingsTabForServer(server),
+        section: 'mcp',
+      },
+    })
+  } catch (error) {
+    toast.error('Navigation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 </script>
 
 <template>
-  <DropdownMenu :open="menuOpen" @update:open="handleOpenChange">
-    <DropdownMenuTrigger as-child>
+  <Popover :open="menuOpen" @update:open="refreshOnOpen">
+    <PopoverTrigger as-child>
       <Button
         variant="ghost"
         size="sm"
         class="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-        :title="`${runningCount} of ${effectiveServers.length} MCP servers running`"
+        :title="`${enabledCount} of ${effectiveServers.length} MCP servers enabled`"
       >
         <ServerIcon class="size-3.5 shrink-0" />
         <span class="max-w-32 truncate">
           MCP
           <template v-if="effectiveServers.length > 0">
-            ({{ runningCount }}/{{ effectiveServers.length }})
+            ({{ enabledCount }}/{{ effectiveServers.length }})
           </template>
         </span>
         <ChevronDownIcon class="size-3 shrink-0 opacity-60" />
       </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" class="w-72 p-0">
-      <div class="border-b border-border/50 p-2" @pointerdown.stop>
+    </PopoverTrigger>
+    <PopoverContent align="end" class="w-80 p-0">
+      <div class="border-b border-border/50 p-2">
         <Input
           v-model="searchQuery"
           placeholder="Search MCP servers…"
           class="h-8"
-          @keydown.stop
         />
       </div>
-      <div class="max-h-60 overflow-y-auto p-2">
+      <div class="max-h-60 overflow-y-auto p-1">
         <p
           v-if="filteredServers.length === 0"
           class="px-2 py-4 text-center text-sm text-muted-foreground"
@@ -172,27 +226,70 @@ const handleToggleChange = async (
         <div
           v-for="server in filteredServers"
           :key="server.id"
-          class="flex items-center gap-2 rounded-md px-2 py-1.5"
+          class="flex items-center gap-1 rounded-md px-1.5 py-1.5"
         >
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium">{{ server.id }}</p>
-            <Badge
-              :variant="statusBadgeVariant(statusLabel(server.id))"
-              class="mt-0.5 capitalize"
-            >
-              {{ statusLabel(server.id) }}
-            </Badge>
-          </div>
-          <div @pointerdown.stop @click.stop>
-            <Switch
-              :checked="isServerRunning(server.id)"
-              :disabled="isServerLoading(server.id)"
-              :aria-label="`${isServerRunning(server.id) ? 'Disable' : 'Enable'} ${server.id}`"
-              @update:checked="(checked: boolean) => handleToggleChange(server.id, server.config, checked)"
-            />
-          </div>
+          <span class="min-w-0 flex-1 truncate px-1 text-sm font-medium">
+            {{ server.id }}
+          </span>
+
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="size-7 shrink-0 text-muted-foreground"
+                :aria-label="`Show ${server.id} in settings`"
+                @click="handleOpenInSettings(server)"
+              >
+                <SettingsIcon class="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Show in settings</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <span
+                class="inline-flex size-7 shrink-0 items-center justify-center"
+                :class="statusIconClass(server)"
+              >
+                <Loader2Icon
+                  v-if="isServerLoading(server.id) || serverStatus(server.id) === 'starting' || serverStatus(server.id) === 'refreshing'"
+                  class="size-3.5 animate-spin"
+                />
+                <CheckCircle2Icon
+                  v-else-if="isServerEnabled(server) && serverStatus(server.id) === 'connected'"
+                  class="size-3.5"
+                />
+                <AlertCircleIcon
+                  v-else-if="isServerEnabled(server) && serverStatus(server.id) === 'error'"
+                  class="size-3.5"
+                />
+                <ShieldAlertIcon
+                  v-else-if="isServerEnabled(server) && serverStatus(server.id) === 'auth_required'"
+                  class="size-3.5"
+                />
+                <CircleIcon
+                  v-else
+                  class="size-3.5"
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {{ statusLabel(server) }}
+            </TooltipContent>
+          </Tooltip>
+
+          <Switch
+            class="shrink-0"
+            :model-value="isServerEnabled(server)"
+            :disabled="isServerLoading(server.id)"
+            :aria-label="`${isServerEnabled(server) ? 'Disable' : 'Enable'} ${server.id}`"
+            @update:model-value="(checked: boolean) => handleToggleChange(server, checked)"
+          />
         </div>
       </div>
-    </DropdownMenuContent>
-  </DropdownMenu>
+    </PopoverContent>
+  </Popover>
 </template>

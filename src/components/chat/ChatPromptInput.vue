@@ -2,7 +2,7 @@
 import { computed, reactive, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
-import { FolderIcon, ChevronDownIcon, RotateCcwIcon, XIcon } from '@lucide/vue'
+import { FolderIcon, ChevronDownIcon, XIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   DropdownMenu,
@@ -40,7 +40,7 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import resolveModelForRole from '@/services/models/resolve-model-for-role'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import { normalizeStoredModelRef } from '@/schemas/pyrola-settings'
-import parseModelRef from '@/utils/parse-model-ref'
+import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/types'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
@@ -60,9 +60,13 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  submit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
+  submit: [payload: {
+    text: string
+    mode: PyrolaChatMode
+    model: string
+    projectId: string | null
+  }]
   submitEdit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
-  reset: [payload: { mode: PyrolaChatMode; model: string }]
   stop: []
 }>()
 
@@ -77,11 +81,15 @@ const session = reactive<{
   selectedModelRef: string
   modeInitialized: boolean
   modelInitialized: boolean
+  selectedProjectId: string | null
+  projectSelectionInitialized: boolean
 }>({
   selectedMode: 'agent',
   selectedModelRef: '',
   modeInitialized: false,
   modelInitialized: false,
+  selectedProjectId: null,
+  projectSelectionInitialized: false,
 })
 
 const hasProviders = computed(
@@ -90,27 +98,44 @@ const hasProviders = computed(
 
 const selectedModeMeta = computed(() => getChatModeMeta(session.selectedMode))
 
-const activeProjectName = computed(
-  () => fleet.activeProject.value?.name ?? 'No project',
-)
+const activeProjectName = computed(() => {
+  if (!props.showProjectSelect) {
+    return fleet.activeProject.value?.name ?? 'No project'
+  }
+  if (session.selectedProjectId === null) {
+    return 'No project'
+  }
+  return (
+    fleet.projects.value.find((project) => project.id === session.selectedProjectId)?.name ??
+    'No project'
+  )
+})
 
 const submitStatus = computed((): ChatStatus => props.status)
 
 const isEditing = computed(() => chatStore.editingMessageId.value !== null)
 
-const canReset = computed(() => chatStore.canResetToLastQuestion.value)
-
-const isAgentBusy = computed(
-  () => props.status === 'streaming' || props.status === 'submitted',
-)
-
-const resolvedModelIdForContext = computed(() => {
-  const parsed = parseModelRef(session.selectedModelRef)
-  if (parsed) {
-    return parsed.modelId
+const promptWorkspaceRoot = computed((): string | null | undefined => {
+  if (props.showProjectSelect) {
+    if (session.selectedProjectId === null) {
+      return null
+    }
+    return (
+      fleet.projects.value.find((project) => project.id === session.selectedProjectId)
+        ?.rootPath ?? null
+    )
   }
-  return session.selectedModelRef
+
+  if (chatStore.meta.value?.projectSlug === HOME_CHAT_SLUG) {
+    return null
+  }
+
+  return undefined
 })
+
+const showGitBranch = computed(
+  () => git.isRepo.value && promptWorkspaceRoot.value !== null,
+)
 
 const resolveInitialModelRef = (mode: PyrolaChatMode, metaModel?: string): string => {
   const settings = config.effectiveSettings.value
@@ -135,7 +160,11 @@ const handleModeSelect = (mode: PyrolaChatMode): void => {
   }
 }
 
-const handleProjectSelect = async (projectId: string): Promise<void> => {
+const handleProjectSelect = async (projectId: string | null): Promise<void> => {
+  session.selectedProjectId = projectId
+  if (!projectId) {
+    return
+  }
   try {
     await fleet.setActiveProject(projectId)
   } catch (error) {
@@ -168,9 +197,16 @@ const handleSubmit = (payload: PromptInputMessage): void => {
     text,
     mode: session.selectedMode,
     model: session.selectedModelRef,
+    projectId: props.showProjectSelect
+      ? session.selectedProjectId
+      : fleet.activeProject.value?.id ?? null,
   }
   if (isEditing.value) {
-    emit('submitEdit', submitPayload)
+    emit('submitEdit', {
+      text: submitPayload.text,
+      mode: submitPayload.mode,
+      model: submitPayload.model,
+    })
     return
   }
   emit('submit', submitPayload)
@@ -180,40 +216,60 @@ const handleCancelEdit = (): void => {
   chatStore.cancelEditMessage()
 }
 
-const handleReset = (): void => {
-  if (!canReset.value || isAgentBusy.value || props.disabled) {
-    return
-  }
-  if (!session.selectedModelRef) {
-    toast.error('Select a model before resetting')
-    return
-  }
-  emit('reset', {
-    mode: session.selectedMode,
-    model: session.selectedModelRef,
-  })
-}
-
 const refreshContextBudget = async (): Promise<void> => {
   if (!props.showContextUsage) {
     return
   }
 
-  const project = fleet.activeProject.value
-  const modelId =
-    resolvedModelIdForContext.value || chatStore.meta.value?.model || ''
-  if (!project || !modelId) {
+  const modelId = session.selectedModelRef || chatStore.meta.value?.model || ''
+  if (!modelId) {
     return
   }
+
+  const meta = chatStore.meta.value
+  const project = fleet.activeProject.value
+  const standalone = meta?.projectSlug === HOME_CHAT_SLUG
+  const projectRoot = standalone
+    ? meta?.projectRoot
+    : project?.rootPath ?? meta?.projectRoot
+  if (!projectRoot) {
+    return
+  }
+
+  const projectName = standalone
+    ? 'Home'
+    : project?.name ?? meta?.projectSlug ?? 'Home'
 
   await contextUsage.refresh({
     modelId,
     mode: session.selectedMode,
-    projectName: project.name,
-    projectRoot: project.rootPath,
+    projectName,
+    projectRoot,
     messages: chatStore.messages.value,
+    settings: config.effectiveSettings.value,
+    standalone,
   })
 }
+
+watch(
+  promptWorkspaceRoot,
+  (root) => {
+    git.setWorkspaceRoot(root)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => fleet.loaded.value,
+  (loaded) => {
+    if (!loaded || session.projectSelectionInitialized || !props.showProjectSelect) {
+      return
+    }
+    session.selectedProjectId = fleet.activeProject.value?.id ?? null
+    session.projectSelectionInitialized = true
+  },
+  { immediate: true },
+)
 
 watch(
   () => config.hydrated.value,
@@ -266,11 +322,14 @@ watch(
     () => chatStore.meta.value?.model,
   ],
   () => {
-    refreshContextBudget().catch((error) => {
-      toast.error('Failed to refresh context usage', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+    const timer = window.setTimeout(() => {
+      refreshContextBudget().catch((error) => {
+        toast.error('Failed to refresh context usage', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
       })
-    })
+    }, 0)
+    return () => window.clearTimeout(timer)
   },
   { immediate: true },
 )
@@ -292,6 +351,9 @@ watch(
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" class="w-56">
+        <DropdownMenuItem @select="handleProjectSelect(null)">
+          No project
+        </DropdownMenuItem>
         <DropdownMenuItem
           v-for="project in fleet.projects.value"
           :key="project.id"
@@ -365,18 +427,6 @@ watch(
           </PromptInputActionMenu>
         </PromptInputTools>
         <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
-          <Button
-            v-if="canReset"
-            type="button"
-            variant="ghost"
-            size="icon"
-            class="size-8 shrink-0"
-            title="Reset to last question"
-            :disabled="disabled || isAgentBusy"
-            @click="handleReset"
-          >
-            <RotateCcwIcon class="size-4" />
-          </Button>
           <ModelsSearchModelSearchPicker
             :model-value="session.selectedModelRef"
             compact
@@ -393,7 +443,7 @@ watch(
       </PromptInputFooter>
     </PromptInput>
     <div class="mt-1 flex items-center gap-2 px-1">
-      <ChatGitBranchSelect v-if="git.isRepo.value" />
+      <ChatGitBranchSelect v-if="showGitBranch" />
       <div v-else />
       <div class="ml-auto flex items-center gap-2">
         <ChatMcpServerPicker />

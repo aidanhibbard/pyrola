@@ -623,13 +623,17 @@ pub fn fs_list_dir(project_root: String, path: String) -> Result<Vec<FsDirEntry>
   }
 
   let mut entries = Vec::new();
-  for entry in fs::read_dir(&absolute).map_err(|error| error.to_string())? {
-    let entry = entry.map_err(|error| error.to_string())?;
-    let entry_path = entry.path();
-    let name = entry.file_name().to_string_lossy().to_string();
-    let rel = relative_path(&root, &entry_path);
-    let kind = entry_kind(&entry_path)?;
-    entries.push(FsDirEntry { name, path: rel, kind });
+  // Skip unreadable entries instead of failing the whole listing.
+  if let Ok(read_dir) = fs::read_dir(&absolute) {
+    for entry in read_dir.flatten() {
+      let entry_path = entry.path();
+      let Ok(kind) = entry_kind(&entry_path) else {
+        continue;
+      };
+      let name = entry.file_name().to_string_lossy().to_string();
+      let rel = relative_path(&root, &entry_path);
+      entries.push(FsDirEntry { name, path: rel, kind });
+    }
   }
 
   entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
@@ -646,9 +650,14 @@ fn build_tree(root: &Path, dir: &Path, depth: u32, max_depth: u32) -> Result<FsT
 
   let children = if kind == "directory" && depth < max_depth {
     let mut nodes = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|error| error.to_string())? {
-      let entry = entry.map_err(|error| error.to_string())?;
-      nodes.push(build_tree(root, &entry.path(), depth + 1, max_depth)?);
+    // Skip unreadable entries (common in home dirs: Library, .Trash, etc.)
+    // instead of failing the entire tree.
+    if let Ok(read_dir) = fs::read_dir(dir) {
+      for entry in read_dir.flatten() {
+        if let Ok(node) = build_tree(root, &entry.path(), depth + 1, max_depth) {
+          nodes.push(node);
+        }
+      }
     }
     nodes.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
     Some(nodes)

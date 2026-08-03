@@ -4,29 +4,33 @@ import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
-import ChatChatBreadcrumbs from '@/components/chat/ChatBreadcrumbs.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
-import { useSidebar } from '@/components/shadcn/ui/sidebar'
+import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
-import useWorkbenchStore from '@/composables/use-workbench-store'
 import { consumePendingChatMessage } from '@/services/chat/pending-message'
+import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
+import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const route = useRoute()
 const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
-const { open: leftSidebarOpen, isMobile } = useSidebar()
-const { rightSidebarOpen } = useWorkbenchStore()
 
 const harness = ref<ReturnType<typeof useAgentHarness> | null>(null)
 const threadReady = ref(false)
 const loadedThreadKey = ref<string | null>(null)
+const homeRoot = ref<string | null>(null)
 
-const projectSlug = computed(() => String(route.params.slug ?? ''))
+const isStandalone = computed(
+  () => route.name === 'home-chat' || isHomeChatSlug(String(route.params.slug ?? '')),
+)
+const projectSlug = computed(() =>
+  isStandalone.value ? HOME_CHAT_SLUG : String(route.params.slug ?? ''),
+)
 const chatId = computed(() => String(route.params.chatId ?? ''))
 const project = computed(
   () => fleet.projects.value.find((item) => item.slug === projectSlug.value) ?? null,
@@ -37,29 +41,27 @@ const harnessPendingApprovals = computed(
 )
 const pendingQuestion = computed(() => chatStore.pendingQuestion.value)
 const timeline = computed(() => chatStore.timeline.value)
+const todos = computed(() => chatStore.todos.value)
 
-// Keep the breadcrumb clear of the TitleBar controls (traffic lights, toggles).
-// Desktop sidebar open (non-sheet) already offsets the chat column past them.
-const titleSafePadding = computed(() => [
-  leftSidebarOpen.value && !isMobile.value ? 'pl-4' : 'pl-(--titlebar-safe-left)',
-  rightSidebarOpen.value ? 'pr-4' : 'pr-(--titlebar-safe-right)',
-])
-
-const initHarness = (): void => {
-  if (!project.value || !chatId.value) {
+const initHarness = (root: string, name: string): void => {
+  if (!chatId.value) {
     harness.value = null
     return
   }
   harness.value = useAgentHarness({
     projectSlug: projectSlug.value,
     chatId: chatId.value,
-    projectRoot: project.value.rootPath,
-    projectName: project.value.name,
+    projectRoot: root,
+    projectName: name,
+    standalone: isStandalone.value,
   })
 }
 
 const loadThread = async (): Promise<void> => {
-  if (!projectSlug.value || !chatId.value || !fleet.loaded.value) {
+  if (!chatId.value || !fleet.loaded.value) {
+    return
+  }
+  if (!isStandalone.value && !projectSlug.value) {
     return
   }
 
@@ -68,18 +70,27 @@ const loadThread = async (): Promise<void> => {
     return
   }
 
-  if (!project.value) {
-    toast.error('Project not found', {
-      description: `No project registered for slug "${projectSlug.value}"`,
-    })
-    return
+  threadReady.value = false
+
+  if (isStandalone.value) {
+    if (!homeRoot.value) {
+      homeRoot.value = await getUserHomeDir()
+    }
+    await chatStore.loadChat(HOME_CHAT_SLUG, chatId.value)
+    initHarness(homeRoot.value, 'Home')
+  } else {
+    if (!project.value) {
+      toast.error('Project not found', {
+        description: `No project registered for slug "${projectSlug.value}"`,
+      })
+      return
+    }
+    await fleet.setActiveProject(project.value.id)
+    await chatStore.loadChat(projectSlug.value, chatId.value)
+    initHarness(project.value.rootPath, project.value.name)
   }
 
-  threadReady.value = false
-  await fleet.setActiveProject(project.value.id)
-  await chatStore.loadChat(projectSlug.value, chatId.value)
-  initHarness()
-  await fleetSidebar.refreshAll()
+  await fleetSidebar.refreshSlug(projectSlug.value)
   loadedThreadKey.value = threadKey
   threadReady.value = true
 
@@ -90,7 +101,7 @@ const loadThread = async (): Promise<void> => {
       mode: pending.mode,
       model: pending.model,
     })
-    await fleetSidebar.refreshAll()
+    await fleetSidebar.refreshSlug(projectSlug.value)
   }
 }
 
@@ -105,7 +116,7 @@ const handleSubmit = async (payload: {
   }
   if (!harness.value) {
     toast.error('Chat is not ready yet', {
-      description: 'Wait for the project to finish loading.',
+      description: 'Wait for the chat to finish loading.',
     })
     return
   }
@@ -114,7 +125,7 @@ const handleSubmit = async (payload: {
     mode: payload.mode,
     model: payload.model,
   })
-  await fleetSidebar.refreshAll()
+  await fleetSidebar.refreshSlug(projectSlug.value)
 }
 
 const handleSubmitEdit = async (payload: {
@@ -124,7 +135,7 @@ const handleSubmitEdit = async (payload: {
 }): Promise<void> => {
   if (!harness.value) {
     toast.error('Chat is not ready yet', {
-      description: 'Wait for the project to finish loading.',
+      description: 'Wait for the chat to finish loading.',
     })
     return
   }
@@ -133,24 +144,7 @@ const handleSubmitEdit = async (payload: {
     mode: payload.mode,
     model: payload.model,
   })
-  await fleetSidebar.refreshAll()
-}
-
-const handleReset = async (payload: {
-  mode: PyrolaChatMode
-  model: string
-}): Promise<void> => {
-  if (!harness.value) {
-    toast.error('Chat is not ready yet', {
-      description: 'Wait for the project to finish loading.',
-    })
-    return
-  }
-  await harness.value.resetToLastQuestion({
-    mode: payload.mode,
-    model: payload.model,
-  })
-  await fleetSidebar.refreshAll()
+  await fleetSidebar.refreshSlug(projectSlug.value)
 }
 
 const handleStop = (): void => {
@@ -169,6 +163,25 @@ const handleSubmitAnswer = (toolCallId: string, answer: string): void => {
   harness.value?.submitAnswer(toolCallId, answer)
 }
 
+const handleRetry = async (): Promise<void> => {
+  if (!harness.value) {
+    toast.error('Chat is not ready yet', {
+      description: 'Wait for the chat to finish loading.',
+    })
+    return
+  }
+  const model = chatStore.meta.value?.model
+  const mode = chatStore.meta.value?.mode ?? 'agent'
+  if (!model) {
+    toast.error('Select a model before retrying')
+    return
+  }
+  await harness.value.retryLastTurn({
+    mode,
+    model,
+  })
+}
+
 onMounted(() => {
   loadThread().catch((error) => {
     toast.error('Failed to load chat', {
@@ -177,7 +190,7 @@ onMounted(() => {
   })
 })
 
-watch([projectSlug, chatId, () => fleet.loaded.value], () => {
+watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
   loadThread().catch((error) => {
     toast.error('Failed to load chat', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -188,17 +201,6 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
 
 <template>
   <div class="relative flex h-full min-h-0 flex-col">
-    <div
-      class="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-(--titlebar-height) -translate-y-full items-center"
-      style="--titlebar-height: 40px"
-    >
-      <div
-        class="pointer-events-auto mx-auto flex w-full min-w-0 max-w-3xl"
-        :class="titleSafePadding"
-      >
-        <ChatChatBreadcrumbs class="min-w-0 flex-1" />
-      </div>
-    </div>
     <ChatThread
       class="min-h-0 flex-1"
       :timeline="timeline"
@@ -208,15 +210,20 @@ watch([projectSlug, chatId, () => fleet.loaded.value], () => {
       @approve="handleApprove"
       @reject="handleReject"
       @submit-answer="handleSubmitAnswer"
+      @retry="handleRetry"
     />
     <div class="shrink-0 px-4 pb-4 pt-2">
+      <ChatTodoTimeline
+        v-if="todos.length > 0"
+        :todos="todos"
+        class="mx-auto mb-2 w-full max-w-3xl"
+      />
       <ChatPromptInput
         :status="harnessStatus"
         :disabled="!threadReady"
         show-context-usage
         @submit="handleSubmit"
         @submit-edit="handleSubmitEdit"
-        @reset="handleReset"
         @stop="handleStop"
       />
     </div>

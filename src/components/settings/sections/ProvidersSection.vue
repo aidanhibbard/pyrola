@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from '@lucide/vue'
+import { KeyRound, Loader2, Pencil, Plus, RefreshCw, Settings2, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -9,7 +9,6 @@ import {
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
 import { Input } from '@/components/shadcn/ui/input'
-import { Label } from '@/components/shadcn/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -19,11 +18,13 @@ import {
 } from '@/components/shadcn/ui/dialog'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import SettingsInputPasswordInput from '@/components/settings/input/PasswordInput.vue'
+import SettingsProvidersManageProviderDialog from '@/components/settings/providers/ManageProviderDialog.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import {
+  getCustomProvider,
   getProviderCatalogEntry,
   keychainKeyForProvider,
   AI_SDK_PROVIDER_CATALOG,
@@ -42,12 +43,11 @@ const config = usePyrolaConfig()
 const testingProviderId = ref<string | null>(null)
 const apiKeyConfigured = ref<Record<string, boolean>>({})
 const addDialogOpen = ref(false)
-const customDialogOpen = ref(false)
-const editProviderId = ref<string | null>(null)
+const manageDialogOpen = ref(false)
+const manageMode = ref<'create' | 'edit'>('create')
+const manageProviderId = ref<string | null>(null)
+const editApiKeyProviderId = ref<string | null>(null)
 const apiKeyInput = ref('')
-const customName = ref('')
-const customBaseUrl = ref('http://localhost:1234/v1')
-const customApiKeyInput = ref('')
 const providerSearchQuery = ref('')
 
 let apiKeyStatusGeneration = 0
@@ -91,9 +91,15 @@ const hasProviderSearchResults = computed(
     filteredOpenAiCompatibleProviders.value.length > 0,
 )
 
+const manageInitialProvider = computed((): PyrolaCustomProvider | null => {
+  if (!manageProviderId.value) {
+    return null
+  }
+  return getCustomProvider(settings.value, manageProviderId.value) ?? null
+})
+
 const getApiKeyRef = (providerId: string): string | undefined => {
-  const customKey = `providers.custom.${providerId}` as const
-  const custom = settings.value[customKey] as PyrolaCustomProvider | undefined
+  const custom = getCustomProvider(settings.value, providerId)
   if (custom?.apiKeyRef) {
     return custom.apiKeyRef
   }
@@ -102,13 +108,15 @@ const getApiKeyRef = (providerId: string): string | undefined => {
 }
 
 const getProviderDisplayName = (providerId: string): string => {
-  const customKey = `providers.custom.${providerId}` as const
-  const custom = settings.value[customKey] as PyrolaCustomProvider | undefined
+  const custom = getCustomProvider(settings.value, providerId)
   if (custom?.name) {
     return custom.name
   }
   return getProviderCatalogEntry(providerId)?.name ?? providerId
 }
+
+const isCustomProvider = (providerId: string): boolean =>
+  Boolean(getCustomProvider(settings.value, providerId))
 
 const hasApiKeyInKeychain = (providerId: string): boolean =>
   apiKeyConfigured.value[providerId] === true
@@ -149,40 +157,55 @@ const setApiKeyConfigured = (providerId: string, configured: boolean): void => {
   }
 }
 
+const getCustomModelCount = (providerId: string): number =>
+  getCustomProvider(settings.value, providerId)?.models?.length ?? 0
+
 const openApiKeyDialog = (providerId: string): void => {
   apiKeyInput.value = ''
-  editProviderId.value = providerId
+  editApiKeyProviderId.value = providerId
 }
 
 const openAddDialog = (): void => {
-  customName.value = ''
-  customBaseUrl.value = 'http://localhost:1234/v1'
-  customApiKeyInput.value = ''
   providerSearchQuery.value = ''
   addDialogOpen.value = true
 }
 
-const openCustomDialog = (): void => {
+const openCreateCustomDialog = (): void => {
   addDialogOpen.value = false
-  customName.value = ''
-  customBaseUrl.value = 'http://localhost:1234/v1'
-  customApiKeyInput.value = ''
-  customDialogOpen.value = true
+  manageMode.value = 'create'
+  manageProviderId.value = null
+  manageDialogOpen.value = true
+}
+
+const openManageCustomDialog = (providerId: string): void => {
+  manageMode.value = 'edit'
+  manageProviderId.value = providerId
+  manageDialogOpen.value = true
+}
+
+const openEditDialog = (providerId: string): void => {
+  if (isCustomProvider(providerId)) {
+    openManageCustomDialog(providerId)
+    return
+  }
+  openApiKeyDialog(providerId)
+}
+
+const resolveManageStoredApiKey = async (): Promise<string> => {
+  if (!manageProviderId.value) {
+    return ''
+  }
+  const ref = getApiKeyRef(manageProviderId.value)
+  if (!ref) {
+    return ''
+  }
+  return (await getSecret(keychainKeyForProvider(ref))) ?? ''
 }
 
 const handleAddDialogOpenChange = (open: boolean): void => {
   addDialogOpen.value = open
   if (!open) {
     providerSearchQuery.value = ''
-  }
-}
-
-const handleCustomDialogOpenChange = (open: boolean): void => {
-  customDialogOpen.value = open
-  if (!open) {
-    customName.value = ''
-    customBaseUrl.value = 'http://localhost:1234/v1'
-    customApiKeyInput.value = ''
   }
 }
 
@@ -194,48 +217,53 @@ const addProvider = async (providerId: string): Promise<void> => {
     ref,
   )
   addDialogOpen.value = false
-  if (providerRequiresApiKey(providerId)) {
+  if (providerRequiresApiKey(providerId, settings.value)) {
     openApiKeyDialog(providerId)
   }
 }
 
-const saveCustomProvider = async (): Promise<void> => {
-  if (!customName.value.trim()) {
-    toast.error('Provider name is required')
-    return
-  }
-  if (!customBaseUrl.value.trim()) {
-    toast.error('Base URL is required')
-    return
-  }
-
+const handleManageSave = async (payload: {
+  providerId: string
+  provider: PyrolaCustomProvider
+  apiKey: string | null
+  clearApiKey: boolean
+}): Promise<void> => {
+  const wasCreate = manageMode.value === 'create'
   try {
-    const id = customName.value.toLowerCase().replace(/\s+/g, '-')
-    const provider: PyrolaCustomProvider = {
-      type: 'openai-compatible',
-      baseURL: customBaseUrl.value.trim(),
-      apiKeyRef: id,
-      name: customName.value.trim(),
-    }
     await config.updateSetting(
       props.tab,
-      `providers.custom.${id}` as keyof typeof settings.value,
-      provider,
+      `providers.custom.${payload.providerId}` as keyof typeof settings.value,
+      payload.provider,
     )
 
-    if (customApiKeyInput.value.trim()) {
-      await setSecret(keychainKeyForProvider(id), customApiKeyInput.value.trim())
-      setApiKeyConfigured(id, true)
+    const keyRef = payload.provider.apiKeyRef ?? payload.providerId
+    if (payload.clearApiKey) {
+      await deleteSecret(keychainKeyForProvider(keyRef))
+      setApiKeyConfigured(payload.providerId, false)
+    } else if (payload.apiKey) {
+      await setSecret(keychainKeyForProvider(keyRef), payload.apiKey)
+      setApiKeyConfigured(payload.providerId, true)
     }
 
-    customDialogOpen.value = false
-    customName.value = ''
-    customBaseUrl.value = 'http://localhost:1234/v1'
-    customApiKeyInput.value = ''
     await refreshApiKeyStatus()
-    toast.success('Provider added')
+
+    if (wasCreate) {
+      manageMode.value = 'edit'
+      manageProviderId.value = payload.providerId
+      manageDialogOpen.value = true
+      toast.success('Provider added', {
+        description: 'Add or edit models below, then save again when you are done.',
+      })
+      return
+    }
+
+    // Keep the manage dialog open after edit so models can be iterated on.
+    manageProviderId.value = payload.providerId
+    manageMode.value = 'edit'
+    manageDialogOpen.value = true
+    toast.success('Provider saved')
   } catch (error) {
-    toast.error('Failed to add provider', {
+    toast.error('Failed to save provider', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   }
@@ -252,7 +280,7 @@ const saveApiKey = async (providerId: string): Promise<void> => {
     await setSecret(keychainKeyForProvider(ref), apiKeyInput.value.trim())
     setApiKeyConfigured(providerId, true)
     apiKeyInput.value = ''
-    editProviderId.value = null
+    editApiKeyProviderId.value = null
     await refreshApiKeyStatus()
     toast.success('API key saved')
   } catch (error) {
@@ -287,10 +315,9 @@ const removeProvider = async (providerId: string): Promise<void> => {
       await deleteSecret(keychainKeyForProvider(ref))
     }
 
-    const customKey = `providers.custom.${providerId}` as const
-    const isCustom = Boolean(settings.value[customKey])
+    const isCustom = isCustomProvider(providerId)
     const keysToRemove = isCustom
-      ? [customKey]
+      ? [`providers.custom.${providerId}`]
       : [`providers.${providerId}.apiKeyRef`]
 
     await config.removeSettings(props.tab, keysToRemove)
@@ -305,23 +332,18 @@ const removeProvider = async (providerId: string): Promise<void> => {
 const testConnection = async (providerId: string): Promise<void> => {
   testingProviderId.value = providerId
   try {
+    const custom = getCustomProvider(settings.value, providerId)
+    const requiresKey = providerRequiresApiKey(providerId, settings.value)
     const ref = getApiKeyRef(providerId)
-    const requiresKey = providerRequiresApiKey(providerId)
     let apiKey = ''
 
-    if (requiresKey) {
-      if (!ref) {
-        throw new Error('No API key configured')
-      }
-      const secret = await getSecret(keychainKeyForProvider(ref))
-      if (!secret) {
-        throw new Error('No API key in keychain')
-      }
-      apiKey = secret
+    if (ref) {
+      apiKey = (await getSecret(keychainKeyForProvider(ref))) ?? ''
     }
 
-    const customKey = `providers.custom.${providerId}` as const
-    const custom = settings.value[customKey] as PyrolaCustomProvider | undefined
+    if (requiresKey && !apiKey) {
+      throw new Error(ref ? 'No API key in keychain' : 'No API key configured')
+    }
 
     await testProviderConnection({
       providerId: custom ? 'openai' : providerId,
@@ -394,10 +416,18 @@ watch(
               {{
                 hasApiKeyInKeychain(providerId)
                   ? 'API key configured'
-                  : providerRequiresApiKey(providerId)
+                  : providerRequiresApiKey(providerId, settings)
                     ? 'No API key'
                     : 'API key optional'
               }}
+              <template v-if="isCustomProvider(providerId)">
+                ·
+                {{
+                  getCustomModelCount(providerId) > 0
+                    ? `${getCustomModelCount(providerId)} model${getCustomModelCount(providerId) === 1 ? '' : 's'}`
+                    : 'No models configured'
+                }}
+              </template>
             </p>
           </div>
           <div class="flex items-center gap-0.5">
@@ -407,14 +437,27 @@ watch(
                   variant="ghost"
                   size="icon"
                   class="h-8 w-8"
-                  :aria-label="hasApiKeyInKeychain(providerId) ? 'Edit key' : 'Add key'"
-                  @click="openApiKeyDialog(providerId)"
+                  :aria-label="
+                    isCustomProvider(providerId)
+                      ? 'Manage provider and models'
+                      : hasApiKeyInKeychain(providerId)
+                        ? 'Edit key'
+                        : 'Add key'
+                  "
+                  @click="openEditDialog(providerId)"
                 >
-                  <Pencil class="h-4 w-4" />
+                  <Settings2 v-if="isCustomProvider(providerId)" class="h-4 w-4" />
+                  <Pencil v-else class="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {{ hasApiKeyInKeychain(providerId) ? 'Edit key' : 'Add key' }}
+                {{
+                  isCustomProvider(providerId)
+                    ? 'Manage provider & models'
+                    : hasApiKeyInKeychain(providerId)
+                      ? 'Edit key'
+                      : 'Add key'
+                }}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -479,7 +522,7 @@ watch(
           <Button
             variant="ghost"
             class="h-auto w-full justify-start px-3 py-2.5 font-normal"
-            @click="openCustomDialog"
+            @click="openCreateCustomDialog"
           >
             Custom OpenAI-compatible
           </Button>
@@ -523,61 +566,35 @@ watch(
       </DialogContent>
     </Dialog>
 
-    <Dialog :open="customDialogOpen" @update:open="handleCustomDialogOpenChange">
-      <DialogContent :class="dialogSurfaceClass">
-        <DialogHeader>
-          <DialogTitle>Custom OpenAI-compatible provider</DialogTitle>
-        </DialogHeader>
-        <p class="text-sm text-muted-foreground">
-          Connect a private or self-hosted endpoint that speaks the OpenAI API, such as LM Studio,
-          vLLM, or an internal gateway.
-        </p>
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label for="custom-provider-name">Name</Label>
-            <Input
-              id="custom-provider-name"
-              v-model="customName"
-              placeholder="LM Studio"
-            />
-          </div>
-          <div class="space-y-2">
-            <Label for="custom-provider-base-url">Base URL</Label>
-            <Input
-              id="custom-provider-base-url"
-              v-model="customBaseUrl"
-              placeholder="http://localhost:1234/v1"
-            />
-          </div>
-          <div class="space-y-2">
-            <Label for="custom-provider-api-key">API key (optional)</Label>
-            <SettingsInputPasswordInput
-              id="custom-provider-api-key"
-              v-model="customApiKeyInput"
-              placeholder="sk-..."
-            />
-            <p class="text-xs text-muted-foreground">
-              Leave blank for local servers that do not require authentication.
-            </p>
-          </div>
-        </div>
-        <DialogFooter class="gap-2 sm:justify-end">
-          <Button variant="outline" @click="customDialogOpen = false">Cancel</Button>
-          <Button @click="saveCustomProvider">Add provider</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <SettingsProvidersManageProviderDialog
+      v-model:open="manageDialogOpen"
+      :mode="manageMode"
+      :provider-id="manageProviderId"
+      :initial-provider="manageInitialProvider"
+      :initial-api-key-configured="
+        manageProviderId ? hasApiKeyInKeychain(manageProviderId) : false
+      "
+      :resolve-stored-api-key="resolveManageStoredApiKey"
+      @save="handleManageSave"
+    />
 
-    <Dialog :open="!!editProviderId" @update:open="(open) => !open && (editProviderId = null)">
+    <Dialog
+      :open="!!editApiKeyProviderId"
+      @update:open="(open) => !open && (editApiKeyProviderId = null)"
+    >
       <DialogContent :class="dialogSurfaceClass">
         <DialogHeader>
           <DialogTitle>
-            {{ editProviderId && hasApiKeyInKeychain(editProviderId) ? 'Edit API key' : 'Add API key' }}
+            {{
+              editApiKeyProviderId && hasApiKeyInKeychain(editApiKeyProviderId)
+                ? 'Edit API key'
+                : 'Add API key'
+            }}
           </DialogTitle>
         </DialogHeader>
         <SettingsInputPasswordInput v-model="apiKeyInput" placeholder="sk-..." />
         <DialogFooter>
-          <Button @click="editProviderId && saveApiKey(editProviderId)">Save</Button>
+          <Button @click="editApiKeyProviderId && saveApiKey(editApiKeyProviderId)">Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

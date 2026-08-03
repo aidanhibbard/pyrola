@@ -15,7 +15,7 @@ import runOrchestrator, {
   resumeOrchestrator,
 } from '@/services/harness/orchestrator'
 import { resolveApproval } from '@/services/harness/approval-gate'
-import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
+import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import {
@@ -28,6 +28,7 @@ export type AgentHarnessOptions = {
   chatId: string
   projectRoot: string
   projectName: string
+  standalone?: boolean
 }
 
 export type { ToolRun } from '@/types/harness/tool-run'
@@ -37,6 +38,7 @@ export default (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
   const config = usePyrolaConfig()
   const contextUsage = useContextUsage()
+  const fleetSidebar = useFleetSidebar()
 
   const status = ref<ChatStatus>('ready')
   const error = ref<string | null>(null)
@@ -183,7 +185,7 @@ export default (options: AgentHarnessOptions) => {
       ) {
         chatStore.patchMeta({ title: event.patch.title })
       }
-      refreshFleetSidebar().catch((error) => {
+      fleetSidebar.refreshSlug(options.projectSlug).catch((error) => {
         toast.error('Failed to refresh sidebar', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
@@ -258,7 +260,7 @@ export default (options: AgentHarnessOptions) => {
       })
       status.value = 'ready'
       chatStore.finishAgentTurn()
-      await refreshFleetSidebar()
+      await fleetSidebar.refreshSlug(options.projectSlug)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unknown error'
       status.value = 'error'
@@ -323,6 +325,10 @@ export default (options: AgentHarnessOptions) => {
         id: crypto.randomUUID(),
         role: 'user',
         parts: [{ type: 'text', text: args.text }],
+        metadata: {
+          createdAt: new Date().toISOString(),
+          model: args.model,
+        },
       })
     }
 
@@ -349,21 +355,37 @@ export default (options: AgentHarnessOptions) => {
         onEvent: handleEvent,
         assistantId: turnId,
         skipUserPersist: args.skipUserPersist,
+        standalone: options.standalone,
       })
       status.value = 'ready'
       chatStore.finishAgentTurn()
-      await refreshFleetSidebar()
+      await fleetSidebar.refreshSlug(options.projectSlug)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Unknown error'
+      const aborted = controller.signal.aborted
+      const timedOut =
+        err instanceof Error &&
+        (err.name === 'TimeoutError' || /timeout/i.test(err.message))
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      error.value = message
       status.value = 'error'
-      chatStore.finishAgentTurn()
-      const description =
-        error.value.includes('No output generated')
-          ? 'The model returned an empty response. Check your Gateway API key and model ID in Settings.'
-          : error.value
-      toast.error('Agent run failed', {
-        description,
+      chatStore.setAgentTurnError({
+        kind: timedOut ? 'timeout' : aborted ? 'aborted' : 'error',
+        message: timedOut
+          ? 'The model took too long to respond.'
+          : aborted
+            ? 'The run was stopped.'
+            : message.includes('No output generated')
+              ? 'The model returned an empty response. Check your API key and model ID in Settings.'
+              : message,
       })
+      chatStore.finishAgentTurn()
+      if (!aborted) {
+        toast.error('Agent run failed', {
+          description: error.value.includes('No output generated')
+            ? 'The model returned an empty response. Check your Gateway API key and model ID in Settings.'
+            : error.value,
+        })
+      }
     } finally {
       abortController.value = null
     }
@@ -403,7 +425,7 @@ export default (options: AgentHarnessOptions) => {
     }
   }
 
-  const resetToLastQuestion = async (args: {
+  const retryLastTurn = async (args: {
     mode: PyrolaChatMode
     model: string
   }): Promise<void> => {
@@ -438,7 +460,7 @@ export default (options: AgentHarnessOptions) => {
         skipUserPersist: true,
       })
     } catch (error) {
-      toast.error('Failed to reset conversation', {
+      toast.error('Failed to retry', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
@@ -447,6 +469,10 @@ export default (options: AgentHarnessOptions) => {
   const stop = (): void => {
     abortController.value?.abort()
     abortSubagentsForChat(options.chatId)
+    chatStore.setAgentTurnError({
+      kind: 'aborted',
+      message: 'The run was stopped.',
+    })
     status.value = 'ready'
   }
 
@@ -473,7 +499,7 @@ export default (options: AgentHarnessOptions) => {
     liveEvents,
     send,
     submitEditMessage,
-    resetToLastQuestion,
+    retryLastTurn,
     stop,
     approve,
     reject,

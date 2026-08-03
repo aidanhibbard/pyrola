@@ -17,7 +17,6 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useProviderModelsCatalog from '@/composables/use-provider-models-catalog'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import serializeModelRef from '@/utils/serialize-model-ref'
-import formatModelRefLabel from '@/utils/format-model-ref-label'
 import parseModelRef from '@/utils/parse-model-ref'
 
 const props = withDefaults(
@@ -67,12 +66,7 @@ const displayLabel = computed(() => {
     return props.placeholder
   }
 
-  const parsed = parseModelRef(props.modelValue)
-  if (!parsed) {
-    return props.modelValue
-  }
-
-  return formatModelRefLabel(parsed)
+  return catalog.labelForSerialized(props.modelValue)
 })
 
 const compactLabel = computed(() => {
@@ -166,7 +160,9 @@ const openProvidersSettings = async (): Promise<void> => {
               @select="handleSelect(model.providerId, model.modelId)"
             >
               <ModelsSearchModelSelectorLogo :provider="model.providerId" />
-              <ModelsSearchModelSelectorName>{{ model.modelId }}</ModelsSearchModelSelectorName>
+              <ModelsSearchModelSelectorName>
+                {{ model.name || model.modelId }}
+              </ModelsSearchModelSelectorName>
             </ModelsSearchModelSelectorItem>
           </ModelsSearchModelSelectorGroup>
         </template>

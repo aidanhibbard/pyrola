@@ -68,7 +68,7 @@ const mastheadMeta = computed(() => {
   if (frontmatter.value.source) {
     parts.push(frontmatter.value.source)
   }
-  return parts.join(' · ')
+  return parts.join(', ')
 })
 
 const showMasthead = computed(

@@ -28,6 +28,7 @@ import {
   type CommandPaletteTab,
 } from '@/types/navigation/command-palette-item'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import chatRouteFor from '@/utils/chat-route-for'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 
 const router = useRouter()
@@ -84,26 +85,28 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
     }
 
     if (item.action === 'open-terminal') {
-      const projectId = fleet.activeProjectId.value
-      if (!projectId) {
-        toast.error('No active project', {
-          description: 'Select a project before opening the terminal.',
+      try {
+        await workbench.openTerminal(workbench.resolveWorkspaceProjectId())
+      } catch (error) {
+        toast.error('Could not open terminal', {
+          description: error instanceof Error ? error.message : 'Unknown error',
         })
-        return
       }
-      await workbench.openTerminal(projectId)
       return
     }
 
     if (item.action === 'open-editor') {
-      const projectId = fleet.activeProjectId.value
-      if (!projectId) {
-        toast.error('No active project', {
-          description: 'Select a project before opening the editor.',
+      try {
+        const projectId = workbench.resolveWorkspaceProjectId()
+        await workbench.openEditor(
+          projectId,
+          fleet.activeProjectId.value ? 'README.md' : '',
+        )
+      } catch (error) {
+        toast.error('Could not open editor', {
+          description: error instanceof Error ? error.message : 'Unknown error',
         })
-        return
       }
-      await workbench.openEditor(projectId, 'README.md')
       return
     }
 
@@ -116,7 +119,7 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
     }
 
     if (item.chatId && item.projectSlug) {
-      await router.push(`/project/${item.projectSlug}/chat/${item.chatId}`)
+      await router.push(chatRouteFor(item.projectSlug, item.chatId))
       return
     }
 
@@ -147,7 +150,7 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
       class="px-2 pt-2 pb-1"
       @update:model-value="(value) => { activeTab = value as CommandPaletteTab }"
     >
-      <TabsList class="grid w-full grid-cols-5">
+      <TabsList class="grid w-full grid-cols-4">
         <TabsTrigger
           v-for="tab in COMMAND_PALETTE_TABS"
           :key="tab"

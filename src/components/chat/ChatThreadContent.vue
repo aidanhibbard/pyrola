@@ -8,7 +8,6 @@ import type { PendingQuestionState } from '@/types/chat/pending-question'
 import ChatAgentTurn from '@/components/chat/ChatAgentTurn.vue'
 import ChatMessageTurn from '@/components/chat/ChatMessageTurn.vue'
 import ChatQuestionCard from '@/components/chat/ChatQuestionCard.vue'
-import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import ChatToolCard from '@/components/chat/ChatToolCard.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
 import {
@@ -31,6 +30,7 @@ const emit = defineEmits<{
   approve: [toolCallId: string]
   reject: [toolCallId: string]
   submitAnswer: [toolCallId: string, answer: string]
+  retry: []
 }>()
 
 const { scrollToEnd } = useMessageScroller()
@@ -48,12 +48,6 @@ const isLive = computed(() => props.status === 'streaming' || props.status === '
 
 const streamRevision = computed(() => {
   const last = props.timeline.at(-1)
-  if (last?.type === 'todo') {
-    return [
-      props.timeline.length,
-      last.todos.map((todo) => `${todo.id}:${todo.status}`).join('|'),
-    ].join(':')
-  }
   if (last?.type === 'subagent') {
     return [
       props.timeline.length,
@@ -61,6 +55,23 @@ const streamRevision = computed(() => {
       last.status,
       last.summary?.length ?? 0,
     ].join(':')
+  }
+  if (last?.type === 'todo') {
+    // Todos render beside the prompt, not in the scroll thread.
+    const prior = props.timeline.at(-2)
+    if (prior?.type === 'agent-turn') {
+      return [
+        props.timeline.length,
+        prior.turn.text.length,
+        prior.turn.steps
+          .map(
+            (step) =>
+              `${step.text.length}:${step.reasoning.length}:${step.tools.length}`,
+          )
+          .join(';'),
+      ].join(':')
+    }
+    return props.timeline.length
   }
   if (last?.type !== 'agent-turn') {
     return props.timeline.length
@@ -80,20 +91,24 @@ const streamRevision = computed(() => {
   ].join(':')
 })
 
+const visibleTimeline = computed(() =>
+  props.timeline.filter((item) => item.type !== 'todo'),
+)
+
 const timelineItemId = (item: ChatTimelineItem, index: number): string => {
   if (item.type === 'user') {
     return item.message.id
   }
-  if (item.type === 'todo') {
-    return `todo-${index}`
-  }
   if (item.type === 'subagent') {
     return `subagent-${item.subagentId}`
   }
-  return item.turn.id || `turn-${index}`
+  if (item.type === 'agent-turn') {
+    return item.turn.id || `turn-${index}`
+  }
+  return `item-${index}`
 }
 
-const isLastItem = (index: number): boolean => index === props.timeline.length - 1
+const isLastItem = (index: number): boolean => index === visibleTimeline.value.length - 1
 
 const followLiveOutput = async (): Promise<void> => {
   if (!isLive.value) {
@@ -131,7 +146,7 @@ watch(
         class="mx-auto w-full min-w-0 max-w-3xl gap-6 overflow-x-hidden p-4 pb-2"
       >
         <MessageScrollerItem
-          v-for="(item, index) in timeline"
+          v-for="(item, index) in visibleTimeline"
           :key="timelineItemId(item, index)"
           :message-id="timelineItemId(item, index)"
           :scroll-anchor="isLastItem(index)"
@@ -142,12 +157,16 @@ watch(
             :message="item.message"
             :editable="!isLive"
           />
-          <ChatTodoTimeline v-else-if="item.type === 'todo'" :todos="item.todos" />
           <ChatSubAgentTurn
             v-else-if="item.type === 'subagent'"
             :subagent="item"
           />
-          <ChatAgentTurn v-else :turn="item.turn" :status="isLastItem(index) ? status : 'ready'" />
+          <ChatAgentTurn
+            v-else-if="item.type === 'agent-turn'"
+            :turn="item.turn"
+            :status="isLastItem(index) ? status : 'ready'"
+            @retry="emit('retry')"
+          />
         </MessageScrollerItem>
         <ChatQuestionCard
           v-if="pendingQuestion"

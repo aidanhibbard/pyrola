@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronDown, ChevronRight, Loader2, LogIn, LogOut, Play, Plus, RefreshCw, Server, Square, Trash2 } from '@lucide/vue'
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, LogIn, LogOut, Plus, RefreshCw, Server, ShieldAlert, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import { Switch } from '@/components/shadcn/ui/switch'
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +31,7 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useMcpServers from '@/composables/use-mcp-servers'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { McpServerConfig } from '@/types/pyrola/mcp-config'
+import { isMcpServerEnabled } from '@/schemas/mcp-config'
 
 const props = defineProps<{
   tab: SettingsTab
@@ -48,6 +50,7 @@ const {
   logoutServer,
   addServer,
   deleteServer,
+  setServerEnabled,
   listScopedMcpServers,
   refreshStates,
 } = useMcpServers()
@@ -76,16 +79,6 @@ const serverStatus = (serverId: string): string =>
 const isServerLoading = (serverId: string): boolean =>
   loadingServers.value[serverId] === true
 
-const isServerRunning = (serverId: string): boolean => {
-  const status = serverStatus(serverId)
-  return (
-    status === 'connected' ||
-    status === 'starting' ||
-    status === 'refreshing' ||
-    status === 'error'
-  )
-}
-
 const showAuthControl = (serverConfig: McpServerConfig, serverId: string): boolean => {
   if (!isAuthCapableServer(serverConfig)) {
     return false
@@ -94,18 +87,20 @@ const showAuthControl = (serverConfig: McpServerConfig, serverId: string): boole
   return status === 'auth_required' || status === 'connected'
 }
 
-const toggleServerPower = async (
+const handleEnabledChange = async (
   serverId: string,
-  serverConfig: McpServerConfig,
+  enabled: boolean,
 ): Promise<void> => {
   if (isServerLoading(serverId)) {
     return
   }
-  if (isServerRunning(serverId)) {
-    await stopServer(serverId)
-    return
+  try {
+    await setServerEnabled(serverId, enabled, config.activeRootPath.value)
+  } catch (error) {
+    toast.error('Failed to update MCP server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
-  await startServer(serverId, serverConfig)
 }
 
 const handleRefreshServer = async (
@@ -233,17 +228,33 @@ const refreshAll = async (): Promise<void> => {
       >
         <div class="flex flex-wrap items-center gap-2 px-4 py-2">
           <button
-            class="flex items-center gap-2"
+            class="flex min-w-0 items-center gap-2"
             :disabled="isServerLoading(server.id)"
             @click="toggleExpanded(server.id)"
           >
+            <ChevronDown v-if="expanded[server.id]" class="h-4 w-4 shrink-0" />
+            <ChevronRight v-else class="h-4 w-4 shrink-0" />
+            <span class="truncate font-medium">{{ server.id }}</span>
             <Loader2
-              v-if="isServerLoading(server.id)"
-              class="h-4 w-4 animate-spin text-muted-foreground"
+              v-if="isServerLoading(server.id) || serverStatus(server.id) === 'starting' || serverStatus(server.id) === 'refreshing'"
+              class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground"
             />
-            <ChevronDown v-else-if="expanded[server.id]" class="h-4 w-4" />
-            <ChevronRight v-else class="h-4 w-4" />
-            <span class="font-medium">{{ server.id }}</span>
+            <CheckCircle2
+              v-else-if="isMcpServerEnabled(server.config) && serverStatus(server.id) === 'connected'"
+              class="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+            />
+            <AlertCircle
+              v-else-if="isMcpServerEnabled(server.config) && serverStatus(server.id) === 'error'"
+              class="h-3.5 w-3.5 shrink-0 text-destructive"
+            />
+            <ShieldAlert
+              v-else-if="isMcpServerEnabled(server.config) && serverStatus(server.id) === 'auth_required'"
+              class="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+            />
+            <Circle
+              v-else
+              class="h-3.5 w-3.5 shrink-0 text-muted-foreground/50"
+            />
           </button>
           <Badge
             v-if="!isServerLoading(server.id) && serverStates[server.id]?.tools?.length"
@@ -267,24 +278,12 @@ const refreshAll = async (): Promise<void> => {
               </TooltipTrigger>
               <TooltipContent>Refresh server</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-8 w-8"
-                  :aria-label="isServerRunning(server.id) ? 'Stop server' : 'Start server'"
-                  :disabled="isServerLoading(server.id)"
-                  @click="toggleServerPower(server.id, server.config)"
-                >
-                  <Square v-if="isServerRunning(server.id)" class="h-4 w-4" />
-                  <Play v-else class="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {{ isServerRunning(server.id) ? 'Stop server' : 'Start server' }}
-              </TooltipContent>
-            </Tooltip>
+            <Switch
+              :model-value="isMcpServerEnabled(server.config)"
+              :disabled="isServerLoading(server.id)"
+              :aria-label="`${isMcpServerEnabled(server.config) ? 'Disable' : 'Enable'} ${server.id}`"
+              @update:model-value="(checked: boolean) => handleEnabledChange(server.id, checked)"
+            />
             <Tooltip v-if="showAuthControl(server.config, server.id)">
               <TooltipTrigger as-child>
                 <Button

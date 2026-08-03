@@ -1,6 +1,6 @@
 import type { UIMessage } from 'ai'
 import { getContext } from 'tokenlens'
-import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket, ContextBucketId } from '@/types/harness/context-bucket'
@@ -8,25 +8,42 @@ import { CONTEXT_BUCKET_META, CONTEXT_BUCKET_ORDER } from '@/types/harness/conte
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { TOOL_DESCRIPTIONS } from '@/services/harness/tool-catalog'
 import estimateTextTokens from '@/utils/estimate-text-tokens'
-import assembleSystemPromptParts from '@/services/context/system-prompt-parts'
-import { migrateMcpConfig } from '@/schemas/mcp-config'
+import assembleSystemPromptParts, {
+  type SystemPromptParts,
+} from '@/services/context/system-prompt-parts'
+import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
-import { mcpStatus, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
+import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
+import { resolveContextWindow } from '@/services/models/resolve-model-call-options'
 
 export type CountContextBudgetInput = {
   modelId: string
+  providerId?: string
+  settings?: PyrolaSettings
   mode: PyrolaChatMode
   projectName: string
   projectRoot: string
   mentions: ContextMention[]
   messages: UIMessage[]
   agentCatalog?: Array<{ name: string; description: string }>
+  standalone?: boolean
+  parts?: SystemPromptParts
 }
 
 const DEFAULT_CONTEXT_LIMIT = 128_000
 const TOOL_SCHEMA_TOKEN_OVERHEAD = 180
 
-const resolveContextLimit = (modelId: string): number => {
+const resolveContextLimit = (
+  modelId: string,
+  providerId?: string,
+  settings?: PyrolaSettings,
+): number => {
+  if (providerId && settings) {
+    const override = resolveContextWindow(settings, { providerId, modelId })
+    if (typeof override === 'number' && override > 0) {
+      return override
+    }
+  }
   if (!modelId) {
     return DEFAULT_CONTEXT_LIMIT
   }
@@ -58,26 +75,40 @@ const estimateBuiltinToolSchemas = (mode: PyrolaChatMode): number =>
     return total + estimateTextTokens(description) + TOOL_SCHEMA_TOKEN_OVERHEAD
   }, 0)
 
-const estimateMcpToolSchemas = async (projectRoot: string): Promise<number> => {
+const estimateMcpToolSchemas = async (
+  projectRoot: string,
+  standalone?: boolean,
+): Promise<number> => {
   const personal = migrateMcpConfig(await readMcpConfig('personal', null))
-  const projectRaw = await readMcpConfig('project', projectRoot).catch(() => null)
-  const project = projectRaw ? migrateMcpConfig(projectRaw) : null
-  const servers = listEffectiveMcpServers(personal, project)
+  const project = standalone
+    ? null
+    : await readMcpConfig('project', projectRoot)
+        .then((raw) => migrateMcpConfig(raw))
+        .catch(() => null)
+  const servers = listEffectiveMcpServers(personal, project).filter((server) =>
+    isMcpServerEnabled(server.config),
+  )
+
+  let bulkStatuses: Awaited<ReturnType<typeof mcpListStatuses>> = {}
+  try {
+    bulkStatuses = await mcpListStatuses()
+  } catch {
+    return 0
+  }
 
   let total = 0
   for (const server of servers) {
-    try {
-      const state = await mcpStatus(server.id)
-      for (const tool of state.tools) {
-        const schema = tool.inputSchema ? JSON.stringify(tool.inputSchema) : ''
-        total +=
-          estimateTextTokens(tool.name) +
-          estimateTextTokens(tool.description ?? '') +
-          estimateTextTokens(schema) +
-          TOOL_SCHEMA_TOKEN_OVERHEAD
-      }
-    } catch {
+    const state = bulkStatuses[server.id]
+    if (!state) {
       continue
+    }
+    for (const tool of state.tools) {
+      const schema = tool.inputSchema ? JSON.stringify(tool.inputSchema) : ''
+      total +=
+        estimateTextTokens(tool.name) +
+        estimateTextTokens(tool.description ?? '') +
+        estimateTextTokens(schema) +
+        TOOL_SCHEMA_TOKEN_OVERHEAD
     }
   }
   return total
@@ -90,16 +121,22 @@ const buildBucket = (id: ContextBucketId, tokens: number): ContextBucket => ({
 })
 
 export default async (input: CountContextBudgetInput): Promise<ContextBudget> => {
-  const parts = await assembleSystemPromptParts({
-    mode: input.mode,
-    projectName: input.projectName,
-    projectRoot: input.projectRoot,
-    mentions: input.mentions,
-    agentCatalog: input.agentCatalog ?? [],
-  })
+  const parts =
+    input.parts ??
+    (await assembleSystemPromptParts({
+      mode: input.mode,
+      projectName: input.projectName,
+      projectRoot: input.projectRoot,
+      mentions: input.mentions,
+      agentCatalog: input.agentCatalog ?? [],
+      standalone: input.standalone,
+    }))
 
   const builtinToolSchemas = estimateBuiltinToolSchemas(input.mode)
-  const mcpToolSchemas = await estimateMcpToolSchemas(input.projectRoot)
+  const mcpToolSchemas = await estimateMcpToolSchemas(
+    input.projectRoot,
+    input.standalone,
+  )
 
   const bucketTokens: Record<ContextBucketId, number> = {
     system: estimateTextTokens(parts.base),
@@ -117,7 +154,7 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
 
   const buckets = CONTEXT_BUCKET_ORDER.map((id) => buildBucket(id, bucketTokens[id]))
   const used = buckets.reduce((sum, bucket) => sum + bucket.tokens, 0)
-  const limit = resolveContextLimit(input.modelId)
+  const limit = resolveContextLimit(input.modelId, input.providerId, input.settings)
 
   return {
     modelId: input.modelId,

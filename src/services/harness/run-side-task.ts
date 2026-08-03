@@ -5,6 +5,7 @@ import loadPrompt from '@/services/prompts/load-prompt'
 import { updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
+import { resolveSideTaskCallOptions } from '@/services/models/resolve-model-call-options'
 
 export type ChatTitleTaskInput = {
   projectSlug: string
@@ -29,10 +30,18 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
       modelId: modelRef.modelId,
       settings: input.settings,
     })
+    const callOptions = resolveSideTaskCallOptions(input.settings, modelRef)
 
     const result = await generateText({
       model,
-      maxOutputTokens: 256,
+      maxOutputTokens: callOptions.maxOutputTokens,
+      temperature: callOptions.temperature,
+      topP: callOptions.topP,
+      topK: callOptions.topK,
+      frequencyPenalty: callOptions.frequencyPenalty,
+      presencePenalty: callOptions.presencePenalty,
+      seed: callOptions.seed,
+      providerOptions: callOptions.providerOptions,
       prompt: loadPrompt('side-tasks/chat-title.md', { prompt: input.prompt }),
     })
 

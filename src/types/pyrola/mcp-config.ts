@@ -3,6 +3,7 @@ export type McpStdioServer = {
   args?: string[]
   env?: Record<string, string>
   envFile?: string
+  enabled?: boolean
 }
 
 export type McpHttpServer = {
@@ -10,6 +11,7 @@ export type McpHttpServer = {
   url: string
   headers?: Record<string, string>
   oauth?: Record<string, unknown>
+  enabled?: boolean
 }
 
 export type McpServerConfig = McpStdioServer | McpHttpServer

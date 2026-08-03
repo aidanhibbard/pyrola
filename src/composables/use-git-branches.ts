@@ -1,6 +1,8 @@
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import gitCheckoutBranch from '@/services/git/git-checkout-branch'
 import gitListBranches from '@/services/git/git-list-branches'
 import gitRepoInfo from '@/services/git/git-repo-info'
@@ -11,12 +13,33 @@ const branches = ref<string[]>([])
 const pending = ref(false)
 const checkoutPending = ref(false)
 
+/** When set (including `null`), overrides meta/active-project resolution. */
+const workspaceRootOverride = ref<string | null | undefined>(undefined)
+
 let refreshGeneration = 0
 
 export default () => {
   const fleet = useFleetRegistry()
+  const chatStore = useChatStore()
 
-  const rootPath = computed(() => fleet.activeProject.value?.rootPath ?? null)
+  const rootPath = computed(() => {
+    if (workspaceRootOverride.value !== undefined) {
+      return workspaceRootOverride.value
+    }
+
+    const meta = chatStore.meta.value
+    if (meta?.projectSlug === HOME_CHAT_SLUG) {
+      return null
+    }
+    if (meta?.projectRoot) {
+      return meta.projectRoot
+    }
+    return fleet.activeProject.value?.rootPath ?? null
+  })
+
+  const setWorkspaceRoot = (path: string | null | undefined): void => {
+    workspaceRootOverride.value = path
+  }
 
   const refresh = async (): Promise<void> => {
     const path = rootPath.value
@@ -106,5 +129,6 @@ export default () => {
     checkoutPending,
     refresh,
     checkoutBranch,
+    setWorkspaceRoot,
   }
 }

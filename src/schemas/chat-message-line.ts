@@ -5,5 +5,6 @@ export const chatMessageLineSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   parts: z.array(z.record(z.unknown())),
   createdAt: z.string(),
+  model: z.string().optional(),
   harnessEvent: z.record(z.unknown()).optional(),
 })

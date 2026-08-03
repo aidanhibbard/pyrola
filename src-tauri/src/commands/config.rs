@@ -138,14 +138,14 @@ pub(crate) fn lsp_enabled_in_settings(
     Ok(settings) => settings,
     Err(error) => {
       log::warn!("Failed to read personal settings for LSP: {error}");
-      return false;
+      return true;
     }
   };
 
   let mut enabled = personal
     .get("lsp.enabled")
     .and_then(|value| value.as_bool())
-    .unwrap_or(false);
+    .unwrap_or(true);
 
   if let Some(root) = project_root {
     if let Ok(project_settings) = read_settings_internal(app, "project", Some(root.to_string())) {

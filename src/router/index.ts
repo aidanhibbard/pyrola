@@ -12,6 +12,11 @@ const router = createRouter({
       component: HomePage,
     },
     {
+      path: '/chat/:chatId',
+      name: 'home-chat',
+      component: AgentThreadView,
+    },
+    {
       path: '/project/:slug/chat/:chatId',
       name: 'chat',
       component: AgentThreadView,

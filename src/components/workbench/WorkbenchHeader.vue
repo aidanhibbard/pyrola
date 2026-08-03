@@ -17,6 +17,7 @@ import WorkbenchTabMenu from '@/components/workbench/WorkbenchTabMenu.vue'
 import WorkbenchTabPicker from '@/components/workbench/WorkbenchTabPicker.vue'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import type { WorkbenchTab, WorkbenchTabType } from '@/types/workbench/workbench-tab'
+import { isHomeChatSlug } from '@/constants/home-chat'
 
 const workbench = useWorkbenchStore()
 
@@ -46,7 +47,13 @@ const tabIcon = (type: WorkbenchTabType) => {
 
 const projectSlug = (projectId: string): string | null => {
   const project = workbench.getProject(projectId)
-  return project?.slug ?? null
+  if (!project) {
+    return null
+  }
+  if (isHomeChatSlug(project.id)) {
+    return 'Home'
+  }
+  return project.slug
 }
 
 const tabLabel = (tab: WorkbenchTab): string => {

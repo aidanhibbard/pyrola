@@ -203,7 +203,6 @@ pub fn append_chat_line(
     .map_err(|e| e.to_string())?;
   let serialized = serde_json::to_string(&line).map_err(|e| e.to_string())?;
   writeln!(file, "{serialized}").map_err(|e| e.to_string())?;
-  let _ = update_chat_meta(app, project_slug, chat_id, serde_json::json!({}));
   Ok(())
 }
 

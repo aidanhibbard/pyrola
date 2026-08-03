@@ -1,21 +1,15 @@
 import type { PyrolaCustomProvider, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ProviderModelGroup } from '@/types/models/provider-model-group'
+import type { ModelRef } from '@/types/models/model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import {
+  getCustomProvider,
   getProviderCatalogEntry,
   keychainKeyForProvider,
   providerRequiresApiKey,
 } from '@/services/providers/registry'
 import { getSecret } from '@/services/pyrola/pyrola-tauri'
 import { listProviderModels } from '@/services/providers/list-provider-models'
-
-const getCustomProvider = (
-  settings: PyrolaSettings,
-  providerId: string,
-): PyrolaCustomProvider | undefined => {
-  const customKey = `providers.custom.${providerId}` as const
-  return settings[customKey] as PyrolaCustomProvider | undefined
-}
 
 const getApiKeyRef = (
   settings: PyrolaSettings,
@@ -40,14 +34,45 @@ const getProviderDisplayName = (
   return getProviderCatalogEntry(providerId)?.name ?? providerId
 }
 
+const configuredModelIds = (custom: PyrolaCustomProvider | undefined): string[] =>
+  custom?.models?.map((model) => model.id).filter(Boolean) ?? []
+
+const mergeModelIds = (configured: string[], live: string[]): string[] => {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const id of [...configured, ...live]) {
+    if (!id || seen.has(id)) {
+      continue
+    }
+    seen.add(id)
+    merged.push(id)
+  }
+  return merged
+}
+
+const toModelRefs = (
+  providerId: string,
+  modelIds: string[],
+  custom: PyrolaCustomProvider | undefined,
+): ModelRef[] =>
+  modelIds.map((modelId) => {
+    const configured = custom?.models?.find((model) => model.id === modelId)
+    return {
+      providerId,
+      modelId,
+      ...(configured?.name ? { name: configured.name } : {}),
+    }
+  })
+
 const loadProviderModelGroup = async (
   settings: PyrolaSettings,
   providerId: string,
 ): Promise<ProviderModelGroup> => {
   const custom = getCustomProvider(settings, providerId)
   const catalogEntry = getProviderCatalogEntry(providerId)
-  const requiresKey = custom ? false : providerRequiresApiKey(providerId)
+  const requiresKey = providerRequiresApiKey(providerId, settings)
   const providerName = getProviderDisplayName(settings, providerId)
+  const configured = configuredModelIds(custom)
 
   let apiKey = ''
   const apiKeyRef = getApiKeyRef(settings, providerId)
@@ -55,13 +80,13 @@ const loadProviderModelGroup = async (
     apiKey = (await getSecret(keychainKeyForProvider(apiKeyRef))) ?? ''
   }
 
-  let modelIds: string[] = []
+  let liveModelIds: string[] = []
 
   try {
     if (requiresKey && !apiKey) {
-      modelIds = catalogEntry?.models ?? []
+      liveModelIds = catalogEntry?.models ?? []
     } else {
-      modelIds = await listProviderModels({
+      liveModelIds = await listProviderModels({
         providerId: custom ? 'openai' : providerId,
         catalogProviderId: providerId,
         apiKey,
@@ -69,13 +94,20 @@ const loadProviderModelGroup = async (
       })
     }
   } catch {
-    modelIds = catalogEntry?.models ?? []
+    liveModelIds = catalogEntry?.models ?? []
   }
+
+  const modelIds =
+    configured.length > 0
+      ? mergeModelIds(configured, liveModelIds)
+      : liveModelIds.length > 0
+        ? liveModelIds
+        : (catalogEntry?.models ?? [])
 
   return {
     providerId,
     providerName,
-    models: modelIds.map((modelId) => ({ providerId, modelId })),
+    models: toModelRefs(providerId, modelIds, custom),
   }
 }
 

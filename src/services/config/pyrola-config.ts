@@ -3,6 +3,7 @@ import {
   defaultPyrolaSettings,
   migratePyrolaSettings,
   pyrolaSettingsSchema,
+  validatePyrolaSettings,
 } from '@/schemas/pyrola-settings'
 import {
   mergeSettings,
@@ -72,7 +73,11 @@ export const saveSettings = async (
   settings: PyrolaSettings,
   rootPath?: string | null,
 ): Promise<void> => {
-  await writeSettings(scope, settings as Record<string, unknown>, rootPath)
+  const validated = validatePyrolaSettings(settings)
+  if (!validated.success) {
+    throw new Error(`Invalid settings: ${validated.error}`)
+  }
+  await writeSettings(scope, validated.data as Record<string, unknown>, rootPath)
 }
 
 export const resetSettingsKeys = async (

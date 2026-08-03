@@ -40,6 +40,7 @@ export default () => {
     if (change.kind === 'mcp') {
       await mcp.loadConfigs(config.activeRootPath.value)
       await mcp.refreshStates()
+      await mcp.autoStartEnabledServers()
     }
   }
 
@@ -59,6 +60,7 @@ export default () => {
     await config.refreshAll()
     await mcp.loadConfigs(config.activeRootPath.value)
     await mcp.refreshStates()
+    await mcp.autoStartEnabledServers()
     await syncWatcher()
 
     unlisten = await listen<PyrolaFileChange>('pyrola-file-changed', (event) => {
@@ -80,6 +82,7 @@ export default () => {
       await config.refreshAll()
       await mcp.loadConfigs(rootPath)
       await mcp.refreshStates()
+      await mcp.autoStartEnabledServers()
       await syncWatcher()
     },
   )

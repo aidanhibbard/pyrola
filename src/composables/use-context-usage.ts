@@ -3,8 +3,9 @@ import type { UIMessage } from 'ai'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { ContextMention } from '@/types/harness/context-mention'
-import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import countContextBudget from '@/services/context/count-context-budget'
+import parseModelRef from '@/utils/parse-model-ref'
 
 const used = ref(0)
 const limit = ref(128_000)
@@ -21,6 +22,8 @@ export type RefreshContextUsageInput = {
   projectRoot: string
   mentions?: ContextMention[]
   messages: UIMessage[]
+  settings?: PyrolaSettings
+  standalone?: boolean
 }
 
 export default () => {
@@ -44,13 +47,17 @@ export default () => {
     pending.value = true
 
     try {
+      const parsed = parseModelRef(input.modelId)
       const budget = await countContextBudget({
-        modelId: input.modelId,
+        modelId: parsed?.modelId ?? input.modelId,
+        providerId: parsed?.providerId,
+        settings: input.settings,
         mode: input.mode,
         projectName: input.projectName,
         projectRoot: input.projectRoot,
         mentions: input.mentions ?? [],
         messages: input.messages,
+        standalone: input.standalone,
       })
 
       if (generation !== refreshGeneration) {

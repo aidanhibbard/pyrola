@@ -25,6 +25,7 @@
     "@ai-sdk/gateway": "^4.0.21",
     "@ai-sdk/google": "^4.0.17",
     "@ai-sdk/openai": "^4.0.15",
+    "@ai-sdk/openai-compatible": "^3.0.20",
     "@comark/vue": "^0.5.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",

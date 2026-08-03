@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
@@ -7,6 +7,9 @@ import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
+import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
+import { HOME_CHAT_SLUG } from '@/constants/home-chat'
+import chatRouteFor from '@/utils/chat-route-for'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const router = useRouter()
@@ -14,28 +17,47 @@ const fleet = useFleetRegistry()
 const chatStore = useChatStore()
 const sending = ref(false)
 
+onMounted(() => {
+  chatStore.clearChatState()
+})
+
 const handleSubmit = async (payload: {
   text: string
   mode: PyrolaChatMode
   model: string
+  projectId: string | null
 }): Promise<void> => {
-  const project = fleet.activeProject.value
-  if (!project) {
-    toast.error('No active project')
-    return
-  }
-
   sending.value = true
   try {
-    const chat = await chatStore.createNewChat({
-      projectSlug: project.slug,
-      projectRoot: project.rootPath,
+    if (payload.projectId) {
+      await fleet.setActiveProject(payload.projectId)
+    }
+
+    const project = payload.projectId
+      ? fleet.projects.value.find((item) => item.id === payload.projectId) ?? null
+      : null
+
+    const chat = project
+      ? await chatStore.createNewChat({
+          projectSlug: project.slug,
+          projectRoot: project.rootPath,
+          mode: payload.mode,
+          model: payload.model,
+        })
+      : await chatStore.createNewChat({
+          projectSlug: HOME_CHAT_SLUG,
+          projectRoot: await getUserHomeDir(),
+          mode: payload.mode,
+          model: payload.model,
+        })
+
+    setPendingChatMessage({
+      text: payload.text,
       mode: payload.mode,
       model: payload.model,
     })
-    setPendingChatMessage(payload)
     await refreshFleetSidebar()
-    await router.push(`/project/${project.slug}/chat/${chat.id}`)
+    await router.push(chatRouteFor(chat.projectSlug, chat.id))
   } catch (error) {
     toast.error('Could not start chat', {
       description: error instanceof Error ? error.message : 'Unknown error',

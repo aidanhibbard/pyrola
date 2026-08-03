@@ -3,12 +3,15 @@ import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ContextMention } from '@/types/harness/context-mention'
 import gitRepoInfo from '@/services/git/git-repo-info'
 import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
-import { migrateMcpConfig } from '@/schemas/mcp-config'
+import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 import loadPrompt from '@/services/prompts/load-prompt'
-import { loadInternalSkill } from '@/services/skills/discover-internal-skills'
+import {
+  listInternalSkillIndex,
+  loadInternalSkill,
+} from '@/services/skills/discover-internal-skills'
 import { listSkillIndex } from '@/services/skills/skill-registry'
-import { mcpStatus, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
+import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
 
 export type SystemPromptInput = {
   mode: PyrolaChatMode
@@ -16,6 +19,7 @@ export type SystemPromptInput = {
   projectRoot: string
   mentions: ContextMention[]
   agentCatalog: Array<{ name: string; description: string }>
+  standalone?: boolean
 }
 
 export type SystemPromptParts = {
@@ -28,33 +32,49 @@ export type SystemPromptParts = {
   skills: string
 }
 
-const formatMcpCatalog = async (projectRoot: string): Promise<string> => {
+const formatMcpCatalog = async (
+  projectRoot: string,
+  standalone?: boolean,
+): Promise<string> => {
   const personal = migrateMcpConfig(await readMcpConfig('personal', null))
-  const projectRaw = await readMcpConfig('project', projectRoot).catch(() => null)
-  const project = projectRaw ? migrateMcpConfig(projectRaw) : null
-  const servers = listEffectiveMcpServers(personal, project)
+  const project =
+    standalone
+      ? null
+      : await readMcpConfig('project', projectRoot)
+          .then((raw) => migrateMcpConfig(raw))
+          .catch(() => null)
+  const servers = listEffectiveMcpServers(personal, project).filter((server) =>
+    isMcpServerEnabled(server.config),
+  )
 
   if (servers.length === 0) {
     return ''
   }
 
+  let bulkStatuses: Awaited<ReturnType<typeof mcpListStatuses>> = {}
+  try {
+    bulkStatuses = await mcpListStatuses()
+  } catch {
+    bulkStatuses = {}
+  }
+
   const lines: string[] = []
   for (const server of servers) {
-    try {
-      const state = await mcpStatus(server.id)
-      if (state.tools.length === 0) {
-        lines.push(
-          `- ${server.id} (${state.status}): no tools listed — start the server in Settings or call get_mcp_tools`,
-        )
-        continue
-      }
-      const toolLines = state.tools
-        .map((tool) => `  - ${tool.name}${tool.description ? `: ${tool.description}` : ''}`)
-        .join('\n')
-      lines.push(`- ${server.id} (${state.status}):\n${toolLines}`)
-    } catch {
+    const state = bulkStatuses[server.id]
+    if (!state) {
       lines.push(`- ${server.id}: not running — start in Settings or call get_mcp_tools`)
+      continue
     }
+    if (state.tools.length === 0) {
+      lines.push(
+        `- ${server.id} (${state.status}): no tools listed — start the server in Settings or call get_mcp_tools`,
+      )
+      continue
+    }
+    const toolLines = state.tools
+      .map((tool) => `  - ${tool.name}${tool.description ? `: ${tool.description}` : ''}`)
+      .join('\n')
+    lines.push(`- ${server.id} (${state.status}):\n${toolLines}`)
   }
 
   return lines.join('\n')
@@ -101,8 +121,12 @@ const resolveModeSkillBlock = (mode: PyrolaChatMode): string => {
 export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
   const branch = await gitRepoInfo(input.projectRoot).catch(() => null)
 
-  const rules = await listPyrolaFiles('project', 'rules', input.projectRoot).catch(() => [])
-  const agents = await listPyrolaFiles('project', 'agents', input.projectRoot).catch(() => [])
+  const rules = input.standalone
+    ? []
+    : await listPyrolaFiles('project', 'rules', input.projectRoot).catch(() => [])
+  const agents = input.standalone
+    ? []
+    : await listPyrolaFiles('project', 'agents', input.projectRoot).catch(() => [])
 
   const agentCatalog = agents.length
     ? agents.map((agent) => ({
@@ -113,7 +137,9 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
 
   const { mentions, skills: mentionSkills } = formatMentionBlocks(input.mentions)
 
-  const skillIndex = await listSkillIndex(input.mode, input.projectRoot).catch(() => [])
+  const skillIndex = input.standalone
+    ? listInternalSkillIndex(input.mode)
+    : await listSkillIndex(input.mode, input.projectRoot).catch(() => [])
   const skillIndexBlock =
     skillIndex.length > 0
       ? skillIndex.map((skill) => `- ${skill.name}: ${skill.description}`).join('\n')
@@ -129,7 +155,7 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
   const rulesBlock = rules.map((rule) => `- ${rule.name}`).join('\n')
 
   const toolCatalog = formatToolCatalogForMode(input.mode)
-  const mcpCatalog = await formatMcpCatalog(input.projectRoot).catch(() => '')
+  const mcpCatalog = await formatMcpCatalog(input.projectRoot, input.standalone).catch(() => '')
 
   const branchSuffix = branch?.currentBranch ? `\n\nGit branch: ${branch.currentBranch}` : ''
   const modeSkillBlock = resolveModeSkillBlock(input.mode)

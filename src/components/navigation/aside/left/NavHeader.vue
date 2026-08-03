@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import useCommandPalette from '@/composables/use-command-palette'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
+import chatRouteFor from '@/utils/chat-route-for'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +21,7 @@ const { pinnedChats } = useFleetSidebar()
 
 const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
   try {
-    await push(`/project/${projectSlug}/chat/${chatId}`)
+    await push(chatRouteFor(projectSlug, chatId))
   } catch (error) {
     toast.error('Navigation failed', {
       description: error instanceof Error ? error.message : 'Unknown error',

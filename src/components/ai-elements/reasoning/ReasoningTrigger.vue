@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { BrainIcon, ChevronDownIcon } from '@lucide/vue'
+import { ChevronDownIcon } from '@lucide/vue'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { computed } from 'vue'
+import { Shimmer } from '../shimmer'
 import { useReasoningContext } from './context'
 
 interface Props {
@@ -28,30 +29,28 @@ const thinkingMessage = computed(() => {
 <template>
   <CollapsibleTrigger
     :class="cn(
-      'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
+      'flex w-fit items-center gap-1.5 text-muted-foreground text-xs font-medium transition-colors hover:text-foreground',
       props.class,
     )"
   >
     <slot>
-      <BrainIcon class="size-4" />
-
       <template v-if="thinkingMessage === 'thinking'">
-        <span class="shimmer shimmer-duration-1000">
-          Working…
-        </span>
+        <Shimmer :duration="1">
+          Thinking...
+        </Shimmer>
       </template>
 
       <template v-else-if="thinkingMessage === 'default_done'">
-        <p>Worked for a few seconds</p>
+        <span>Thought for a few seconds</span>
       </template>
 
       <template v-else>
-        <p>Worked for {{ duration }} seconds</p>
+        <span>Thought for {{ duration }} seconds</span>
       </template>
 
       <ChevronDownIcon
         :class="cn(
-          'size-4 transition-transform',
+          'size-3.5 transition-transform',
           isOpen ? 'rotate-180' : 'rotate-0',
         )"
       />

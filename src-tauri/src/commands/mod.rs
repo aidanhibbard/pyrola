@@ -30,7 +30,7 @@ pub use git::{
 };
 pub use glob::workspace_glob;
 pub use grep::workspace_grep;
-pub use http::{http_proxy_request, http_proxy_stream};
+pub use http::{http_proxy_request, http_proxy_stream, http_proxy_stream_cancel};
 pub use keychain::{delete_secret, get_secret, set_secret};
 pub use lsp::{lsp_ensure_server, lsp_request, lsp_status, lsp_stop_server};
 pub use mcp::{

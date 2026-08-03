@@ -1,5 +1,7 @@
 import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue'
-import useFleetSidebar from '@/composables/use-fleet-sidebar'
+import useFleetSidebar, {
+  type FleetSidebarActivityItem,
+} from '@/composables/use-fleet-sidebar'
 import type { FleetSidebarProject } from '@/types/fleet/fleet-sidebar-project'
 
 const searchOpen = ref(false)
@@ -18,6 +20,36 @@ const focusSearchInput = (): void => {
   }
 }
 
+const filterProject = (
+  project: FleetSidebarProject,
+  query: string,
+  runningOnlyValue: boolean,
+): FleetSidebarProject | null => {
+  let chats = project.chats
+
+  if (runningOnlyValue) {
+    chats = chats.filter((chat) => chat.status === 'running')
+  }
+
+  if (query) {
+    const nameMatches = project.displayName.toLowerCase().includes(query)
+    const matchingChats = chats.filter((chat) =>
+      chat.title.toLowerCase().includes(query),
+    )
+
+    if (!nameMatches && matchingChats.length === 0) {
+      return null
+    }
+
+    chats = nameMatches ? chats : matchingChats
+  }
+
+  return {
+    ...project,
+    chats,
+  }
+}
+
 export default () => {
   const fleetSidebar = useFleetSidebar()
 
@@ -25,32 +57,33 @@ export default () => {
     const query = searchQuery.value.trim().toLowerCase()
 
     return fleetSidebar.sidebarProjects.value
-      .map((project) => {
-        let chats = project.chats
-
-        if (runningOnly.value) {
-          chats = chats.filter((chat) => chat.status === 'running')
-        }
-
-        if (query) {
-          const nameMatches = project.displayName.toLowerCase().includes(query)
-          const matchingChats = chats.filter((chat) =>
-            chat.title.toLowerCase().includes(query),
-          )
-
-          if (!nameMatches && matchingChats.length === 0) {
-            return null
-          }
-
-          chats = nameMatches ? chats : matchingChats
-        }
-
-        return {
-          ...project,
-          chats,
-        }
-      })
+      .map((project) => filterProject(project, query, runningOnly.value))
       .filter((project): project is FleetSidebarProject => project !== null)
+  })
+
+  const filteredActivityItems = computed<FleetSidebarActivityItem[]>(() => {
+    const query = searchQuery.value.trim().toLowerCase()
+    const next: FleetSidebarActivityItem[] = []
+
+    for (const item of fleetSidebar.activityItems.value) {
+      if (item.kind === 'project') {
+        const filtered = filterProject(item.project, query, runningOnly.value)
+        if (filtered) {
+          next.push({ ...item, project: filtered })
+        }
+        continue
+      }
+
+      if (runningOnly.value && item.chat.status !== 'running') {
+        continue
+      }
+      if (query && !item.chat.title.toLowerCase().includes(query)) {
+        continue
+      }
+      next.push(item)
+    }
+
+    return next
   })
 
   const toggleRunningFilter = (): void => {
@@ -74,6 +107,7 @@ export default () => {
     runningOnly,
     searchInputEl,
     filteredProjects,
+    filteredActivityItems,
     toggleRunningFilter,
     openSearch,
     closeSearch,

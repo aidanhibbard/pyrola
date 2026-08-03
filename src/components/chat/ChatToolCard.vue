@@ -26,7 +26,7 @@ const emit = defineEmits<{
     <CollapsibleTrigger as-child>
       <Marker variant="border" class="w-full cursor-pointer">
         <MarkerContent>
-          {{ name }} — approval required
+          {{ name }} (approval required)
         </MarkerContent>
       </Marker>
     </CollapsibleTrigger>

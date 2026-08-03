@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import {
   CheckCircle2Icon,
+  ChevronDownIcon,
   CircleDashedIcon,
   CircleDotIcon,
   CircleIcon,
+  ListTodoIcon,
   XCircleIcon,
 } from '@lucide/vue'
 import type { TodoItem } from '@/types/harness/harness-event'
@@ -24,12 +26,18 @@ const completedCount = computed(
   () => props.todos.filter((todo) => todo.status === 'completed').length,
 )
 
+const inProgressCount = computed(
+  () => props.todos.filter((todo) => todo.status === 'in_progress').length,
+)
+
 const triggerTitle = computed(() => {
   if (props.todos.length === 0) {
     return 'Tasks'
   }
   return `Tasks (${completedCount.value}/${props.todos.length})`
 })
+
+const defaultOpen = computed(() => inProgressCount.value > 0)
 
 const statusIcon = (status: TodoItem['status']) => {
   if (status === 'completed') {
@@ -62,23 +70,40 @@ const statusClass = (status: TodoItem['status']): string => {
 </script>
 
 <template>
-  <Task class="not-prose w-full min-w-0">
-    <TaskTrigger :title="triggerTitle" />
-    <TaskContent>
-      <TaskItem
-        v-for="todo in todos"
-        :key="todo.id"
-        class="flex items-start gap-2"
+  <Task
+    v-if="todos.length > 0"
+    :key="`${defaultOpen}:${todos.length}:${completedCount}`"
+    :default-open="defaultOpen"
+    class="not-prose w-full min-w-0"
+  >
+    <TaskTrigger :title="triggerTitle">
+      <div
+        class="flex w-fit max-w-full cursor-pointer items-center gap-1.5 text-muted-foreground text-xs font-medium transition-colors hover:text-foreground"
       >
-        <component
-          :is="statusIcon(todo.status)"
-          class="mt-0.5 size-4 shrink-0"
-          :class="statusClass(todo.status)"
+        <ListTodoIcon class="size-3.5 shrink-0" />
+        <span class="truncate">{{ triggerTitle }}</span>
+        <ChevronDownIcon
+          class="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180"
         />
-        <span :class="cn('min-w-0 flex-1', statusClass(todo.status))">
-          {{ todo.content }}
-        </span>
-      </TaskItem>
+      </div>
+    </TaskTrigger>
+    <TaskContent>
+      <div class="max-h-40 space-y-1.5 overflow-y-auto">
+        <TaskItem
+          v-for="todo in todos"
+          :key="todo.id"
+          class="flex items-start gap-2 text-xs"
+        >
+          <component
+            :is="statusIcon(todo.status)"
+            class="mt-0.5 size-3.5 shrink-0"
+            :class="statusClass(todo.status)"
+          />
+          <span :class="cn('min-w-0 flex-1', statusClass(todo.status))">
+            {{ todo.content }}
+          </span>
+        </TaskItem>
+      </div>
     </TaskContent>
   </Task>
 </template>

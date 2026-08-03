@@ -38,7 +38,7 @@ const updateLspEnabled = async (value: boolean): Promise<void> => {
             Opt-in LSP for Monaco and harness tools. Requires binaries on PATH.
           </p>
         </div>
-        <Switch :checked="lspEnabled" @update:checked="updateLspEnabled" />
+        <Switch :model-value="lspEnabled" @update:model-value="updateLspEnabled" />
       </div>
 
       <p class="text-sm text-muted-foreground">

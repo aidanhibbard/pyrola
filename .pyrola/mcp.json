@@ -6,14 +6,16 @@
         "mcp-remote",
         "https://registry.ai-elements-vue.com/mcp"
       ],
-      "command": "npx"
+      "command": "npx",
+      "enabled": true
     },
     "shadcn": {
       "args": [
         "shadcn-vue@latest",
         "mcp"
       ],
-      "command": "npx"
+      "command": "npx",
+      "enabled": true
     }
   }
 }

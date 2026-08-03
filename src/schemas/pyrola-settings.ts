@@ -3,17 +3,16 @@ import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import parseModelRef from '@/utils/parse-model-ref'
 import { MODEL_REF_SEPARATOR } from '@/types/models/model-ref'
+import {
+  customProviderSchema,
+  formatCustomProviderSchemaError,
+} from '@/schemas/providers/custom-provider'
+
+export { customProviderSchema, customProviderModelSchema } from '@/schemas/providers/custom-provider'
 
 const themeSchema = z.enum(['light', 'dark', 'system'])
 const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator'])
 const duplicateTabBehaviorSchema = z.enum(['ask', 'open-existing', 'open-new'])
-
-const customProviderSchema = z.object({
-  type: z.literal('openai-compatible'),
-  baseURL: z.string().url(),
-  apiKeyRef: z.string().optional(),
-  name: z.string().min(1),
-})
 
 const modelRefStringSchema = z.string().min(1)
 
@@ -41,6 +40,18 @@ export const pyrolaSettingsSchema = z
   })
   .catchall(z.union([z.string(), customProviderSchema, z.number(), z.boolean()]))
 
+export const validatePyrolaSettings = (
+  settings: unknown,
+): { success: true; data: PyrolaSettings } | { success: false; error: string } => {
+  const parsed = pyrolaSettingsSchema.safeParse(settings)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: formatCustomProviderSchemaError(parsed.error),
+    }
+  }
+  return { success: true, data: parsed.data as PyrolaSettings }
+}
 export const defaultPyrolaSettings = (): PyrolaSettings => ({
   version: 1,
   'appearance.theme': 'system',
@@ -49,7 +60,7 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'agent.autoApproveGlobs': ['src/**', 'src-tauri/**'],
   'fleet.maxConcurrentAgents': 4,
   'fleet.trayBackground': false,
-  'lsp.enabled': false,
+  'lsp.enabled': true,
   'chat.autoTitle': true,
   'workbench.duplicateTabBehavior': 'ask',
 })

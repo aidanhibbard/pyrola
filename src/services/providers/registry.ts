@@ -1,5 +1,6 @@
 import aiSdkProviderCatalog from '@/data/ai-sdk-provider-catalog'
 import type { ProviderCatalogEntry } from '@/types/providers/provider-catalog-entry'
+import type { PyrolaCustomProvider, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 
 export type { ProviderCatalogEntry } from '@/types/providers/provider-catalog-entry'
 
@@ -21,7 +22,21 @@ export const providerKeyRef = (providerId: string): string => providerId
 export const keychainKeyForProvider = (apiKeyRef: string): string =>
   `pyrola:provider:${apiKeyRef}`
 
-export const providerRequiresApiKey = (providerId: string): boolean => {
+export const getCustomProvider = (
+  settings: PyrolaSettings,
+  providerId: string,
+): PyrolaCustomProvider | undefined => {
+  const customKey = `providers.custom.${providerId}` as const
+  return settings[customKey]
+}
+
+export const providerRequiresApiKey = (
+  providerId: string,
+  settings?: PyrolaSettings,
+): boolean => {
+  if (settings && getCustomProvider(settings, providerId)) {
+    return false
+  }
   const entry = getProviderCatalogEntry(providerId)
   if (!entry) {
     return true

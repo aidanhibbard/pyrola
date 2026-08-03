@@ -310,6 +310,7 @@ watch([planPayload, projectRoot, refreshToken], () => {
           <Markdown
             v-if="segment.type === 'markdown' && segment.content.trim()"
             :content="segment.content"
+            :enable-animate="false"
           />
           <StudioBlocksMermaid v-else-if="segment.type === 'mermaid'" :code="segment.content" />
         </template>

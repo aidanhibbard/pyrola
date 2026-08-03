@@ -10,7 +10,9 @@ import {
   appendChatLine,
   updateChatMeta,
 } from '@/services/pyrola/pyrola-tauri'
-import assembleSystemPrompt from '@/services/harness/system-prompt-assembler'
+import assembleSystemPromptParts, {
+  joinSystemPromptParts,
+} from '@/services/context/system-prompt-parts'
 import countContextBudget from '@/services/context/count-context-budget'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
@@ -33,6 +35,10 @@ import {
   hasRunningSubagentsForChat,
   setTurnResponseMessages,
 } from '@/services/harness/subagent-registry'
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  resolveModelCallOptions,
+} from '@/services/models/resolve-model-call-options'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -50,6 +56,7 @@ export type OrchestratorInput = {
   onEvent: (event: HarnessEvent) => void
   assistantId?: string
   skipUserPersist?: boolean
+  standalone?: boolean
 }
 
 export type ResumeOrchestratorInput = Omit<
@@ -61,7 +68,7 @@ export type ResumeOrchestratorInput = Omit<
   skipUserPersist: true
 }
 
-const MAX_OUTPUT_TOKENS = 8192
+const MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
 const MAX_CONSECUTIVE_TOOL_ERRORS = 5
 
 const nowIso = (): string => new Date().toISOString()
@@ -298,6 +305,7 @@ type HarnessStreamInput = {
   onEvent: (event: HarnessEvent) => void
   assistantId: string
   captureTurnMessages: boolean
+  standalone?: boolean
 }
 
 const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
@@ -329,21 +337,32 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   })
   await updateChatMeta(projectSlug, chatId, { status: 'running' })
 
-  const system = await assembleSystemPrompt({
+  const promptInput = {
     mode,
     projectName,
     projectRoot,
     mentions,
-    agentCatalog: [],
-  })
+    agentCatalog: [] as Array<{ name: string; description: string }>,
+    standalone: input.standalone,
+  }
+
+  const [parts, model] = await Promise.all([
+    assembleSystemPromptParts(promptInput),
+    createModel({ providerId, modelId, settings }),
+  ])
+  const system = joinSystemPromptParts(parts)
 
   const budget = await countContextBudget({
     modelId,
+    providerId,
+    settings,
     mode,
     projectName,
     projectRoot,
     mentions,
     messages,
+    standalone: input.standalone,
+    parts,
   })
   onEvent({
     type: 'context-budget',
@@ -353,7 +372,9 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     buckets: budget.buckets,
   })
 
-  const model = await createModel({ providerId, modelId, settings })
+  const callOptions = resolveModelCallOptions(settings, { providerId, modelId }, {
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+  })
 
   const handleHarnessEvent = (event: HarnessEvent): void => {
     if (event.type === 'subagent-start' || event.type === 'subagent-result') {
@@ -385,6 +406,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   let consecutiveToolErrors = 0
   let currentStepId = ''
   let currentStepText = ''
+  let collectedStepText = ''
   let stepOpen = false
   const startedToolIds = new Set<string>()
   const completedToolIds = new Set<string>()
@@ -405,6 +427,9 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       return
     }
     if (currentStepText.trim()) {
+      collectedStepText = collectedStepText
+        ? `${collectedStepText}\n\n${currentStepText}`
+        : currentStepText
       await persistStepText(projectSlug, chatId, currentStepId, currentStepText)
     }
     onEvent({ type: 'step-finish', stepId: currentStepId })
@@ -489,7 +514,14 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       instructions: system,
       messages: modelMessages,
       tools,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      maxOutputTokens: callOptions.maxOutputTokens,
+      temperature: callOptions.temperature,
+      topP: callOptions.topP,
+      topK: callOptions.topK,
+      frequencyPenalty: callOptions.frequencyPenalty,
+      presencePenalty: callOptions.presencePenalty,
+      seed: callOptions.seed,
+      providerOptions: callOptions.providerOptions,
       experimental_transform: smoothStream({ chunking: 'word' }),
       stopWhen: stepCountIs(25),
       abortSignal: signal,
@@ -614,15 +646,22 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       await finishStep()
     }
 
+    // Prefer text already streamed into steps. Only fall back to result.text when
+    // nothing was collected — and never re-emit it as a live delta (that duplicates
+    // step text in the timeline UI).
     if (!trailingText && !signal.aborted && !streamError) {
-      try {
-        const finalText = await result.text
-        if (finalText) {
-          trailingText = finalText
-          onEvent({ type: 'text-delta', delta: finalText })
+      if (collectedStepText.trim()) {
+        trailingText = collectedStepText
+      } else {
+        try {
+          const finalText = await result.text
+          if (finalText) {
+            trailingText = finalText
+            onEvent({ type: 'text-delta', delta: finalText })
+          }
+        } catch (error) {
+          streamError = resolveStreamError(error)
         }
-      } catch (error) {
-        streamError = resolveStreamError(error)
       }
     }
 
@@ -697,6 +736,12 @@ export default async (input: OrchestratorInput): Promise<void> => {
     role: 'user' as const,
     parts: [{ type: 'text', text: userText }],
     createdAt: nowIso(),
+    model:
+      typeof existingUser?.metadata === 'object' &&
+      existingUser.metadata &&
+      typeof (existingUser.metadata as Record<string, unknown>).model === 'string'
+        ? ((existingUser.metadata as Record<string, unknown>).model as string)
+        : `${input.providerId}::${input.modelId}`,
   }
 
   if (!skipUserPersist) {
@@ -721,18 +766,18 @@ export default async (input: OrchestratorInput): Promise<void> => {
       await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
       emitTitleChange(fallbackTitle)
     }
-  }
 
-  void runSideTask({
-    projectSlug,
-    chatId,
-    prompt: userText,
-    settings: input.settings,
-  }).then((generatedTitle) => {
-    if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
-      emitTitleChange(generatedTitle)
-    }
-  })
+    void runSideTask({
+      projectSlug,
+      chatId,
+      prompt: userText,
+      settings: input.settings,
+    }).then((generatedTitle) => {
+      if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
+        emitTitleChange(generatedTitle)
+      }
+    })
+  }
 
   const modelMessages = await convertToModelMessages(messages)
 
@@ -744,6 +789,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     modelMessages,
     assistantId: inputAssistantId ?? crypto.randomUUID(),
     captureTurnMessages: true,
+    standalone: input.standalone,
   })
 }
 

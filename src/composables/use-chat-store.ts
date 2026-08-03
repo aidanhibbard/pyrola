@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import type { UIMessage } from 'ai'
 import type { AgentStep } from '@/types/chat/agent-step'
 import type { AgentTurn } from '@/types/chat/agent-turn'
+import type { AgentTurnError } from '@/types/chat/agent-turn-error'
 import type { ChatMeta } from '@/types/chat/chat-meta'
 import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
@@ -278,14 +279,20 @@ const updateTimelineTurn = (turn: AgentTurn): void => {
 
 const updateAssistantMessage = (turn: AgentTurn): void => {
   const reasoning = turn.steps.map((step) => step.reasoning).join('')
-  if (!reasoning && !turn.text) {
+  const text =
+    turn.text.trim() ||
+    turn.steps
+      .map((step) => step.text.trim())
+      .filter((value) => value.length > 0)
+      .join('\n\n')
+  if (!reasoning && !text) {
     return
   }
   const parts: MessagePart[] = []
   if (reasoning) {
     parts.push({ type: 'reasoning', text: reasoning })
   }
-  parts.push({ type: 'text', text: turn.text })
+  parts.push({ type: 'text', text })
 
   const index = messages.value.findIndex((message) => message.id === turn.id)
   const message: UIMessage = {
@@ -373,12 +380,18 @@ const rebuildMessagesFromTimeline = (items: ChatTimelineItem[]): UIMessage[] => 
     }
     const turn = item.turn
     const reasoning = turn.steps.map((step) => step.reasoning).join('')
+    const text =
+      turn.text.trim() ||
+      turn.steps
+        .map((step) => step.text.trim())
+        .filter((value) => value.length > 0)
+        .join('\n\n')
     nextMessages.push({
       id: turn.id,
       role: 'assistant',
       parts: [
         ...(reasoning ? [{ type: 'reasoning' as const, text: reasoning }] : []),
-        { type: 'text' as const, text: turn.text },
+        { type: 'text' as const, text },
       ],
     })
   }
@@ -582,6 +595,12 @@ export default () => {
             id: parsed.id,
             role: 'user',
             parts: parsed.parts.map(parsePart),
+            metadata: {
+              createdAt: parsed.createdAt,
+              ...(typeof parsed.model === 'string' && parsed.model.length > 0
+                ? { model: parsed.model }
+                : {}),
+            },
           }
           nextMessages.push(message)
           nextTimeline.push({ type: 'user', message })
@@ -601,18 +620,30 @@ export default () => {
               text,
             }
           } else {
+            let nextTurn: AgentTurn = pendingTurn
             if (reasoning) {
               const stepId = currentStepId ?? parsed.id
-              pendingTurn = patchStep(pendingTurn, stepId, {
+              nextTurn = patchStep(nextTurn, stepId, {
                 reasoning:
-                  (pendingTurn.steps.find((step) => step.id === stepId)?.reasoning ??
-                    '') + reasoning,
+                  (nextTurn.steps.find((step: AgentStep) => step.id === stepId)
+                    ?.reasoning ?? '') + reasoning,
               })
             }
+            const fromSteps: string = nextTurn.steps
+              .map((step: AgentStep) => step.text.trim())
+              .filter((value: string) => value.length > 0)
+              .join('\n\n')
+            // Prefer chronological step text. Only keep assistant-line text on the
+            // turn when it is not already restored via step-text events.
+            const duplicated =
+              Boolean(text) &&
+              Boolean(fromSteps) &&
+              (text === fromSteps || text.includes(fromSteps) || fromSteps.includes(text))
             pendingTurn = {
-              ...pendingTurn,
+              ...nextTurn,
               id: parsed.id,
-              text: text || pendingTurn.text,
+              text: duplicated ? '' : text || nextTurn.text,
+              steps: nextTurn.steps,
             }
           }
           flushTurn()
@@ -822,11 +853,13 @@ export default () => {
     finishAgentStep()
     const current = getActiveTurn()
     if (current) {
-      const trailingText = pendingStepText.value
+      const trailingText = pendingStepText.value.trim()
       pendingStepText.value = ''
       patchActiveTurn({
         ...current,
-        text: trailingText ? current.text + trailingText : current.text,
+        // Keep step.text so the UI can render chronological step order
+        // (text before later tools). Only store out-of-step trailing text here.
+        text: trailingText ? `${current.text}${trailingText}` : current.text,
         steps: current.steps.map((step) => closeRunningTools(step)),
       })
     } else {
@@ -834,6 +867,18 @@ export default () => {
     }
     activeTurnId.value = null
     activeStepId.value = null
+  }
+
+  const setAgentTurnError = (turnError: AgentTurnError): void => {
+    const current = getActiveTurn()
+    if (current) {
+      patchActiveTurn({ ...current, error: turnError })
+      return
+    }
+    const last = timeline.value.at(-1)
+    if (last?.type === 'agent-turn') {
+      updateTimelineTurn({ ...last.turn, error: turnError })
+    }
   }
 
   const patchMeta = (patch: Partial<ChatMeta>): void => {
@@ -946,21 +991,15 @@ export default () => {
     return null
   }
 
-  const canResetToLastQuestion = computed(() => {
-    let lastUserIndex = -1
-    for (let index = timeline.value.length - 1; index >= 0; index -= 1) {
-      if (timeline.value[index]?.type === 'user') {
-        lastUserIndex = index
-        break
-      }
-    }
-    if (lastUserIndex < 0) {
-      return false
-    }
-    return timeline.value
-      .slice(lastUserIndex + 1)
-      .some((item) => item.type === 'agent-turn')
-  })
+  const clearChatState = (): void => {
+    meta.value = null
+    messages.value = []
+    timeline.value = []
+    loading.value = false
+    editingMessageId.value = null
+    editDraftText.value = ''
+    clearActiveTurnState()
+  }
 
   const beginEditMessage = (messageId: string): void => {
     const message = findUserMessage(messageId)
@@ -1003,10 +1042,10 @@ export default () => {
     todos,
     editingMessageId,
     editDraftText,
-    canResetToLastQuestion,
     loadChat,
     createNewChat,
     listProjectChats,
+    clearChatState,
     patchMeta,
     reloadMeta,
     appendLocalMessage,
@@ -1017,6 +1056,7 @@ export default () => {
     appendLocalReasoningDelta,
     upsertLocalToolRun,
     finishAgentTurn,
+    setAgentTurnError,
     appendLocalTodoUpdate,
     upsertLocalSubagentStart,
     completeLocalSubagent,
