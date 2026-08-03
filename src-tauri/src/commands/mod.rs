@@ -10,6 +10,7 @@ pub mod lsp;
 pub mod mcp;
 pub mod paths;
 pub mod registry;
+pub mod sandbox;
 pub mod shell;
 pub mod watch;
 pub use chat::{

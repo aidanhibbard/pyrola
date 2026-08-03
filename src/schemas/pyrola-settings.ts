@@ -23,6 +23,26 @@ export const pyrolaSettingsSchema = z
     'appearance.fontSize': z.number().int().min(10).max(20).optional(),
     'agent.defaultMode': chatModeSchema.optional(),
     'agent.autoApproveGlobs': z.array(z.string()).optional(),
+    'agent.permissionLevel': z.enum(['ask', 'allowlist', 'bypass']).optional(),
+    'agent.permissions': z
+      .array(
+        z.object({
+          capability: z.string(),
+          verdict: z.enum(['allow', 'deny']),
+          scope: z.enum(['workspace', 'always']),
+        }),
+      )
+      .optional(),
+    'agent.mcp.trust': z
+      .array(
+        z.object({
+          serverId: z.string(),
+          scope: z.enum(['session', 'workspace', 'always', 'never']),
+        }),
+      )
+      .optional(),
+    'agent.sandbox.enabled': z.boolean().optional(),
+    'agent.sandbox.network': z.enum(['deny', 'allow']).optional(),
     'fleet.maxConcurrentAgents': z.number().int().min(1).max(16).optional(),
     'fleet.trayBackground': z.boolean().optional(),
     'general.machineLabel': z.string().optional(),
@@ -38,7 +58,15 @@ export const pyrolaSettingsSchema = z
     'models.title': modelRefStringSchema.optional(),
     'models.compaction': modelRefStringSchema.optional(),
   })
-  .catchall(z.union([z.string(), customProviderSchema, z.number(), z.boolean()]))
+  .catchall(
+    z.union([
+      z.string(),
+      customProviderSchema,
+      z.number(),
+      z.boolean(),
+      z.array(z.unknown()),
+    ]),
+  )
 
 export const validatePyrolaSettings = (
   settings: unknown,
@@ -57,7 +85,12 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'appearance.theme': 'system',
   'appearance.fontSize': 13,
   'agent.defaultMode': 'agent',
-  'agent.autoApproveGlobs': ['src/**', 'src-tauri/**'],
+  'agent.autoApproveGlobs': [],
+  'agent.permissionLevel': 'ask',
+  'agent.permissions': [],
+  'agent.mcp.trust': [],
+  'agent.sandbox.enabled': true,
+  'agent.sandbox.network': 'deny',
   'fleet.maxConcurrentAgents': 4,
   'fleet.trayBackground': false,
   'lsp.enabled': true,

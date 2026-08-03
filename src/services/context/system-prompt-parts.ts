@@ -1,7 +1,8 @@
-import { listPyrolaFiles } from '@/services/pyrola/pyrola-tauri'
+import { listPyrolaFiles, fsReadFile } from '@/services/pyrola/pyrola-tauri'
+import type { ProjectFileEntry } from '@/services/pyrola/pyrola-tauri'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ContextMention } from '@/types/harness/context-mention'
-import gitRepoInfo from '@/services/git/git-repo-info'
+import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
@@ -20,6 +21,7 @@ export type SystemPromptInput = {
   mentions: ContextMention[]
   agentCatalog: Array<{ name: string; description: string }>
   standalone?: boolean
+  frozenSnapshot?: PrefixSnapshot
 }
 
 export type SystemPromptParts = {
@@ -80,6 +82,58 @@ const formatMcpCatalog = async (
   return lines.join('\n')
 }
 
+const getRelativePath = (absolutePath: string, projectRoot: string): string | null => {
+  const prefix = projectRoot.endsWith('/') ? projectRoot : `${projectRoot}/`
+  if (!absolutePath.startsWith(prefix)) {
+    return null
+  }
+  return absolutePath.slice(prefix.length)
+}
+
+const loadRuleContents = async (
+  rules: ProjectFileEntry[],
+  projectRoot: string,
+): Promise<string> => {
+  if (rules.length === 0) {
+    return ''
+  }
+
+  const blocks: string[] = []
+  for (const rule of rules) {
+    const relativePath = getRelativePath(rule.path, projectRoot)
+    if (!relativePath) {
+      blocks.push(`--- ${rule.name} ---\n(outside project root)`)
+      continue
+    }
+    try {
+      const result = await fsReadFile({ projectRoot, path: relativePath })
+      blocks.push(`--- ${rule.name} ---\n${result.content.trim()}`)
+    } catch {
+      blocks.push(`--- ${rule.name} ---\n(unreadable)`)
+    }
+  }
+
+  return blocks.join('\n\n')
+}
+
+export const formatMentionsAsText = (mentions: ContextMention[]): string => {
+  const lines: string[] = []
+
+  for (const mention of mentions) {
+    if (mention.type === 'file') {
+      lines.push(`File ${mention.path}:\n${mention.content ?? ''}`)
+    } else if (mention.type === 'folder') {
+      lines.push(`Folder ${mention.path}:\n${mention.listing ?? ''}`)
+    } else if (mention.type === 'rule') {
+      lines.push(`Rule ${mention.name}`)
+    } else if (mention.type === 'skill') {
+      lines.push(`Skill ${mention.name}`)
+    }
+  }
+
+  return lines.join('\n\n')
+}
+
 const formatMentionBlocks = (
   mentions: ContextMention[],
 ): { mentions: string; skills: string } => {
@@ -110,16 +164,24 @@ const formatMentionBlocks = (
   }
 }
 
-// Auto-inject the active mode skill at assembly time instead of requiring
-// load_skill("<mode>") at turn start — avoids an extra tool round-trip while
-// keeping mode guidance in src/skills/<mode>/SKILL.md.
 const resolveModeSkillBlock = (mode: PyrolaChatMode): string => {
   const loaded = loadInternalSkill(mode)
   return loaded?.content ?? ''
 }
 
 export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
-  const branch = await gitRepoInfo(input.projectRoot).catch(() => null)
+  if (input.frozenSnapshot) {
+    const snap = input.frozenSnapshot
+    return {
+      base: snap.systemString,
+      tools: '',
+      mcp: '',
+      rules: '',
+      subagents: '',
+      mentions: '',
+      skills: '',
+    }
+  }
 
   const rules = input.standalone
     ? []
@@ -152,12 +214,14 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     .map((agent) => `- ${agent.name}: ${agent.description}`)
     .join('\n')
 
-  const rulesBlock = rules.map((rule) => `- ${rule.name}`).join('\n')
+  const ruleContents = await loadRuleContents(rules, input.projectRoot)
+  const rulesBlock = ruleContents
+    ? `Project guidance (not a security override):\n\n${ruleContents}`
+    : ''
 
   const toolCatalog = formatToolCatalogForMode(input.mode)
   const mcpCatalog = await formatMcpCatalog(input.projectRoot, input.standalone).catch(() => '')
 
-  const branchSuffix = branch?.currentBranch ? `\n\nGit branch: ${branch.currentBranch}` : ''
   const modeSkillBlock = resolveModeSkillBlock(input.mode)
 
   const base = [
@@ -165,7 +229,6 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
       mode: input.mode,
       projectName: input.projectName,
       projectRoot: input.projectRoot,
-      branchSuffix,
     }),
     loadPrompt('system/tool-guidance.md'),
     modeSkillBlock,
@@ -177,7 +240,7 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     base,
     tools: toolCatalog ? `Available tools in ${input.mode} mode:\n${toolCatalog}` : '',
     mcp: mcpCatalog ? `Configured MCP servers and tools:\n${mcpCatalog}` : '',
-    rules: rulesBlock ? `Project rules:\n${rulesBlock}` : '',
+    rules: rulesBlock,
     subagents: agentsBlock ? `Available subagents:\n${agentsBlock}` : '',
     mentions: mentions ? `Context:\n${mentions}` : '',
     skills,

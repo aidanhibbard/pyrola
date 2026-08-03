@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import { FolderIcon, ChevronDownIcon, XIcon } from '@lucide/vue'
@@ -27,6 +27,7 @@ import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
 import ChatMcpServerPicker from '@/components/chat/ChatMcpServerPicker.vue'
 import ChatSkillsPicker from '@/components/chat/ChatSkillsPicker.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
+import ChatPermissionDial from '@/components/chat/ChatPermissionDial.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
@@ -42,6 +43,7 @@ import listConfiguredProviders from '@/services/providers/list-configured-provid
 import { normalizeStoredModelRef } from '@/schemas/pyrola-settings'
 import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/types'
+import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const props = withDefaults(
@@ -50,12 +52,20 @@ const props = withDefaults(
     disabled?: boolean
     showProjectSelect?: boolean
     showContextUsage?: boolean
+    permissionLevel?: PermissionLevel
+    actionsDisabled?: boolean
+    onCompact?: () => void
+    onHandoff?: () => void
   }>(),
   {
     status: 'ready',
     disabled: false,
     showProjectSelect: false,
     showContextUsage: false,
+    permissionLevel: undefined,
+    actionsDisabled: false,
+    onCompact: undefined,
+    onHandoff: undefined,
   },
 )
 
@@ -65,9 +75,11 @@ const emit = defineEmits<{
     mode: PyrolaChatMode
     model: string
     projectId: string | null
+    permissionLevel: PermissionLevel
   }]
   submitEdit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
   stop: []
+  'update:permissionLevel': [value: PermissionLevel]
 }>()
 
 const fleet = useFleetRegistry()
@@ -75,6 +87,13 @@ const config = usePyrolaConfig()
 const git = useGitBranches()
 const chatStore = useChatStore()
 const contextUsage = useContextUsage()
+
+const resolveDefaultPermissionLevel = (): PermissionLevel =>
+  props.permissionLevel
+  ?? config.effectiveSettings.value['agent.permissionLevel']
+  ?? 'ask'
+
+const localPermissionLevel = ref<PermissionLevel>(resolveDefaultPermissionLevel())
 
 const session = reactive<{
   selectedMode: PyrolaChatMode
@@ -180,6 +199,11 @@ const handleModelChange = (value: string): void => {
   }
 }
 
+const handlePermissionLevelChange = (level: PermissionLevel): void => {
+  localPermissionLevel.value = level
+  emit('update:permissionLevel', level)
+}
+
 const handleSubmit = (payload: PromptInputMessage): void => {
   if (props.status === 'streaming') {
     emit('stop')
@@ -200,6 +224,7 @@ const handleSubmit = (payload: PromptInputMessage): void => {
     projectId: props.showProjectSelect
       ? session.selectedProjectId
       : fleet.activeProject.value?.id ?? null,
+    permissionLevel: localPermissionLevel.value,
   }
   if (isEditing.value) {
     emit('submitEdit', {
@@ -260,6 +285,15 @@ watch(
 )
 
 watch(
+  () => props.permissionLevel,
+  (level) => {
+    if (level !== undefined) {
+      localPermissionLevel.value = level
+    }
+  },
+)
+
+watch(
   () => fleet.loaded.value,
   (loaded) => {
     if (!loaded || session.projectSelectionInitialized || !props.showProjectSelect) {
@@ -276,6 +310,10 @@ watch(
   (hydrated) => {
     if (!hydrated) {
       return
+    }
+    if (props.permissionLevel === undefined) {
+      localPermissionLevel.value =
+        config.effectiveSettings.value['agent.permissionLevel'] ?? 'ask'
     }
     if (!session.modeInitialized) {
       session.selectedMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
@@ -443,14 +481,24 @@ watch(
       </PromptInputFooter>
     </PromptInput>
     <div class="mt-1 flex items-center gap-2 px-1">
+      <ChatPermissionDial
+        :model-value="localPermissionLevel"
+        @update:model-value="handlePermissionLevelChange"
+      />
       <ChatGitBranchSelect v-if="showGitBranch" />
-      <div v-else />
       <div class="ml-auto flex items-center gap-2">
         <ChatMcpServerPicker />
         <ChatSkillsPicker :mode="session.selectedMode" />
         <ChatContextUsageBar
           v-if="showContextUsage"
           :trigger-disabled="disabled"
+          :actions-disabled="
+            props.actionsDisabled
+            || status === 'streaming'
+            || status === 'submitted'
+          "
+          :on-compact="props.onCompact"
+          :on-handoff="props.onHandoff"
         />
       </div>
     </div>

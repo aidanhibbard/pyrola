@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { FileDiff } from '@/types/harness/file-diff'
+import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 
 const fsStagePreviewWrite = vi.fn<
   (args: { projectRoot: string; path: string; content: string }) => Promise<FileDiff[]>
@@ -28,9 +29,8 @@ const fsEditFile = vi.fn<
 const fsApplyPatch = vi.fn<
   (args: { projectRoot: string; patch: string }) => Promise<FileDiff[]>
 >()
-const requestApproval = vi.fn<
-  (toolCallId: string, name: string, diff: FileDiff[]) => Promise<boolean>
->()
+
+const gateToolPermission = vi.fn<() => Promise<boolean>>().mockResolvedValue(true)
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   fsReadFile: vi.fn<() => Promise<string>>(),
@@ -57,9 +57,8 @@ vi.mock('@/services/git/git-repo-info', () => ({
   default: vi.fn<() => Promise<unknown>>(),
 }))
 
-vi.mock('@/services/harness/approval-gate', () => ({
-  requestApproval,
-  shouldAutoApprove: vi.fn<() => boolean>(() => true),
+vi.mock('@/services/harness/gate-tool-permission', () => ({
+  gateToolPermission,
 }))
 
 const createAgentShell = vi.fn<
@@ -120,7 +119,7 @@ describe('build-tools stage preview wiring', () => {
     fsWriteFile.mockResolvedValue(sampleDiff)
     fsEditFile.mockResolvedValue(sampleDiff)
     fsApplyPatch.mockResolvedValue([sampleDiff])
-    requestApproval.mockResolvedValue(true)
+    gateToolPermission.mockResolvedValue(true)
   })
 
   const ctx = {
@@ -128,7 +127,11 @@ describe('build-tools stage preview wiring', () => {
     projectSlug: 'project',
     chatId: 'chat-1',
     settings: { version: 1 } as PyrolaSettings,
-    onPendingApproval: vi.fn<(toolCallId: string, name: string, diff: FileDiff[]) => void>(),
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 
   const runTool = async (
@@ -201,6 +204,7 @@ describe('build-tools stage preview wiring', () => {
 describe('build-tools run_terminal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    gateToolPermission.mockResolvedValue(true)
     createAgentShell.mockResolvedValue({
       shellId: 'shell-1',
       status: 'running',
@@ -235,7 +239,11 @@ describe('build-tools run_terminal', () => {
     projectSlug: 'project',
     chatId: 'chat-1',
     settings: { version: 1 } as PyrolaSettings,
-    onPendingApproval: vi.fn<(toolCallId: string, name: string, diff: FileDiff[]) => void>(),
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 
   const runTool = async (
@@ -259,6 +267,8 @@ describe('build-tools run_terminal', () => {
       chatId: 'chat-1',
       projectRoot: '/project',
       command: 'echo hello',
+      sandboxed: true,
+      allowNetwork: false,
     })
     expect(waitForShellExit).toHaveBeenCalledWith('shell-1', 120_000)
     expect(result).toMatchObject({
@@ -319,6 +329,7 @@ describe('build-tools run_terminal', () => {
 describe('build-tools write_studio_artifact', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    gateToolPermission.mockResolvedValue(true)
     fsWriteFile.mockResolvedValue(sampleDiff)
     openStudio.mockReset()
     resolveProjectIdByRoot.mockReturnValue('project-1')
@@ -329,7 +340,11 @@ describe('build-tools write_studio_artifact', () => {
     projectSlug: 'project',
     chatId: 'chat-1',
     settings: { version: 1 } as PyrolaSettings,
-    onPendingApproval: vi.fn<(toolCallId: string, name: string, diff: FileDiff[]) => void>(),
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 
   const runTool = async (

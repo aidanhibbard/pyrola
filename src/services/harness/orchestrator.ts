@@ -5,14 +5,19 @@ import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { SubagentResult } from '@/types/harness/subagent-record'
+import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
+import type { SystemPromptParts } from '@/services/context/system-prompt-parts'
 import createModel from '@/services/providers/create-model'
 import {
   appendChatLine,
+  readChatMeta,
   updateChatMeta,
 } from '@/services/pyrola/pyrola-tauri'
 import assembleSystemPromptParts, {
+  formatMentionsAsText,
   joinSystemPromptParts,
 } from '@/services/context/system-prompt-parts'
+import { buildPrefixSnapshot, getFrozenPrefix } from '@/services/harness/prefix-contract'
 import countContextBudget from '@/services/context/count-context-budget'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
@@ -40,6 +45,8 @@ import {
   resolveModelCallOptions,
 } from '@/services/models/resolve-model-call-options'
 import { toast } from 'vue-sonner'
+import truncateToolResult from '@/utils/truncate-tool-result'
+import fleetCounter from '@/services/harness/fleet-counter'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -58,6 +65,12 @@ export type OrchestratorInput = {
   assistantId?: string
   skipUserPersist?: boolean
   standalone?: boolean
+  permissionLevel?: PermissionLevel
+  persistPermission?: (
+    capability: PermissionCapabilityKey,
+    verdict: 'allow' | 'deny',
+    scope: 'workspace' | 'always',
+  ) => Promise<void>
 }
 
 export type ResumeOrchestratorInput = Omit<
@@ -68,7 +81,6 @@ export type ResumeOrchestratorInput = Omit<
   completedResult: SubagentResult
   skipUserPersist: true
 }
-
 const MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
 const MAX_CONSECUTIVE_TOOL_ERRORS = 5
 
@@ -267,6 +279,47 @@ const resolveToolErrorMessage = (error: unknown): string => {
   }
 }
 
+const injectContextIntoLastUserMessage = (
+  modelMessages: ModelMessage[],
+  contextText: string,
+): ModelMessage[] => {
+  if (!contextText.trim()) {
+    return modelMessages
+  }
+  let lastUserIdx = -1
+  for (let i = modelMessages.length - 1; i >= 0; i--) {
+    if (modelMessages[i].role === 'user') {
+      lastUserIdx = i
+      break
+    }
+  }
+  if (lastUserIdx === -1) {
+    return modelMessages
+  }
+  const msg = modelMessages[lastUserIdx]
+  const result = [...modelMessages]
+  if (typeof msg.content === 'string') {
+    result[lastUserIdx] = { ...msg, content: `${contextText}\n\n${msg.content}` }
+    return result
+  }
+  if (Array.isArray(msg.content)) {
+    const parts = msg.content as Array<{ type: string; text?: string }>
+    const textIdx = parts.findIndex((p) => p.type === 'text')
+    if (textIdx >= 0) {
+      const updated = [...parts]
+      updated[textIdx] = { ...updated[textIdx], text: `${contextText}\n\n${updated[textIdx].text ?? ''}` }
+      result[lastUserIdx] = { ...msg, content: updated as ModelMessage['content'] }
+    } else {
+      result[lastUserIdx] = {
+        ...msg,
+        content: [{ type: 'text', text: contextText }, ...parts] as ModelMessage['content'],
+      }
+    }
+    return result
+  }
+  return modelMessages
+}
+
 const patchSubagentToolResult = (
   messages: ModelMessage[],
   toolCallId: string,
@@ -310,6 +363,12 @@ type HarnessStreamInput = {
   assistantId: string
   captureTurnMessages: boolean
   standalone?: boolean
+  permissionLevel?: PermissionLevel
+  persistPermission?: (
+    capability: PermissionCapabilityKey,
+    verdict: 'allow' | 'deny',
+    scope: 'workspace' | 'always',
+  ) => Promise<void>
 }
 
 const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
@@ -331,6 +390,8 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     captureTurnMessages,
   } = input
 
+  fleetCounter.increment()
+
   setAgentShellEventEmitter(onEvent)
 
   onEvent({
@@ -341,20 +402,52 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   })
   await updateChatMeta(projectSlug, chatId, { status: 'running' })
 
-  const promptInput = {
-    mode,
-    projectName,
-    projectRoot,
-    mentions,
-    agentCatalog: [] as Array<{ name: string; description: string }>,
-    standalone: input.standalone,
-  }
-
-  const [parts, model] = await Promise.all([
-    assembleSystemPromptParts(promptInput),
+  const [existingMeta, model] = await Promise.all([
+    readChatMeta(projectSlug, chatId).catch(() => null),
     createModel({ providerId, modelId, settings }),
   ])
-  const system = joinSystemPromptParts(parts)
+
+  const frozenSnapshot = existingMeta ? getFrozenPrefix(existingMeta) : null
+
+  let system: string
+  let parts: SystemPromptParts
+
+  if (frozenSnapshot) {
+    system = frozenSnapshot.systemString
+    parts = {
+      base: frozenSnapshot.systemString,
+      tools: '',
+      mcp: '',
+      rules: '',
+      subagents: '',
+      mentions: '',
+      skills: '',
+    }
+  } else {
+    const freshParts = await assembleSystemPromptParts({
+      mode,
+      projectName,
+      projectRoot,
+      mentions: [],
+      agentCatalog: [],
+      standalone: input.standalone,
+    })
+    system = joinSystemPromptParts(freshParts)
+    parts = { ...freshParts, mentions: '' }
+
+    const snapshot = buildPrefixSnapshot({
+      systemString: system,
+      toolSchemasJson: freshParts.tools,
+      mcpCatalogSnapshot: freshParts.mcp,
+      rulesBodies: freshParts.rules,
+    })
+    updateChatMeta(projectSlug, chatId, { prefixSnapshot: snapshot as unknown as Record<string, unknown> }).catch(() => {})
+  }
+
+  const mentionsText = formatMentionsAsText(mentions)
+  const finalModelMessages = mentionsText
+    ? injectContextIntoLastUserMessage(modelMessages, `Context:\n${mentionsText}`)
+    : modelMessages
 
   const budget = await countContextBudget({
     modelId,
@@ -372,7 +465,11 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     type: 'context-budget',
     modelId,
     used: budget.used,
+    promptUsed: budget.promptUsed,
     limit: budget.limit,
+    reservedOutput: budget.reservedOutput,
+    safetyBuffer: budget.safetyBuffer,
+    free: budget.free,
     buckets: budget.buckets,
   })
 
@@ -402,14 +499,32 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     onEvent(event)
   }
 
+  const sessionAllows = new Set<string>()
+  const sessionDenies = new Set<string>()
+
   const allTools = buildTools({
     projectRoot,
     projectSlug,
     chatId,
     settings,
-    onPendingApproval: (toolCallId, name, diff) => {
-      onEvent({ type: 'tool-pending-approval', toolCallId, name, diff })
+    permissionLevel: input.permissionLevel ?? settings['agent.permissionLevel'] ?? 'ask',
+    sessionAllows,
+    sessionDenies,
+    sandboxEnabled: settings['agent.sandbox.enabled'] ?? false,
+    onPendingApproval: (entry) => {
+      onEvent({
+        type: 'tool-pending-approval',
+        toolCallId: entry.toolCallId,
+        name: entry.name,
+        kind: entry.kind,
+        title: entry.title,
+        detail: entry.detail,
+        unsandboxed: entry.unsandboxed,
+        allowedScopes: entry.allowedScopes,
+        diff: entry.diff ?? [],
+      })
     },
+    persistPermission: input.persistPermission,
     onHarnessEvent: handleHarnessEvent,
     signal,
   })
@@ -493,12 +608,13 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       return
     }
     completedToolIds.add(toolCallId)
-    const artifact = deriveToolArtifact(name, result, args, isError)
-    const diffs = isError ? undefined : deriveToolDiffs(result)
+    const truncated = isError ? result : truncateToolResult(result)
+    const artifact = deriveToolArtifact(name, truncated, args, isError)
+    const diffs = isError ? undefined : deriveToolDiffs(truncated)
     onEvent({
       type: 'tool-result',
       toolCallId,
-      result,
+      result: truncated,
       isError,
       ...(artifact ? { artifact } : {}),
       ...(diffs ? { diffs } : {}),
@@ -511,12 +627,12 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       isError ? 'error' : 'done',
       currentStepId,
       args,
-      result,
+      truncated,
       artifact,
       diffs,
     )
     if (!isError) {
-      const todos = parseTodoUpdate(name, result)
+      const todos = parseTodoUpdate(name, truncated)
       if (todos) {
         onEvent({ type: 'todo-update', todos })
         await persistTodoUpdate(projectSlug, chatId, todos)
@@ -528,7 +644,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     const result = streamText({
       model,
       instructions: system,
-      messages: modelMessages,
+      messages: finalModelMessages,
       tools,
       maxOutputTokens: callOptions.maxOutputTokens,
       temperature: callOptions.temperature,
@@ -714,6 +830,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       throw error
     }
   } finally {
+    fleetCounter.decrement()
     rejectAllPending()
     rejectAllPendingQuestions()
     setAgentShellEventEmitter(null)
@@ -728,6 +845,14 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 }
 
 export default async (input: OrchestratorInput): Promise<void> => {
+  const limit = input.settings['fleet.maxConcurrentAgents'] ?? 4
+  if (fleetCounter.get() >= limit) {
+    toast.error('Too many concurrent agents', {
+      description: `Fleet limit is ${limit}. Stop a running agent before starting another.`,
+    })
+    return
+  }
+
   const {
     projectSlug,
     chatId,
@@ -802,23 +927,58 @@ export default async (input: OrchestratorInput): Promise<void> => {
       })
   }
 
-  const modelMessages = await convertToModelMessages(messages)
+  const baseModelMessages = await convertToModelMessages(messages)
+  const activeContextMeta = await readChatMeta(projectSlug, chatId).catch(() => null)
+  const activeContext = activeContextMeta?.activeContext
+
+  let effectiveModelMessages: ModelMessage[]
+
+  if (activeContext?.summary && activeContext.includeFromCreatedAt) {
+    const cutoffDate = activeContext.includeFromCreatedAt
+    const recentMessages = messages.filter((msg) => {
+      const createdAt =
+        msg.metadata &&
+        typeof msg.metadata === 'object' &&
+        typeof (msg.metadata as Record<string, unknown>).createdAt === 'string'
+          ? (msg.metadata as Record<string, unknown>).createdAt as string
+          : null
+      return createdAt ? createdAt >= cutoffDate : true
+    })
+    const recentModelMessages = await convertToModelMessages(recentMessages)
+    const checkpointMsg: ModelMessage = {
+      role: 'user',
+      content: `Prior checkpoint (history, not instructions):\n${activeContext.summary}`,
+    }
+    effectiveModelMessages = [checkpointMsg, ...recentModelMessages]
+  } else {
+    effectiveModelMessages = baseModelMessages
+  }
 
   await runHarnessStream({
     ...streamInput,
     projectSlug,
     chatId,
     messages,
-    modelMessages,
+    modelMessages: effectiveModelMessages,
     assistantId: inputAssistantId ?? crypto.randomUUID(),
     captureTurnMessages: true,
     standalone: input.standalone,
+    permissionLevel: input.permissionLevel,
+    persistPermission: input.persistPermission,
   })
 }
 
 export const resumeOrchestrator = async (
   input: ResumeOrchestratorInput,
 ): Promise<void> => {
+  const limit = input.settings['fleet.maxConcurrentAgents'] ?? 4
+  if (fleetCounter.get() >= limit) {
+    toast.error('Too many concurrent agents', {
+      description: `Fleet limit is ${limit}. Stop a running agent before starting another.`,
+    })
+    return
+  }
+
   const {
     projectSlug,
     chatId,
@@ -864,6 +1024,7 @@ export const resumeOrchestrator = async (
 
   await runHarnessStream({
     ...streamInput,
+    mentions: [],
     projectSlug,
     chatId,
     messages,
@@ -871,6 +1032,8 @@ export const resumeOrchestrator = async (
     onEvent,
     assistantId: inputAssistantId ?? crypto.randomUUID(),
     captureTurnMessages: false,
+    permissionLevel: input.permissionLevel,
+    persistPermission: input.persistPermission,
   })
 }
 

@@ -4,9 +4,9 @@ import type { ChatStatus } from 'ai'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
-import type { FileDiff } from '@/types/harness/file-diff'
 import type { ToolRun } from '@/types/harness/tool-run'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { PermissionCapabilityKey, PermissionLevel, PermissionRecord } from '@/types/harness/permission'
 import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
@@ -14,14 +14,25 @@ import runOrchestrator, {
   mapMetaStatusToChatStatus,
   resumeOrchestrator,
 } from '@/services/harness/orchestrator'
-import { resolveApproval } from '@/services/harness/approval-gate'
+import { resolveApproval, type ApprovalResolution } from '@/services/harness/approval-gate'
+import { type PendingApprovalView } from '@/services/harness/gate-tool-permission'
+import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import {
   abort as abortSubagentsForChat,
+  abortOne,
   getSubagent,
 } from '@/services/harness/subagent-registry'
+import { killShellsForChat } from '@/services/harness/agent-shell-registry'
+import compactSession from '@/services/harness/compact-session'
+import writeHandoff from '@/services/harness/write-handoff'
+import { useRouter } from 'vue-router'
+import { createChat } from '@/services/pyrola/pyrola-tauri'
+import { setPendingChatMessage } from '@/services/chat/pending-message'
+import chatRouteFor from '@/utils/chat-route-for'
+import formatUnknownError from '@/utils/format-unknown-error'
 
 export type AgentHarnessOptions = {
   projectSlug: string
@@ -33,6 +44,8 @@ export type AgentHarnessOptions = {
 
 export type { ToolRun } from '@/types/harness/tool-run'
 export type { SubagentEntry } from '@/types/harness/subagent-entry'
+export type { ApprovalResolution } from '@/services/harness/approval-gate'
+export type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 
 export default (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
@@ -42,13 +55,12 @@ export default (options: AgentHarnessOptions) => {
 
   const status = ref<ChatStatus>('ready')
   const error = ref<string | null>(null)
-  const pendingApprovals = shallowRef<
-    Array<{ toolCallId: string; name: string; diff: FileDiff[] }>
-  >([])
+  const pendingApprovals = shallowRef<PendingApprovalView[]>([])
   const toolRuns = shallowRef<ToolRun[]>([])
   const subagents = shallowRef<SubagentEntry[]>([])
   const abortController = ref<AbortController | null>(null)
   const liveEvents = ref<HarnessEvent[]>([])
+  const sessionPermissionLevel = ref<PermissionLevel | null>(null)
   const lastRunConfig = ref<{
     mode: PyrolaChatMode
     model: string
@@ -56,6 +68,38 @@ export default (options: AgentHarnessOptions) => {
     effectiveSettings: PyrolaSettings
   } | null>(null)
   const resumingSubagents = new Set<string>()
+
+  const persistPermission = async (
+    capability: PermissionCapabilityKey,
+    verdict: 'allow' | 'deny',
+    scope: 'workspace' | 'always',
+  ): Promise<void> => {
+    const tab = scope === 'workspace' ? 'project' : 'personal'
+    if (tab === 'project' && !config.activeRootPath.value) {
+      toast.error('Cannot save workspace permission', {
+        description: 'No active project is open.',
+      })
+      return
+    }
+    const settings = config.getScopeSettings(tab)
+    const existing = parsePermissionRecords(settings['agent.permissions'])
+    const idx = existing.findIndex((r) => r.capability === capability)
+    const record: PermissionRecord = { capability, verdict, scope }
+    const updated: PermissionRecord[] =
+      idx >= 0 ? existing.map((r, i) => (i === idx ? record : r)) : [...existing, record]
+    await config.updateSetting(tab, 'agent.permissions', updated)
+  }
+
+  const resolveApprovalDecision = (toolCallId: string, resolution: ApprovalResolution): void => {
+    resolveApproval(toolCallId, resolution)
+    pendingApprovals.value = pendingApprovals.value.filter(
+      (item) => item.toolCallId !== toolCallId,
+    )
+  }
+
+  const setPermissionLevel = (level: PermissionLevel | null): void => {
+    sessionPermissionLevel.value = level
+  }
 
   const handleEvent = (event: HarnessEvent): void => {
     liveEvents.value = [...liveEvents.value, event]
@@ -119,6 +163,7 @@ export default (options: AgentHarnessOptions) => {
         name: event.name,
         blocking: event.blocking,
         prompt: event.prompt,
+        model: event.model,
       })
     }
     if (event.type === 'subagent-event') {
@@ -148,9 +193,9 @@ export default (options: AgentHarnessOptions) => {
       if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
         resumingSubagents.add(event.subagentId)
         resumeAfterSubagent(event.subagentId, event.summary)
-          .catch((error) => {
+          .catch((err) => {
             toast.error('Agent resume failed', {
-              description: error instanceof Error ? error.message : 'Unknown error',
+              description: err instanceof Error ? err.message : 'Unknown error',
             })
           })
           .finally(() => {
@@ -172,20 +217,27 @@ export default (options: AgentHarnessOptions) => {
       chatStore.finishAgentStep()
     }
     if (event.type === 'tool-pending-approval') {
-      pendingApprovals.value = [
-        ...pendingApprovals.value,
-        {
-          toolCallId: event.toolCallId,
-          name: event.name,
-          diff: event.diff,
-        },
-      ]
+      const view: PendingApprovalView = {
+        toolCallId: event.toolCallId,
+        name: event.name,
+        kind: event.kind,
+        title: event.title,
+        detail: event.detail,
+        unsandboxed: event.unsandboxed,
+        allowedScopes: event.allowedScopes,
+        diff: event.diff,
+      }
+      pendingApprovals.value = [...pendingApprovals.value, view]
     }
     if (event.type === 'context-budget') {
       contextUsage.setBudget({
         modelId: event.modelId,
         used: event.used,
+        promptUsed: event.promptUsed,
         limit: event.limit,
+        reservedOutput: event.reservedOutput,
+        safetyBuffer: event.safetyBuffer,
+        free: event.free,
         buckets: event.buckets,
       })
     }
@@ -200,9 +252,9 @@ export default (options: AgentHarnessOptions) => {
       ) {
         chatStore.patchMeta({ title: event.patch.title })
       }
-      fleetSidebar.refreshSlug(options.projectSlug).catch((error) => {
+      fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
         toast.error('Failed to refresh sidebar', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: err instanceof Error ? err.message : 'Unknown error',
         })
       })
     }
@@ -225,17 +277,17 @@ export default (options: AgentHarnessOptions) => {
     }
 
     const record = getSubagent(subagentId)
-    const config = lastRunConfig.value
-    if (!record || !config) {
+    const cfg = lastRunConfig.value
+    if (!record || !cfg) {
       return
     }
 
-    if (!config.model) {
+    if (!cfg.model) {
       toast.error('Select a model before resuming')
       return
     }
 
-    const parsedModel = parseModelRef(config.model)
+    const parsedModel = parseModelRef(cfg.model)
     if (!parsedModel) {
       toast.error('Select a valid model before resuming')
       return
@@ -256,12 +308,12 @@ export default (options: AgentHarnessOptions) => {
         chatId: options.chatId,
         projectRoot: options.projectRoot,
         projectName: options.projectName,
-        mode: config.mode,
+        mode: cfg.mode,
         modelId: parsedModel.modelId,
         providerId: parsedModel.providerId,
-        settings: config.effectiveSettings,
+        settings: cfg.effectiveSettings,
         messages: chatStore.messages.value,
-        mentions: config.mentions,
+        mentions: cfg.mentions,
         signal: controller.signal,
         onEvent: handleEvent,
         assistantId: turnId,
@@ -272,6 +324,8 @@ export default (options: AgentHarnessOptions) => {
           summary,
         },
         skipUserPersist: true,
+        permissionLevel: sessionPermissionLevel.value ?? undefined,
+        persistPermission,
       })
       status.value = 'ready'
       chatStore.finishAgentTurn()
@@ -371,6 +425,8 @@ export default (options: AgentHarnessOptions) => {
         assistantId: turnId,
         skipUserPersist: args.skipUserPersist,
         standalone: options.standalone,
+        permissionLevel: sessionPermissionLevel.value ?? undefined,
+        persistPermission,
       })
       status.value = 'ready'
       chatStore.finishAgentTurn()
@@ -433,9 +489,9 @@ export default (options: AgentHarnessOptions) => {
         mode: args.mode,
         model: args.model,
       })
-    } catch (error) {
+    } catch (err) {
       toast.error('Failed to edit message', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: err instanceof Error ? err.message : 'Unknown error',
       })
     }
   }
@@ -474,14 +530,18 @@ export default (options: AgentHarnessOptions) => {
         skipUserMessage: true,
         skipUserPersist: true,
       })
-    } catch (error) {
+    } catch (err) {
       toast.error('Failed to retry', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: err instanceof Error ? err.message : 'Unknown error',
       })
     }
   }
 
-  const stop = (): void => {
+  const stopSubagent = (subagentId: string): void => {
+    abortOne(subagentId)
+  }
+
+  const stop = async (): Promise<void> => {
     abortController.value?.abort()
     abortSubagentsForChat(options.chatId)
     chatStore.setAgentTurnError({
@@ -489,26 +549,158 @@ export default (options: AgentHarnessOptions) => {
       message: 'The run was stopped.',
     })
     status.value = 'ready'
+    try {
+      await killShellsForChat(options.chatId)
+    } catch (error) {
+      toast.error('Failed to stop terminals', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
   }
 
+  const router = useRouter()
+
   const approve = (toolCallId: string): void => {
-    resolveApproval(toolCallId, true)
-    pendingApprovals.value = pendingApprovals.value.filter(
-      (item) => item.toolCallId !== toolCallId,
-    )
+    resolveApprovalDecision(toolCallId, { approved: true, scope: 'once' })
   }
 
   const reject = (toolCallId: string): void => {
-    resolveApproval(toolCallId, false)
-    pendingApprovals.value = pendingApprovals.value.filter(
-      (item) => item.toolCallId !== toolCallId,
-    )
+    resolveApprovalDecision(toolCallId, { approved: false, scope: 'once' })
+  }
+
+  const compactChat = async (focus?: string): Promise<void> => {
+    if (status.value === 'streaming' || status.value === 'submitted') {
+      toast.error('Cannot compact while agent is running', {
+        description: 'Stop the agent first, then compact.',
+      })
+      return
+    }
+
+    const meta = chatStore.meta.value
+    if (!meta) {
+      toast.error('Chat is not ready yet')
+      return
+    }
+
+    const projectRoot = options.projectRoot
+    if (!projectRoot) {
+      toast.error('No project root available for compaction')
+      return
+    }
+
+    try {
+      const result = await compactSession({
+        projectSlug: options.projectSlug,
+        chatId: options.chatId,
+        projectRoot,
+        settings: config.effectiveSettings.value,
+        messages: chatStore.messages.value,
+        focus,
+        frozenSystem: undefined,
+        chatModel: meta.model,
+      })
+      chatStore.appendLocalCompaction(result.summary, focus ?? null)
+      chatStore.patchMetaActiveContext({
+        checkpointLineId: result.checkpointLineId,
+        includeFromCreatedAt: result.includeFromCreatedAt,
+        summary: result.summary,
+      })
+      toast.success('Context compacted', {
+        description: 'Conversation history has been summarized.',
+      })
+    } catch (err) {
+      toast.error('Compaction failed', {
+        description: formatUnknownError(err),
+      })
+    }
+  }
+
+  const createHandoff = async (): Promise<void> => {
+    if (status.value === 'streaming' || status.value === 'submitted') {
+      toast.error('Cannot create handoff while agent is running', {
+        description: 'Stop the agent first.',
+      })
+      return
+    }
+
+    const meta = chatStore.meta.value
+    if (!meta) {
+      toast.error('Chat is not ready yet')
+      return
+    }
+
+    const projectRoot = options.projectRoot
+
+    let summary = meta.activeContext?.summary
+    if (!summary) {
+      try {
+        const compactResult = await compactSession({
+          projectSlug: options.projectSlug,
+          chatId: options.chatId,
+          projectRoot,
+          settings: config.effectiveSettings.value,
+          messages: chatStore.messages.value,
+          chatModel: meta.model,
+        })
+        summary = compactResult.summary
+        chatStore.appendLocalCompaction(compactResult.summary, null)
+        chatStore.patchMetaActiveContext({
+          checkpointLineId: compactResult.checkpointLineId,
+          includeFromCreatedAt: compactResult.includeFromCreatedAt,
+          summary: compactResult.summary,
+        })
+      } catch (err) {
+        toast.error('Handoff failed: could not generate summary', {
+          description: formatUnknownError(err),
+        })
+        return
+      }
+    }
+
+    try {
+      await writeHandoff({
+        projectRoot,
+        summary,
+        chatId: options.chatId,
+      })
+    } catch (err) {
+      toast.error('Handoff failed: could not write file', {
+        description: formatUnknownError(err),
+      })
+      return
+    }
+
+    try {
+      const newChat = await createChat({
+        projectSlug: options.projectSlug,
+        projectRoot,
+        mode: meta.mode,
+        model: meta.model,
+        title: `Handoff from ${meta.title}`,
+      })
+
+      setPendingChatMessage({
+        text: `Continuing from handoff:\n\n${summary}`,
+        mode: meta.mode,
+        model: meta.model,
+      })
+
+      await router.push(chatRouteFor(options.projectSlug, newChat.id))
+      toast.success('Handoff created', {
+        description: 'New chat opened with context from previous session.',
+      })
+    } catch (err) {
+      toast.error('Handoff failed: could not create new chat', {
+        description: formatUnknownError(err),
+      })
+    }
   }
 
   return {
     status,
     error,
     pendingApprovals,
+    sessionPermissionLevel,
     toolRuns,
     subagents,
     liveEvents,
@@ -516,8 +708,13 @@ export default (options: AgentHarnessOptions) => {
     submitEditMessage,
     retryLastTurn,
     stop,
+    stopSubagent,
     approve,
     reject,
+    resolveApprovalDecision,
+    setPermissionLevel,
     submitAnswer,
+    compactChat,
+    createHandoff,
   }
 }

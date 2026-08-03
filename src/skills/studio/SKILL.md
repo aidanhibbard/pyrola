@@ -81,8 +81,7 @@ Reference `data.*` in block props when using a `data.json` sidecar from `write_s
 ## Data sources
 
 1. **User** — honor pasted context and @mentions; inline in markdown or `data` param.
-2. **Shell** — `run_terminal` when local inspection is needed.
-3. **MCP** — `get_mcp_tools` → `call_mcp_tool` → `write_studio_artifact` with optional `data`.
+2. **MCP** — `get_mcp_tools` → `call_mcp_tool` → `write_studio_artifact` with optional `data`.
 
 ## Quality (visual blocks only)
 

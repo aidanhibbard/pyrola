@@ -1,6 +1,6 @@
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
-const READ_ONLY_TOOLS = [
+const ASK_TOOLS = [
   'read_file',
   'grep',
   'glob_files',
@@ -11,15 +11,14 @@ const READ_ONLY_TOOLS = [
   'git_branch',
   'lsp',
   'diagnostics',
-  'run_terminal',
-  'terminal_output',
-  'stop_terminal',
-  'web_fetch',
-  'web_search',
   'load_skill',
   'ask_user',
-  'call_mcp_tool',
-  'get_mcp_tools',
+] as const
+
+const PLAN_TOOLS = [
+  ...ASK_TOOLS,
+  'create_plan',
+  'update_plan_todo',
 ] as const
 
 const ORCHESTRATOR_TOOLS = [
@@ -33,7 +32,6 @@ const ORCHESTRATOR_TOOLS = [
   'git_branch',
   'lsp',
   'diagnostics',
-  'web_fetch',
   'load_skill',
   'ask_user',
   'call_mcp_tool',
@@ -44,16 +42,10 @@ const ORCHESTRATOR_TOOLS = [
 ] as const
 
 export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
-  ask: [...READ_ONLY_TOOLS],
-  plan: [
-    ...READ_ONLY_TOOLS,
-    'create_plan',
-    'update_plan_todo',
-  ],
+  ask: [...ASK_TOOLS],
+  plan: [...PLAN_TOOLS],
   studio: [
-    ...READ_ONLY_TOOLS,
-    'create_plan',
-    'update_plan_todo',
+    ...PLAN_TOOLS,
     'write_studio_artifact',
   ],
   agent: [
@@ -78,8 +70,6 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'run_terminal',
     'terminal_output',
     'stop_terminal',
-    'web_fetch',
-    'web_search',
     'load_skill',
     'ask_user',
     'call_mcp_tool',

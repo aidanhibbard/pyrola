@@ -132,6 +132,25 @@ export const clearTurnResponseMessages = (chatId: string): void => {
   turnResponseMessages.delete(chatId)
 }
 
+export const abortOne = (subagentId: string): void => {
+  const record = subagents.get(subagentId)
+  if (!record || record.status !== 'running') {
+    return
+  }
+
+  const controller = controllers.get(subagentId)
+  controller?.abort()
+  controllers.delete(subagentId)
+
+  const result: SubagentResult = {
+    subagentId,
+    name: record.agentName,
+    summary: 'Subagent stopped',
+  }
+  setSubagentStatus(record, 'failed', result)
+  resolveCompletionWaiters(subagentId, result)
+}
+
 export const abort = (chatId: string): void => {
   const ids = chatSubagents.get(chatId)
   if (!ids) {

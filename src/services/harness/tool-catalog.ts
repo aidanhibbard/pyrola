@@ -23,8 +23,6 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   run_terminal: 'Run a shell command in the project',
   terminal_output: 'Read output from a background agent shell',
   stop_terminal: 'Stop a background agent shell',
-  web_fetch: 'Fetch a URL',
-  web_search: 'Search the web for real-time information',
   load_skill: 'Load a project skill by name',
   ask_user: 'Ask the user a clarifying question',
   call_mcp_tool: 'Invoke a tool on a configured MCP server',

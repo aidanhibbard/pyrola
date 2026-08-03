@@ -10,6 +10,7 @@ export default (subagent: SubagentTimelineItem): ChatTimelineItem[] => {
       id: `${subagent.subagentId}-prompt`,
       role: 'user',
       parts: [{ type: 'text', text: subagent.prompt.trim() }],
+      metadata: subagent.model ? { model: subagent.model } : undefined,
     }
     items.push({ type: 'user', message })
   }
@@ -29,7 +30,8 @@ export default (subagent: SubagentTimelineItem): ChatTimelineItem[] => {
 
   const hasContent =
     turn.text.length > 0 ||
-    turn.steps.some((step) => step.tools.length > 0)
+    turn.steps.some((step) => step.tools.length > 0) ||
+    subagent.status === 'running'
 
   if (hasContent) {
     items.push({ type: 'agent-turn', turn })

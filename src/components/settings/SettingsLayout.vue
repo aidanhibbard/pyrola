@@ -8,6 +8,7 @@ import McpServersSection from '@/components/settings/sections/McpServersSection.
 import FleetSection from '@/components/settings/sections/FleetSection.vue'
 import GeneralSection from '@/components/settings/sections/GeneralSection.vue'
 import AgentsSection from '@/components/settings/sections/AgentsSection.vue'
+import PermissionsSection from '@/components/settings/sections/PermissionsSection.vue'
 import PlansSection from '@/components/settings/sections/PlansSection.vue'
 import StudioSection from '@/components/settings/sections/StudioSection.vue'
 import SkillsSection from '@/components/settings/sections/SkillsSection.vue'
@@ -44,6 +45,8 @@ const sectionComponent = computed(() => {
       return GeneralSection
     case 'agents':
       return AgentsSection
+    case 'permissions':
+      return PermissionsSection
     case 'plans':
       return PlansSection
     case 'studio':

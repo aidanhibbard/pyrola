@@ -2,10 +2,12 @@
 import { computed, nextTick, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
-import type { FileDiff } from '@/types/harness/file-diff'
 import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PendingQuestionState } from '@/types/chat/pending-question'
+import type { ApprovalResolution } from '@/services/harness/approval-gate'
+import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import ChatAgentTurn from '@/components/chat/ChatAgentTurn.vue'
+import ChatCompactionMarker from '@/components/chat/ChatCompactionMarker.vue'
 import ChatMessageTurn from '@/components/chat/ChatMessageTurn.vue'
 import ChatQuestionCard from '@/components/chat/ChatQuestionCard.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
@@ -22,24 +24,25 @@ import { useMessageScrollerContext } from '@/components/shadcn/ui/message-scroll
 const props = defineProps<{
   timeline: ChatTimelineItem[]
   status?: ChatStatus
-  pendingApprovals: Array<{ toolCallId: string; name: string; diff: FileDiff[] }>
+  pendingApprovals: PendingApprovalView[]
   pendingQuestion?: PendingQuestionState | null
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
-  approve: [toolCallId: string]
-  reject: [toolCallId: string]
+  resolveApproval: [toolCallId: string, resolution: ApprovalResolution]
   submitAnswer: [toolCallId: string, answer: string]
   retry: []
+  stopSubagent: [subagentId: string]
 }>()
 
 const { scrollToEnd } = useMessageScroller()
 const { handleContentChange } = useMessageScrollerContext()
 
 const approvalMap = computed(() => {
-  const map = new Map<string, { name: string; diff: FileDiff[] }>()
+  const map = new Map<string, PendingApprovalView>()
   for (const item of props.pendingApprovals) {
-    map.set(item.toolCallId, { name: item.name, diff: item.diff })
+    map.set(item.toolCallId, item)
   }
   return map
 })
@@ -234,11 +237,17 @@ watch(
           <ChatMessageTurn
             v-if="item.type === 'user'"
             :message="item.message"
-            :editable="!isLive"
+            :editable="!readOnly && !isLive"
+          />
+          <ChatCompactionMarker
+            v-else-if="item.type === 'compaction'"
+            :summary="item.summary"
+            :focus="item.focus"
           />
           <ChatSubAgentTurn
             v-else-if="item.type === 'subagent'"
             :subagent="item"
+            @stop-subagent="emit('stopSubagent', $event)"
           />
           <ChatAgentTurn
             v-else-if="item.type === 'agent-turn'"
@@ -250,18 +259,15 @@ watch(
           />
         </MessageScrollerItem>
         <ChatQuestionCard
-          v-if="pendingQuestion"
+          v-if="!readOnly && pendingQuestion"
           :question="pendingQuestion"
           @submit="(toolCallId, answer) => emit('submitAnswer', toolCallId, answer)"
         />
         <ChatToolCard
-          v-for="[toolCallId, approval] in approvalMap"
+          v-for="[toolCallId, approval] in readOnly ? [] : approvalMap"
           :key="toolCallId"
-          :tool-call-id="toolCallId"
-          :name="approval.name"
-          :diffs="approval.diff"
-          @approve="emit('approve', toolCallId)"
-          @reject="emit('reject', toolCallId)"
+          :approval="approval"
+          @resolve="(resolution) => emit('resolveApproval', toolCallId, resolution)"
         />
       </MessageScrollerContent>
     </MessageScrollerViewport>

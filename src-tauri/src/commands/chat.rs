@@ -23,6 +23,10 @@ pub struct ChatMeta {
   pub forked_from: Option<String>,
   pub pinned: bool,
   pub pinned_at: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub prefix_snapshot: Option<serde_json::Value>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub active_context: Option<serde_json::Value>,
 }
 
 fn chats_dir(app: &AppHandle, project_slug: &str) -> Result<PathBuf, String> {
@@ -66,6 +70,8 @@ pub fn create_chat(
     forked_from: None,
     pinned: false,
     pinned_at: None,
+    prefix_snapshot: None,
+    active_context: None,
   };
 
   let dir = chat_dir(&app, &project_slug, &id)?;

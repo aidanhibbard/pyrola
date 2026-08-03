@@ -6,17 +6,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/shadcn/ui/popover'
-import { Progress } from '@/components/shadcn/ui/progress'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import { CONTEXT_BUCKET_META } from '@/types/harness/context-bucket-meta'
 import useContextUsage from '@/composables/use-context-usage'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     triggerDisabled?: boolean
+    actionsDisabled?: boolean
+    onCompact?: () => void
+    onHandoff?: () => void
   }>(),
   {
     triggerDisabled: false,
+    actionsDisabled: false,
+    onCompact: undefined,
+    onHandoff: undefined,
   },
 )
 
@@ -25,19 +30,13 @@ const open = ref(false)
 
 const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact' })
 
-const usedTokens = computed(() => contextUsage.used.value)
-const maxTokens = computed(() => contextUsage.limit.value)
+const promptUsed = computed(() => contextUsage.promptUsed.value)
+const limit = computed(() => contextUsage.limit.value)
+const reservedOutput = computed(() => contextUsage.reservedOutput.value)
+const safetyBuffer = computed(() => contextUsage.safetyBuffer.value)
+const free = computed(() => contextUsage.free.value)
+const usablePrompt = computed(() => contextUsage.usablePrompt.value)
 const ratio = computed(() => contextUsage.ratio.value)
-
-const percentLabel = computed(() =>
-  new Intl.NumberFormat('en-US', {
-    style: 'percent',
-    maximumFractionDigits: 1,
-  }).format(ratio.value),
-)
-
-const usedLabel = computed(() => compactFormatter.format(usedTokens.value))
-const limitLabel = computed(() => compactFormatter.format(maxTokens.value))
 
 const statusClass = computed(() => {
   if (ratio.value >= 0.95) {
@@ -49,25 +48,58 @@ const statusClass = computed(() => {
   return 'text-muted-foreground'
 })
 
-const visibleBuckets = computed(() => contextUsage.visibleBuckets.value)
+const isHighUsage = computed(() => ratio.value >= 0.8)
+
+const promptUsedLabel = computed(() => compactFormatter.format(promptUsed.value))
+const usablePromptLabel = computed(() => compactFormatter.format(usablePrompt.value))
+const limitLabel = computed(() => compactFormatter.format(limit.value))
 
 const ringDashOffset = computed(() => {
   const circumference = 2 * Math.PI * 10
-  return circumference * (1 - ratio.value)
+  return circumference * (1 - Math.min(1, ratio.value))
 })
 
-const bucketShare = (bucket: ContextBucket): number => {
-  if (usedTokens.value <= 0) {
-    return 0
+const visibleBuckets = computed(() => contextUsage.visibleBuckets.value)
+
+const bucketBarWidth = (bucket: ContextBucket): string => {
+  if (limit.value <= 0) {
+    return '0%'
   }
-  return (bucket.tokens / usedTokens.value) * 100
+  return `${(bucket.tokens / limit.value) * 100}%`
 }
+
+const reservedBarWidth = computed(() => {
+  if (limit.value <= 0) {
+    return '0%'
+  }
+  return `${(reservedOutput.value / limit.value) * 100}%`
+})
+
+const freeBarWidth = computed(() => {
+  if (limit.value <= 0) {
+    return '0%'
+  }
+  return `${(free.value / limit.value) * 100}%`
+})
 
 const bucketColorClass = (bucket: ContextBucket): string =>
   CONTEXT_BUCKET_META[bucket.id].colorClass
 
-const formatBucketTokens = (tokens: number): string =>
-  compactFormatter.format(tokens)
+const bucketShare = (bucket: ContextBucket): string => {
+  if (promptUsed.value <= 0) {
+    return '0%'
+  }
+  return new Intl.NumberFormat('en-US', {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  }).format(bucket.tokens / promptUsed.value)
+}
+
+const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
+
+const safetyBufferLabel = computed(() => formatTokens(safetyBuffer.value))
+const reservedOutputLabel = computed(() => formatTokens(reservedOutput.value))
+const freeLabel = computed(() => formatTokens(free.value))
 </script>
 
 <template>
@@ -112,36 +144,51 @@ const formatBucketTokens = (tokens: number): string =>
       </Button>
     </PopoverTrigger>
 
-    <PopoverContent align="end" class="w-80 divide-y overflow-hidden p-0">
+    <PopoverContent align="end" class="w-84 divide-y overflow-hidden p-0">
       <div class="space-y-2 p-3">
         <div class="flex items-center justify-between gap-3 text-xs">
           <p class="font-medium">
             Context usage
           </p>
           <p class="text-muted-foreground">
-            {{ usedLabel }} / {{ limitLabel }}
+            {{ limitLabel }} limit
           </p>
         </div>
-        <div class="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p>{{ percentLabel }} full</p>
+        <div class="flex items-center justify-between gap-3 text-xs">
+          <p
+            class="font-medium"
+            :class="statusClass"
+          >
+            {{ promptUsedLabel }} / {{ usablePromptLabel }} usable
+          </p>
         </div>
-        <Progress :model-value="ratio * 100" class="h-1.5 bg-muted" />
-      </div>
 
-      <div class="space-y-3 p-3">
         <div
-          v-if="visibleBuckets.length > 0"
-          class="flex h-1.5 w-full overflow-hidden rounded-full bg-muted"
+          v-if="limit > 0"
+          class="flex h-2 w-full overflow-hidden rounded-full bg-muted"
         >
           <div
             v-for="bucket in visibleBuckets"
             :key="bucket.id"
             :class="bucketColorClass(bucket)"
-            :style="{ width: `${bucketShare(bucket)}%` }"
-            :title="`${bucket.label}: ${formatBucketTokens(bucket.tokens)}`"
+            :style="{ width: bucketBarWidth(bucket) }"
+            :title="`${bucket.label}: ${formatTokens(bucket.tokens)}`"
+          />
+          <div
+            :style="{ width: reservedBarWidth }"
+            class="bg-muted-foreground/40"
+            :title="`Reserved for reply: ${reservedOutputLabel}`"
+          />
+          <div
+            v-if="free > 0"
+            :style="{ width: freeBarWidth }"
+            class="bg-muted-foreground/15"
+            :title="`Free: ${freeLabel}`"
           />
         </div>
+      </div>
 
+      <div class="space-y-3 p-3">
         <ul class="space-y-2">
           <li
             v-for="bucket in visibleBuckets"
@@ -155,8 +202,48 @@ const formatBucketTokens = (tokens: number): string =>
               />
               <span class="truncate">{{ bucket.label }}</span>
             </span>
+            <span class="flex shrink-0 items-center gap-2 tabular-nums text-foreground">
+              <span class="text-muted-foreground">{{ bucketShare(bucket) }}</span>
+              <span>{{ formatTokens(bucket.tokens) }}</span>
+            </span>
+          </li>
+
+          <li
+            v-if="reservedOutput > 0"
+            class="flex items-center justify-between gap-3 text-xs"
+          >
+            <span class="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <span class="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+              <span class="truncate">Reserved for reply</span>
+            </span>
             <span class="shrink-0 tabular-nums text-foreground">
-              {{ formatBucketTokens(bucket.tokens) }}
+              {{ reservedOutputLabel }}
+            </span>
+          </li>
+
+          <li
+            v-if="safetyBuffer > 0"
+            class="flex items-center justify-between gap-3 text-xs"
+          >
+            <span class="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <span class="size-2 shrink-0 rounded-full bg-muted-foreground/20" />
+              <span class="truncate">Safety buffer</span>
+            </span>
+            <span class="shrink-0 tabular-nums text-foreground">
+              {{ safetyBufferLabel }}
+            </span>
+          </li>
+
+          <li
+            v-if="free > 0"
+            class="flex items-center justify-between gap-3 text-xs"
+          >
+            <span class="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <span class="size-2 shrink-0 rounded-full bg-muted-foreground/15" />
+              <span class="truncate">Free</span>
+            </span>
+            <span class="shrink-0 tabular-nums text-foreground">
+              {{ freeLabel }}
             </span>
           </li>
         </ul>
@@ -167,6 +254,47 @@ const formatBucketTokens = (tokens: number): string =>
         >
           No context counted yet. Select a model to estimate usage.
         </p>
+      </div>
+
+      <div
+        v-if="isHighUsage || props.onCompact || props.onHandoff"
+        class="flex items-center gap-2 p-3"
+      >
+        <p
+          v-if="isHighUsage"
+          class="min-w-0 flex-1 text-xs"
+          :class="statusClass"
+        >
+          {{ ratio >= 0.95 ? 'Context nearly full.' : 'Context getting full.' }}
+        </p>
+        <div
+          v-else
+          class="min-w-0 flex-1 text-xs text-muted-foreground"
+        >
+          Manage context
+        </div>
+        <Button
+          v-if="props.onCompact"
+          type="button"
+          variant="outline"
+          size="sm"
+          class="h-7 px-2 text-xs"
+          :disabled="actionsDisabled"
+          @click="props.onCompact?.()"
+        >
+          Compact
+        </Button>
+        <Button
+          v-if="props.onHandoff"
+          type="button"
+          variant="outline"
+          size="sm"
+          class="h-7 px-2 text-xs"
+          :disabled="actionsDisabled"
+          @click="props.onHandoff?.()"
+        >
+          Handoff
+        </Button>
       </div>
     </PopoverContent>
   </Popover>

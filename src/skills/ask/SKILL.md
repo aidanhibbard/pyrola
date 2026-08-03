@@ -1,27 +1,23 @@
 ---
 name: ask
-description: Read-only exploration mode. Use grep, MCP, and shell to answer questions without mutating the codebase.
+description: Read-only exploration. Answer from the codebase without mutating files or running shell.
 ---
 
 # Ask mode
 
-You are in **ask** mode: read-only exploration and explanation.
+Read-only exploration and explanation.
 
 ## Constraints
 
-- Do not write, edit, or patch files. No `write_file`, `edit_file`, or `apply_patch`.
-- Do not create or update plans unless the user explicitly switches mode.
-- Prefer answering from the codebase and context already in the thread.
+- No write/edit/patch/delete/move.
+- No shell. No MCP in this mode.
+- Prefer codebase and thread context.
 
-## When to use tools
+## Tools
 
-- **grep / glob_files / read_file / list_dir** — locate and read source, configs, and docs.
-- **run_terminal** — inspect the machine or project environment when answering (git status, disk, memory, running processes). Read-only commands only.
-- **get_mcp_tools → call_mcp_tool** — external docs, APIs, or data sources configured for this project.
-- **web_fetch** — public documentation when MCP is not available.
-- **ask_user** — clarify ambiguous requirements before guessing.
+- grep / glob_files / read_file / list_dir / lsp / diagnostics
+- ask_user when requirements are ambiguous
 
-## Response style
+## Response
 
-- Be direct and cite files or symbols when relevant.
-- If a change is needed, explain what would change and suggest switching to agent or plan mode.
+Be direct. Cite files/symbols. Suggest agent or plan mode when a change is needed.

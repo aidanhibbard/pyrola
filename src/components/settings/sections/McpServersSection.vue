@@ -31,7 +31,13 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useMcpServers from '@/composables/use-mcp-servers'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { McpServerConfig } from '@/types/pyrola/mcp-config'
+import type { McpTrustScope } from '@/types/harness/permission'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
+import {
+  isMcpTrusted,
+  sessionTrusts,
+  upsertMcpTrustRecord,
+} from '@/services/mcp/mcp-trust'
 
 const props = defineProps<{
   tab: SettingsTab
@@ -55,12 +61,19 @@ const {
   refreshStates,
 } = useMcpServers()
 
+type TrustPending = {
+  serverId: string
+  action: () => Promise<void>
+}
+
 const expanded = ref<Record<string, boolean>>({})
 const refreshingAll = ref(false)
 const addOpen = ref(false)
 const serverId = ref('')
 const command = ref('npx')
 const args = ref('shadcn-vue@latest,mcp')
+const trustPending = ref<TrustPending | null>(null)
+const trustSaving = ref(false)
 
 const scopedServers = computed(() =>
   listScopedMcpServers(personalMcp.value, projectMcp.value, props.tab),
@@ -73,29 +86,106 @@ const toggleExpanded = (id: string): void => {
 const isAuthCapableServer = (serverConfig: McpServerConfig): boolean =>
   !('command' in serverConfig)
 
-const serverStatus = (serverId: string): string =>
-  serverStates.value[serverId]?.status ?? 'stopped'
+const serverStatus = (id: string): string =>
+  serverStates.value[id]?.status ?? 'stopped'
 
-const isServerLoading = (serverId: string): boolean =>
-  loadingServers.value[serverId] === true
+const isServerLoading = (id: string): boolean =>
+  loadingServers.value[id] === true
 
-const showAuthControl = (serverConfig: McpServerConfig, serverId: string): boolean => {
+const showAuthControl = (serverConfig: McpServerConfig, id: string): boolean => {
   if (!isAuthCapableServer(serverConfig)) {
     return false
   }
-  const status = serverStatus(serverId)
+  const status = serverStatus(id)
   return status === 'auth_required' || status === 'connected'
 }
 
+const requireTrust = async (id: string, action: () => Promise<void>): Promise<void> => {
+  if (isMcpTrusted(config.effectiveSettings.value, id, sessionTrusts)) {
+    await action()
+    return
+  }
+  trustPending.value = { serverId: id, action }
+}
+
+const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
+  const pending = trustPending.value
+  if (!pending) {
+    return
+  }
+  trustPending.value = null
+  trustSaving.value = true
+
+  try {
+    if (scope === 'never') {
+      const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
+      await config.updateSetting(
+        'personal',
+        'agent.mcp.trust',
+        upsertMcpTrustRecord(existing, pending.serverId, 'never'),
+      )
+      return
+    }
+
+    if (scope === 'session') {
+      sessionTrusts.add(pending.serverId)
+    } else if (scope === 'workspace') {
+      const rootPath = config.activeRootPath.value
+      if (rootPath) {
+        const existing = config.projectSettings.value['agent.mcp.trust'] ?? []
+        await config.updateSetting(
+          'project',
+          'agent.mcp.trust',
+          upsertMcpTrustRecord(existing, pending.serverId, 'workspace'),
+        )
+      } else {
+        const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
+        await config.updateSetting(
+          'personal',
+          'agent.mcp.trust',
+          upsertMcpTrustRecord(existing, pending.serverId, 'always'),
+        )
+      }
+    } else {
+      const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
+      await config.updateSetting(
+        'personal',
+        'agent.mcp.trust',
+        upsertMcpTrustRecord(existing, pending.serverId, 'always'),
+      )
+    }
+
+    await pending.action()
+  } catch (error) {
+    toast.error('Failed to trust server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  } finally {
+    trustSaving.value = false
+  }
+}
+
 const handleEnabledChange = async (
-  serverId: string,
+  id: string,
   enabled: boolean,
 ): Promise<void> => {
-  if (isServerLoading(serverId)) {
+  if (isServerLoading(id)) {
+    return
+  }
+  if (enabled) {
+    await requireTrust(id, async () => {
+      try {
+        await setServerEnabled(id, true, config.activeRootPath.value)
+      } catch (error) {
+        toast.error('Failed to update MCP server', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    })
     return
   }
   try {
-    await setServerEnabled(serverId, enabled, config.activeRootPath.value)
+    await setServerEnabled(id, false, config.activeRootPath.value)
   } catch (error) {
     toast.error('Failed to update MCP server', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -104,29 +194,29 @@ const handleEnabledChange = async (
 }
 
 const handleRefreshServer = async (
-  serverId: string,
+  id: string,
   serverConfig: McpServerConfig,
 ): Promise<void> => {
-  if (isServerLoading(serverId)) {
+  if (isServerLoading(id)) {
     return
   }
-  const status = serverStatus(serverId)
+  const status = serverStatus(id)
   if (status === 'connected' || status === 'error' || status === 'refreshing') {
-    await refreshServer(serverId)
+    await refreshServer(id)
     return
   }
-  await startServer(serverId, serverConfig)
+  await requireTrust(id, () => startServer(id, serverConfig))
 }
 
 const handleAuthAction = async (
-  serverId: string,
+  id: string,
   serverConfig: McpServerConfig,
 ): Promise<void> => {
-  if (serverStatus(serverId) === 'auth_required') {
-    await startServer(serverId, serverConfig)
+  if (serverStatus(id) === 'auth_required') {
+    await requireTrust(id, () => startServer(id, serverConfig))
     return
   }
-  await logoutServer(serverId)
+  await logoutServer(id)
 }
 
 const submitNewServer = async (): Promise<void> => {
@@ -355,6 +445,57 @@ const refreshAll = async (): Promise<void> => {
         </div>
         <DialogFooter>
           <Button @click="submitNewServer">Save &amp; Start</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="trustPending !== null" @update:open="(open) => { if (!open) trustPending = null }">
+      <DialogContent class="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Trust MCP server?</DialogTitle>
+        </DialogHeader>
+        <div class="space-y-3 text-sm text-muted-foreground">
+          <p>
+            <span class="font-mono font-medium text-foreground">{{ trustPending?.serverId }}</span>
+            is an MCP server that can execute code on your machine. Choose how much you trust it.
+          </p>
+          <p class="text-xs">
+            Untrusted servers cannot be started or called by agents.
+          </p>
+        </div>
+        <DialogFooter class="flex-col gap-2 sm:flex-col">
+          <Button
+            class="w-full"
+            :disabled="trustSaving"
+            @click="handleTrustChoice('session')"
+          >
+            This session
+          </Button>
+          <Button
+            v-if="config.activeRootPath.value"
+            variant="outline"
+            class="w-full"
+            :disabled="trustSaving"
+            @click="handleTrustChoice('workspace')"
+          >
+            This workspace
+          </Button>
+          <Button
+            variant="outline"
+            class="w-full"
+            :disabled="trustSaving"
+            @click="handleTrustChoice('always')"
+          >
+            Always
+          </Button>
+          <Button
+            variant="ghost"
+            class="w-full text-destructive hover:text-destructive"
+            :disabled="trustSaving"
+            @click="handleTrustChoice('never')"
+          >
+            Never
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

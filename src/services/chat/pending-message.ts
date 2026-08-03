@@ -1,3 +1,4 @@
+import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const PENDING_MESSAGE_KEY = 'pyrola:pending-chat-message'
@@ -6,6 +7,7 @@ export type PendingChatMessage = {
   text: string
   mode: PyrolaChatMode
   model: string
+  permissionLevel?: PermissionLevel
 }
 
 export const setPendingChatMessage = (payload: PendingChatMessage): void => {

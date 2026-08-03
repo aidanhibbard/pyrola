@@ -1,7 +1,9 @@
 import { generateText, stepCountIs, tool } from 'ai'
 import { z } from 'zod'
 import createModel from '@/services/providers/create-model'
-import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
+import resolveModelForRole, {
+  resolveParsedModelForRole,
+} from '@/services/models/resolve-model-for-role'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   resolveModelCallOptions,
@@ -25,7 +27,6 @@ import {
   gitDiff,
   gitLog,
   gitStatus,
-  httpProxyRequest,
   lspEnsureServer,
   lspRequest,
   mcpCallTool,
@@ -37,12 +38,20 @@ import {
 import type { FileDiffRecord } from '@/services/pyrola/pyrola-tauri'
 import type { FileDiff } from '@/types/harness/file-diff'
 import {
-  requestApproval,
-  shouldAutoApprove,
-} from '@/services/harness/approval-gate'
+  gateToolPermission,
+  type PermissionGateContext,
+  type PendingApprovalView,
+} from '@/services/harness/gate-tool-permission'
+import {
+  fsDeleteCapability,
+  fsWriteCapability,
+  mcpCapability,
+} from '@/services/harness/permission-policy'
+import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import createPlan from '@/services/plans/write-plan'
 import parsePlan from '@/services/plans/parse-plan'
 import { updatePlanTodos } from '@/services/plans/write-plan'
@@ -63,22 +72,41 @@ import validateStudioSlug from '@/services/studio/validate-studio-slug'
 import studioDataSchema from '@/schemas/studio/studio-data'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 import { requestQuestion } from '@/services/harness/question-gate'
-import webSearch from '@/services/web/web-search'
 import {
   fail as failSubagent,
   register as registerSubagent,
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
+import fleetCounter from '@/services/harness/fleet-counter'
 
 export type HarnessToolContext = {
   projectRoot: string
   projectSlug: string
   chatId: string
   settings: PyrolaSettings
-  onPendingApproval: (toolCallId: string, name: string, diff: FileDiff[]) => void
+  permissionLevel: PermissionLevel
+  sessionAllows: Set<string>
+  sessionDenies: Set<string>
+  sandboxEnabled: boolean
+  onPendingApproval: (entry: PendingApprovalView) => void
+  persistPermission?: (
+    capability: PermissionCapabilityKey,
+    verdict: 'allow' | 'deny',
+    scope: 'workspace' | 'always',
+  ) => Promise<void>
   onHarnessEvent?: (event: HarnessEvent) => void
   signal?: AbortSignal
 }
+
+const toPermCtx = (ctx: HarnessToolContext): PermissionGateContext => ({
+  settings: ctx.settings,
+  permissionLevel: ctx.permissionLevel,
+  sessionAllows: ctx.sessionAllows,
+  sessionDenies: ctx.sessionDenies,
+  sandboxEnabled: ctx.sandboxEnabled,
+  onPendingApproval: ctx.onPendingApproval,
+  persistPermission: ctx.persistPermission,
+})
 
 const mapDiffs = (raw: FileDiffRecord[]): FileDiff[] =>
   raw.map((item) => ({
@@ -134,12 +162,13 @@ const SUBAGENT_READ_ONLY_TOOLS = [
   'git_branch',
   'lsp',
   'diagnostics',
-  'web_fetch',
-  'web_search',
   'load_skill',
   'call_mcp_tool',
   'get_mcp_tools',
 ] as const
+
+const isSandboxSpawnError = (message: string): boolean =>
+  message.startsWith('SANDBOX_FAILED:')
 
 const runTerminalCommand = async (
   ctx: HarnessToolContext,
@@ -148,6 +177,8 @@ const runTerminalCommand = async (
     is_background?: boolean
     timeout_ms?: number
     description?: string
+    sandboxed?: boolean
+    allowNetwork?: boolean
   },
 ): Promise<Record<string, unknown>> => {
   if (ctx.signal?.aborted) {
@@ -158,6 +189,8 @@ const runTerminalCommand = async (
     chatId: ctx.chatId,
     projectRoot: ctx.projectRoot,
     command: args.command,
+    sandboxed: args.sandboxed,
+    allowNetwork: args.allowNetwork,
   })
 
   if (args.is_background) {
@@ -301,7 +334,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   git_checkout: tool({
     description: 'Checkout a git branch or ref',
     inputSchema: z.object({ branch: z.string() }),
-    execute: async ({ branch }) => {
+    execute: async ({ branch }, { toolCallId }) => {
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'git_checkout',
+        kind: 'git',
+        action: 'git.write',
+        capability: 'git.checkout',
+        title: `git checkout ${branch}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Git checkout denied' }
+      }
       await gitCheckoutBranch(ctx.projectRoot, branch)
       return { branch, checkedOut: true }
     },
@@ -312,7 +357,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       name: z.string(),
       checkout: z.boolean().optional(),
     }),
-    execute: async ({ name, checkout }) => {
+    execute: async ({ name, checkout }, { toolCallId }) => {
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'git_branch_create',
+        kind: 'git',
+        action: 'git.write',
+        capability: 'git.branch_create',
+        title: `git branch ${name}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Git branch create denied' }
+      }
       await gitBranchCreate({
         projectRoot: ctx.projectRoot,
         name,
@@ -322,17 +379,31 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   git_commit: tool({
-    description: 'Stage and commit changes with a message',
+    description:
+      'Stage specific paths and commit with a message. paths is required — use git_status to identify changed files before committing.',
     inputSchema: z.object({
       message: z.string(),
-      paths: z.array(z.string()).optional(),
+      paths: z.array(z.string()).min(1),
     }),
-    execute: async ({ message, paths }) =>
-      gitCommit({
+    execute: async ({ message, paths }, { toolCallId }) => {
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'git_commit',
+        kind: 'git',
+        action: 'git.write',
+        capability: 'git.commit',
+        title: `git commit: ${message}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Git commit denied' }
+      }
+      return gitCommit({
         projectRoot: ctx.projectRoot,
         message,
         paths,
-      }),
+      })
+    },
   }),
   delete_file: tool({
     description: 'Delete a file from the workspace (requires approval)',
@@ -350,16 +421,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         diffs = [{ path, operation: 'delete', hunks: [] }]
       }
 
-      const auto = shouldAutoApprove(
-        [path],
-        ctx.settings['agent.autoApproveGlobs'] ?? [],
-      )
-      if (!auto) {
-        ctx.onPendingApproval(toolCallId, 'delete_file', diffs)
-        const approved = await requestApproval(toolCallId, 'delete_file', diffs)
-        if (!approved) {
-          return { rejected: true }
-        }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'delete_file',
+        kind: 'fs',
+        action: 'fs.delete',
+        capability: fsDeleteCapability(path),
+        title: `Delete ${path}`,
+        paths: [path],
+        diff: diffs,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Delete not approved' }
       }
 
       await fsDelete({ projectRoot: ctx.projectRoot, path, recursive })
@@ -391,16 +465,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         },
       ]
 
-      const auto = shouldAutoApprove(
-        [from, to],
-        ctx.settings['agent.autoApproveGlobs'] ?? [],
-      )
-      if (!auto) {
-        ctx.onPendingApproval(toolCallId, 'move_file', diffs)
-        const approved = await requestApproval(toolCallId, 'move_file', diffs)
-        if (!approved) {
-          return { rejected: true }
-        }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'move_file',
+        kind: 'fs',
+        action: 'fs.write',
+        capability: fsWriteCapability(to),
+        title: `Move ${from} → ${to}`,
+        paths: [from, to],
+        diff: diffs,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Move not approved' }
       }
 
       await fsMove({ projectRoot: ctx.projectRoot, from, to })
@@ -414,16 +491,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       const diffs = mapDiffs(
         await fsStagePreviewWrite({ projectRoot: ctx.projectRoot, path, content }),
       )
-      const auto = shouldAutoApprove(
-        [path],
-        ctx.settings['agent.autoApproveGlobs'] ?? [],
-      )
-      if (!auto) {
-        ctx.onPendingApproval(toolCallId, 'write_file', diffs)
-        const approved = await requestApproval(toolCallId, 'write_file', diffs)
-        if (!approved) {
-          return { rejected: true }
-        }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'write_file',
+        kind: 'fs',
+        action: 'fs.write',
+        capability: fsWriteCapability(path),
+        title: `Write ${path}`,
+        paths: [path],
+        diff: diffs,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Write not approved' }
       }
       await fsWriteFile({ projectRoot: ctx.projectRoot, path, content })
       return { ok: true, path, diffs }
@@ -445,16 +525,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
           replacements,
         }),
       )
-      const auto = shouldAutoApprove(
-        [path],
-        ctx.settings['agent.autoApproveGlobs'] ?? [],
-      )
-      if (!auto) {
-        ctx.onPendingApproval(toolCallId, 'edit_file', diffs)
-        const approved = await requestApproval(toolCallId, 'edit_file', diffs)
-        if (!approved) {
-          return { rejected: true }
-        }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'edit_file',
+        kind: 'fs',
+        action: 'fs.write',
+        capability: fsWriteCapability(path),
+        title: `Edit ${path}`,
+        paths: [path],
+        diff: diffs,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Edit not approved' }
       }
       await fsEditFile({
         projectRoot: ctx.projectRoot,
@@ -473,16 +556,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         await fsStagePreviewApplyPatch({ projectRoot: ctx.projectRoot, patch }),
       )
       const paths = diffs.map((diff) => diff.path)
-      const auto = shouldAutoApprove(
-        paths.length > 0 ? paths : ['**'],
-        ctx.settings['agent.autoApproveGlobs'] ?? [],
-      )
-      if (!auto) {
-        ctx.onPendingApproval(toolCallId, 'apply_patch', diffs)
-        const approved = await requestApproval(toolCallId, 'apply_patch', diffs)
-        if (!approved) {
-          return { rejected: true }
-        }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'apply_patch',
+        kind: 'fs',
+        action: 'fs.write',
+        capability: fsWriteCapability('*'),
+        title: `Apply patch (${paths.length} file${paths.length !== 1 ? 's' : ''})`,
+        paths: paths.length > 0 ? paths : ['**'],
+        diff: diffs,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Patch not approved' }
       }
       await fsApplyPatch({ projectRoot: ctx.projectRoot, patch })
       return { ok: true, paths, diffs }
@@ -495,8 +581,26 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       tool: z.string(),
       args: z.record(z.unknown()).default({}),
     }),
-    execute: async ({ serverId, tool: toolName, args }) =>
-      mcpCallTool(serverId, toolName, args as Record<string, unknown>),
+    execute: async ({ serverId, tool: toolName, args }, { toolCallId }) => {
+      if (!isMcpTrusted(ctx.settings, serverId, sessionTrusts)) {
+        return {
+          error: `MCP server "${serverId}" has not been granted trust. Open Settings → MCP and start the server to grant trust before the agent can call its tools.`,
+        }
+      }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'call_mcp_tool',
+        kind: 'mcp',
+        action: 'mcp.call',
+        capability: mcpCapability(serverId, toolName),
+        title: `${serverId}/${toolName}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'MCP call denied' }
+      }
+      return mcpCallTool(serverId, toolName, args as Record<string, unknown>)
+    },
   }),
   get_mcp_tools: tool({
     description:
@@ -693,13 +797,65 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       timeout_ms: z.number().optional(),
       description: z.string().optional(),
     }),
-    execute: async ({ command, is_background, timeout_ms, description }) =>
-      runTerminalCommand(ctx, {
-        command,
-        is_background,
-        timeout_ms,
-        description,
-      }),
+    execute: async ({ command, is_background, timeout_ms, description }, { toolCallId }) => {
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'run_terminal',
+        kind: 'shell',
+        action: 'shell',
+        capability: 'shell',
+        title: command,
+        unsandboxed: true,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'Shell access denied' }
+      }
+
+      const sandboxEnabled = ctx.settings['agent.sandbox.enabled'] ?? true
+      const allowNetwork = (ctx.settings['agent.sandbox.network'] ?? 'deny') === 'allow'
+
+      try {
+        return await runTerminalCommand(ctx, {
+          command,
+          is_background,
+          timeout_ms,
+          description,
+          sandboxed: sandboxEnabled,
+          allowNetwork,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+
+        if (sandboxEnabled && isSandboxSpawnError(message)) {
+          const unsandboxedAllowed = await gateToolPermission({
+            ctx: toPermCtx(ctx),
+            toolCallId,
+            name: 'run_terminal',
+            kind: 'shell',
+            action: 'shell.unsandboxed',
+            capability: 'shell.unsandboxed',
+            title: command,
+            detail: `Sandbox blocked this command. Approve to retry without sandbox.\n\n${message}`,
+            unsandboxed: true,
+          })
+
+          if (!unsandboxedAllowed) {
+            return { rejected: true, error: `Sandbox blocked: ${message}` }
+          }
+
+          return runTerminalCommand(ctx, {
+            command,
+            is_background,
+            timeout_ms,
+            description,
+            sandboxed: false,
+          })
+        }
+
+        throw error
+      }
+    },
   }),
   terminal_output: tool({
     description:
@@ -778,22 +934,6 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
 
       return { path, diagnostics: parseLspDiagnosticItems(result) }
     },
-  }),
-  web_fetch: tool({
-    description: 'Fetch a URL via the HTTP proxy',
-    inputSchema: z.object({ url: z.string() }),
-    execute: async ({ url }) => {
-      const response = await httpProxyRequest({ url, method: 'GET' })
-      return { url, status: response.status, body: response.body }
-    },
-  }),
-  web_search: tool({
-    description: 'Search the web for real-time information',
-    inputSchema: z.object({
-      query: z.string(),
-      limit: z.number().optional(),
-    }),
-    execute: async ({ query, limit }) => webSearch(query, limit),
   }),
 })
 
@@ -898,14 +1038,14 @@ const buildTools = (ctx: HarnessToolContext) => ({
   ...buildHarnessTools(ctx),
   spawn_subagent: tool({
     description:
-      'Spawn a subagent. Default is blocking until complete. Set blocking to false to run in the background and continue the parent turn; the harness resumes when the subagent finishes.',
+      'Spawn a subagent. Default mode is blocking — waits until complete. Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes.',
     inputSchema: z.object({
       agentName: z.string(),
       prompt: z.string(),
-      blocking: z.boolean().default(true),
+      mode: z.enum(['blocking', 'background']).default('blocking'),
     }),
     execute: async (
-      { agentName, prompt, blocking },
+      { agentName, prompt, mode },
       { toolCallId },
     ): Promise<
       | { subagentId: string; name: string; summary: string }
@@ -915,7 +1055,16 @@ const buildTools = (ctx: HarnessToolContext) => ({
         throw new Error('Subagent aborted')
       }
 
+      const fleetLimit = ctx.settings['fleet.maxConcurrentAgents'] ?? 4
+      if (fleetCounter.get() >= fleetLimit) {
+        throw new Error(
+          `Fleet limit reached (${fleetLimit} concurrent agents). Stop a running agent before spawning another.`,
+        )
+      }
+
       const subagentId = crypto.randomUUID()
+      const model = resolveModelForRole('agent', ctx.settings)
+      const blocking = mode === 'blocking'
 
       ctx.onHarnessEvent?.({
         type: 'subagent-start',
@@ -924,6 +1073,7 @@ const buildTools = (ctx: HarnessToolContext) => ({
         name: agentName,
         blocking,
         prompt,
+        model,
       })
 
       if (!blocking) {

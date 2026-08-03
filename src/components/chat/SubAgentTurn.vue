@@ -1,74 +1,93 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { BotIcon, CheckIcon, ChevronRightIcon, LoaderCircleIcon } from '@lucide/vue'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { BotIcon, CheckIcon, ChevronRightIcon, LoaderCircleIcon, SquareIcon } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import type { SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/shadcn/ui/collapsible'
+import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
+import chatRouteFor from '@/utils/chat-route-for'
+import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 
 const props = defineProps<{
   subagent: SubagentTimelineItem
 }>()
 
-const open = ref(false)
+const emit = defineEmits<{
+  stopSubagent: [subagentId: string]
+}>()
+
+const route = useRoute()
+const router = useRouter()
 
 const isRunning = computed(() => props.subagent.status === 'running')
-const summary = computed(() => props.subagent.summary?.trim() ?? '')
-const collapsedSummary = computed(() => {
-  if (!summary.value) {
-    return isRunning.value ? 'Running…' : 'Completed'
+const modelLabel = computed(() => formatModelLabelFromRef(props.subagent.model))
+const label = computed(() => {
+  const name = props.subagent.name.trim() || 'Sub-agent'
+  const base = isRunning.value
+    ? `Spawned sub-agent ${name}…`
+    : `Spawned sub-agent ${name}`
+  if (!modelLabel.value) {
+    return base
   }
-  const singleLine = summary.value.replace(/\s+/g, ' ')
-  return singleLine.length > 120 ? `${singleLine.slice(0, 117)}…` : singleLine
+  return `${base} on ${modelLabel.value}`
 })
+
+const openSubagentChat = async (): Promise<void> => {
+  const chatId = String(route.params.chatId ?? '')
+  if (!chatId) {
+    toast.error('Chat not found')
+    return
+  }
+  const isStandalone =
+    route.name === 'home-chat' ||
+    route.name === 'home-chat-subagent' ||
+    isHomeChatSlug(String(route.params.slug ?? ''))
+  const projectSlug = isStandalone
+    ? HOME_CHAT_SLUG
+    : String(route.params.slug ?? '')
+  try {
+    await router.push(
+      chatRouteFor(projectSlug, chatId, props.subagent.subagentId),
+    )
+  } catch (error) {
+    toast.error('Failed to open sub-agent', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleStop = (): void => {
+  emit('stopSubagent', props.subagent.subagentId)
+}
 </script>
 
 <template>
-  <Collapsible
-    v-model:open="open"
-    class="w-full min-w-0 max-w-full rounded-lg border border-border/60 bg-muted/20"
-  >
-    <CollapsibleTrigger
-      class="flex w-full max-w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/30"
+  <div class="flex w-full max-w-full items-center gap-1">
+    <button
+      type="button"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-0.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+      @click="openSubagentChat"
     >
       <LoaderCircleIcon
         v-if="isRunning"
-        class="size-3.5 shrink-0 animate-spin text-muted-foreground"
+        class="size-3.5 shrink-0 animate-spin"
       />
       <CheckIcon
         v-else
-        class="size-3.5 shrink-0 text-muted-foreground"
+        class="size-3.5 shrink-0"
       />
-      <ChevronRightIcon
-        class="size-3.5 shrink-0 text-muted-foreground transition-transform"
-        :class="open ? 'rotate-90' : ''"
-      />
-      <BotIcon class="size-3.5 shrink-0 text-muted-foreground" />
-      <span class="min-w-0 truncate text-muted-foreground">
-        <span class="text-foreground/70">Main agent</span>
-        <span class="px-1">→</span>
-        <span class="text-foreground">Sub-agent: {{ subagent.name }}</span>
-      </span>
-      <span
-        v-if="!open"
-        class="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-      >
-        {{ collapsedSummary }}
-      </span>
-    </CollapsibleTrigger>
-    <CollapsibleContent class="border-t border-border/60 px-3 py-2">
-      <p
-        v-if="isRunning && !summary"
-        class="text-xs text-muted-foreground"
-      >
-        Running…
-      </p>
-      <pre
-        v-else-if="summary"
-        class="max-h-64 overflow-auto whitespace-pre-wrap wrap-break-word text-xs text-foreground/90"
-      >{{ summary }}</pre>
-    </CollapsibleContent>
-  </Collapsible>
+      <BotIcon class="size-3.5 shrink-0" />
+      <span class="min-w-0 flex-1 truncate">{{ label }}</span>
+      <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
+    </button>
+    <button
+      v-if="isRunning"
+      type="button"
+      class="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+      title="Stop sub-agent"
+      @click="handleStop"
+    >
+      <SquareIcon class="size-3.5" />
+    </button>
+  </div>
 </template>

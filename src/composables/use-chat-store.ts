@@ -124,6 +124,7 @@ const upsertSubagentStart = (
         name: subagent.name,
         blocking: subagent.blocking,
         prompt: subagent.prompt ?? existing.prompt,
+        model: subagent.model ?? existing.model,
         tools: subagent.tools ?? existing.tools,
       }
     }
@@ -138,6 +139,7 @@ const upsertSubagentStart = (
       name: subagent.name,
       blocking: subagent.blocking,
       prompt: subagent.prompt,
+      model: subagent.model,
       status: 'running',
       tools: subagent.tools ?? [],
     },
@@ -558,6 +560,10 @@ export default () => {
             typeof harnessEvent.prompt === 'string' && harnessEvent.prompt.length > 0
               ? harnessEvent.prompt
               : undefined
+          const model =
+            typeof harnessEvent.model === 'string' && harnessEvent.model.length > 0
+              ? harnessEvent.model
+              : undefined
           if (subagentId) {
             const target = pendingTurn ? pendingSubagents : nextTimeline
             const merged = upsertSubagentStart(target, {
@@ -566,6 +572,7 @@ export default () => {
               name,
               blocking,
               prompt,
+              model,
             })
             if (pendingTurn) {
               pendingSubagents = merged
@@ -649,6 +656,16 @@ export default () => {
               nextTimeline.length = 0
               nextTimeline.push(...merged)
             }
+          }
+          continue
+        }
+
+        if (harnessEvent?.type === 'compaction') {
+          flushTurn()
+          const summary = typeof harnessEvent.summary === 'string' ? harnessEvent.summary : ''
+          const focus = typeof harnessEvent.focus === 'string' ? harnessEvent.focus : null
+          if (summary) {
+            nextTimeline.push({ type: 'compaction', summary, focus })
           }
           continue
         }
@@ -799,6 +816,46 @@ export default () => {
       }
 
       flushTurn()
+
+      const promptByToolCallId = new Map<string, string>()
+      const promptBySubagentId = new Map<string, string>()
+      for (const item of nextTimeline) {
+        if (item.type !== 'agent-turn') {
+          continue
+        }
+        for (const step of item.turn.steps) {
+          for (const tool of step.tools) {
+            if (tool.name !== 'spawn_subagent' || !tool.args || typeof tool.args !== 'object') {
+              continue
+            }
+            const args = tool.args as Record<string, unknown>
+            const prompt = typeof args.prompt === 'string' ? args.prompt : ''
+            if (!prompt) {
+              continue
+            }
+            promptByToolCallId.set(tool.toolCallId, prompt)
+            if (tool.result && typeof tool.result === 'object') {
+              const result = tool.result as Record<string, unknown>
+              if (typeof result.subagentId === 'string') {
+                promptBySubagentId.set(result.subagentId, prompt)
+              }
+            }
+          }
+        }
+      }
+      for (let index = 0; index < nextTimeline.length; index += 1) {
+        const item = nextTimeline[index]
+        if (item?.type !== 'subagent' || item.prompt) {
+          continue
+        }
+        const fromTool =
+          (item.toolCallId ? promptByToolCallId.get(item.toolCallId) : undefined) ??
+          promptBySubagentId.get(item.subagentId)
+        if (fromTool) {
+          nextTimeline[index] = { ...item, prompt: fromTool }
+        }
+      }
+
       messages.value = nextMessages
       timeline.value = nextTimeline
       activeTurnId.value = null
@@ -1063,6 +1120,7 @@ export default () => {
     name: string
     blocking: boolean
     prompt?: string
+    model?: string
   }): void => {
     timeline.value = upsertSubagentStart(timeline.value, subagent)
   }
@@ -1209,6 +1267,21 @@ export default () => {
     truncateTimelineAfterLastUserMessage()
   }
 
+  const appendLocalCompaction = (summary: string, focus: string | null): void => {
+    timeline.value = [...timeline.value, { type: 'compaction', summary, focus }]
+  }
+
+  const patchMetaActiveContext = (activeContext: {
+    checkpointLineId: string
+    includeFromCreatedAt: string
+    summary: string
+  }): void => {
+    if (!meta.value) {
+      return
+    }
+    meta.value = { ...meta.value, activeContext }
+  }
+
   return {
     meta,
     messages,
@@ -1249,5 +1322,7 @@ export default () => {
     truncateBeforeMessage,
     truncateAfterLastUserMessage,
     getLastUserMessage,
+    appendLocalCompaction,
+    patchMetaActiveContext,
   }
 }

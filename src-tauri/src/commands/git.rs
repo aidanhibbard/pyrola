@@ -128,30 +128,29 @@ pub struct GitCommitResult {
 pub async fn git_commit(
   project_root: String,
   message: String,
-  paths: Option<Vec<String>>,
+  paths: Vec<String>,
 ) -> Result<GitCommitResult, String> {
   let commit_message = message.trim();
   if commit_message.is_empty() {
     return Err("Commit message is required".to_string());
   }
 
+  if paths.is_empty() {
+    return Err(
+      "At least one path is required — use git_status to identify changed files before committing. Staging all files with git add -A is not permitted.".to_string(),
+    );
+  }
+
   if !is_git_repo(&project_root) {
     return Err("Not a git repository".to_string());
   }
 
-  if let Some(paths) = paths {
-    if paths.is_empty() {
-      return Err("At least one path is required when paths are provided".to_string());
+  for path in paths {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+      continue;
     }
-    for path in paths {
-      let trimmed = path.trim();
-      if trimmed.is_empty() {
-        continue;
-      }
-      run_git_async(&project_root, &["add", "--", trimmed]).await?;
-    }
-  } else {
-    run_git_async(&project_root, &["add", "-A"]).await?;
+    run_git_async(&project_root, &["add", "--", trimmed]).await?;
   }
 
   let output = run_git_async(&project_root, &["commit", "-m", commit_message]).await?;

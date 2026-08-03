@@ -1,3 +1,9 @@
+import type {
+  McpTrustRecord,
+  PermissionLevel,
+  PermissionRecord,
+} from '@/types/harness/permission'
+
 export type PyrolaTheme = 'light' | 'dark' | 'system'
 
 export type PyrolaChatMode = 'ask' | 'plan' | 'studio' | 'agent' | 'orchestrator'
@@ -44,6 +50,11 @@ export type PyrolaSettings = {
   'appearance.fontSize'?: number
   'agent.defaultMode'?: PyrolaChatMode
   'agent.autoApproveGlobs'?: string[]
+  'agent.permissionLevel'?: PermissionLevel
+  'agent.permissions'?: PermissionRecord[]
+  'agent.mcp.trust'?: McpTrustRecord[]
+  'agent.sandbox.enabled'?: boolean
+  'agent.sandbox.network'?: 'deny' | 'allow'
   'fleet.maxConcurrentAgents'?: number
   'fleet.trayBackground'?: boolean
   'general.machineLabel'?: string

@@ -2,7 +2,11 @@ import type { ContextBucket } from '@/types/harness/context-bucket'
 
 export type ContextBudget = {
   modelId: string
-  used: number
   limit: number
+  promptUsed: number
+  reservedOutput: number
+  safetyBuffer: number
+  free: number
+  used: number
   buckets: ContextBucket[]
 }

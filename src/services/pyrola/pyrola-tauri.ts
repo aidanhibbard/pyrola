@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
+import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -218,6 +219,12 @@ export type ChatMetaRecord = {
   forkedFrom: string | null
   pinned: boolean
   pinnedAt: string | null
+  prefixSnapshot?: PrefixSnapshot
+  activeContext?: {
+    checkpointLineId?: string
+    includeFromCreatedAt?: string
+    summary?: string
+  }
 }
 
 export const createChat = (args: {
@@ -486,7 +493,7 @@ export type GitCommitResult = {
 export const gitCommit = (args: {
   projectRoot: string
   message: string
-  paths?: string[]
+  paths: string[]
 }): Promise<GitCommitResult> => call('git_commit', args)
 
 export const gitBranchCreate = (args: {
@@ -537,6 +544,8 @@ export const shellSpawnTracked = (args: {
   shellId: string
   projectRoot: string
   command: string
+  sandboxed?: boolean
+  allowNetwork?: boolean
 }): Promise<void> => call('shell_spawn_tracked', args)
 
 export const shellKillTracked = (shellId: string): Promise<number> =>

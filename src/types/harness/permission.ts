@@ -1,0 +1,39 @@
+export type ApprovalKind = 'fs' | 'shell' | 'git' | 'mcp'
+
+export type PermissionAction =
+  | 'fs.write'
+  | 'fs.delete'
+  | 'shell'
+  | 'shell.unsandboxed'
+  | 'git.write'
+  | 'mcp.call'
+
+export type PermissionVerdict = 'allow' | 'ask' | 'deny'
+
+export type PermissionScope = 'once' | 'session' | 'workspace' | 'always' | 'never'
+
+export type PermissionLevel = 'ask' | 'allowlist' | 'bypass'
+
+export type PermissionCapabilityKey =
+  | `fs.write:${string}`
+  | `fs.delete:${string}`
+  | 'shell'
+  | 'shell.unsandboxed'
+  | 'git.commit'
+  | 'git.checkout'
+  | 'git.branch_create'
+  | `mcp:${string}`
+  | `mcp:${string}:${string}`
+
+export type PermissionRecord = {
+  capability: PermissionCapabilityKey
+  verdict: 'allow' | 'deny'
+  scope: 'workspace' | 'always'
+}
+
+export type McpTrustScope = 'session' | 'workspace' | 'always' | 'never'
+
+export type McpTrustRecord = {
+  serverId: string
+  scope: McpTrustScope
+}

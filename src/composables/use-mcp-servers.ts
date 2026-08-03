@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
-import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
+import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
 import {
   mcpListStatuses,
@@ -389,18 +389,6 @@ export default () => {
     })
   }
 
-  const autoStartEnabledServers = async (): Promise<void> => {
-    const servers = listEffectiveMcpServers(personalMcp.value, projectMcp.value).filter(
-      (server) => isMcpServerEnabled(server.config),
-    )
-    for (const server of servers) {
-      const status = serverStates.value[server.id]?.status ?? 'stopped'
-      if (status === 'stopped' || status === 'error') {
-        await startServer(server.id, server.config, { quiet: true })
-      }
-    }
-  }
-
   return {
     personalMcp,
     projectMcp,
@@ -417,7 +405,6 @@ export default () => {
     addServer,
     deleteServer,
     setServerEnabled,
-    autoStartEnabledServers,
     listEffectiveMcpServers,
     listScopedMcpServers,
   }

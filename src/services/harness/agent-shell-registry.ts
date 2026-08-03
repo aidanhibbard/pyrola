@@ -103,6 +103,8 @@ export const createAgentShell = async (args: {
   chatId: string
   projectRoot: string
   command: string
+  sandboxed?: boolean
+  allowNetwork?: boolean
 }): Promise<AgentShellRecord> => {
   const shellId = crypto.randomUUID()
   const record: AgentShellRecord = {
@@ -124,6 +126,8 @@ export const createAgentShell = async (args: {
     shellId,
     projectRoot: args.projectRoot,
     command: args.command,
+    sandboxed: args.sandboxed,
+    allowNetwork: args.allowNetwork,
   })
 
   return record
@@ -165,6 +169,16 @@ export const waitForShellExit = (
 }
 
 export const getAgentShell = (shellId: string): AgentShellRecord | null => shells.get(shellId) ?? null
+
+export const listShellsForChat = (chatId: string): AgentShellRecord[] => {
+  const shellIds = chatShells.get(chatId)
+  if (!shellIds) {
+    return []
+  }
+  return [...shellIds]
+    .map((shellId) => shells.get(shellId))
+    .filter((shell): shell is AgentShellRecord => shell !== undefined)
+}
 
 export const tailShellOutput = (
   shell: AgentShellRecord,

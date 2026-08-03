@@ -1,0 +1,148 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { ShieldIcon, ShieldCheckIcon, ShieldOffIcon } from '@lucide/vue'
+import type { PermissionLevel } from '@/types/harness/permission'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/shadcn/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from '@/components/shadcn/ui/dropdown-menu'
+import { Button } from '@/components/shadcn/ui/button'
+
+const props = defineProps<{
+  modelValue: PermissionLevel
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: PermissionLevel]
+}>()
+
+const showBypassWarning = ref(false)
+
+type LevelMeta = {
+  label: string
+  description: string
+  icon: typeof ShieldIcon
+  class: string
+}
+
+const LEVELS: Record<PermissionLevel, LevelMeta> = {
+  ask: {
+    label: 'Ask',
+    description: 'Prompt before each write, shell, git, or MCP action.',
+    icon: ShieldIcon,
+    class: 'text-foreground',
+  },
+  allowlist: {
+    label: 'Allowlist',
+    description: 'Auto-approve paths matching your glob allowlist; ask for the rest.',
+    icon: ShieldCheckIcon,
+    class: 'text-blue-500',
+  },
+  bypass: {
+    label: 'Bypass',
+    description: 'Skip all permission checks. Use with care.',
+    icon: ShieldOffIcon,
+    class: 'text-amber-500',
+  },
+}
+
+const currentMeta = computed(() => LEVELS[props.modelValue])
+
+const handleSelect = (level: PermissionLevel): void => {
+  if (level === 'bypass' && props.modelValue !== 'bypass') {
+    showBypassWarning.value = true
+    return
+  }
+  emit('update:modelValue', level)
+}
+
+const confirmBypass = (): void => {
+  showBypassWarning.value = false
+  emit('update:modelValue', 'bypass')
+}
+
+const cancelBypass = (): void => {
+  showBypassWarning.value = false
+}
+</script>
+
+<template>
+  <AlertDialog v-model:open="showBypassWarning">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Enable bypass mode?</AlertDialogTitle>
+        <AlertDialogDescription>
+          Bypass mode skips all permission prompts. The agent will be able to write files,
+          run shell commands, and call MCP tools without asking for confirmation.
+          Only enable this if you trust the current task fully.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel @click="cancelBypass">
+          Cancel
+        </AlertDialogCancel>
+        <AlertDialogAction @click="confirmBypass">
+          Enable bypass
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <DropdownMenu>
+    <DropdownMenuTrigger as-child>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="h-7 gap-1.5 px-2 text-xs"
+        :title="`Permission level: ${currentMeta.label}`"
+      >
+        <component
+          :is="currentMeta.icon"
+          class="size-3.5 shrink-0"
+          :class="currentMeta.class"
+        />
+        <span :class="currentMeta.class">{{ currentMeta.label }}</span>
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="start" class="w-60">
+      <DropdownMenuLabel class="text-xs text-muted-foreground">
+        Permission level (this session)
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        v-for="(meta, level) in LEVELS"
+        :key="level"
+        class="flex flex-col items-start gap-0.5 py-2"
+        @select="handleSelect(level as PermissionLevel)"
+      >
+        <div class="flex items-center gap-2">
+          <component :is="meta.icon" class="size-4 shrink-0" :class="meta.class" />
+          <span class="font-medium" :class="{ 'text-foreground': modelValue === level }">
+            {{ meta.label }}
+          </span>
+          <span
+            v-if="modelValue === level"
+            class="ml-auto text-xs text-muted-foreground"
+          >
+            active
+          </span>
+        </div>
+        <p class="ml-6 text-xs text-muted-foreground">{{ meta.description }}</p>
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+</template>

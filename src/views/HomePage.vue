@@ -10,6 +10,7 @@ import { setPendingChatMessage } from '@/services/chat/pending-message'
 import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
+import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
 const router = useRouter()
@@ -26,6 +27,7 @@ const handleSubmit = async (payload: {
   mode: PyrolaChatMode
   model: string
   projectId: string | null
+  permissionLevel: PermissionLevel
 }): Promise<void> => {
   sending.value = true
   try {
@@ -55,6 +57,7 @@ const handleSubmit = async (payload: {
       text: payload.text,
       mode: payload.mode,
       model: payload.model,
+      permissionLevel: payload.permissionLevel,
     })
     await refreshFleetSidebar()
     await router.push(chatRouteFor(chat.projectSlug, chat.id))

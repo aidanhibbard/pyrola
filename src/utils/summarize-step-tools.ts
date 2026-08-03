@@ -23,8 +23,6 @@ const TOOL_CATEGORY: Record<string, 'file' | 'search' | 'git' | 'command' | 'too
   stop_terminal: 'command',
   call_mcp_tool: 'command',
   get_mcp_tools: 'tool',
-  web_fetch: 'tool',
-  web_search: 'search',
   create_plan: 'tool',
   update_plan_todo: 'tool',
   spawn_subagent: 'tool',

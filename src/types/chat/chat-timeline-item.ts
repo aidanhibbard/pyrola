@@ -12,6 +12,7 @@ export type SubagentTimelineItem = {
   status: 'running' | 'done'
   summary?: string
   prompt?: string
+  model?: string
   tools: ToolRun[]
 }
 
@@ -20,3 +21,4 @@ export type ChatTimelineItem =
   | { type: 'agent-turn'; turn: AgentTurn }
   | { type: 'todo'; todos: TodoItem[] }
   | SubagentTimelineItem
+  | { type: 'compaction'; summary: string; focus: string | null }

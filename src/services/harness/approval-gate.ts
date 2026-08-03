@@ -1,38 +1,55 @@
 import type { FileDiff } from '@/types/harness/file-diff'
+import type {
+  ApprovalKind,
+  PermissionAction,
+  PermissionCapabilityKey,
+  PermissionScope,
+} from '@/types/harness/permission'
+
+export type { ApprovalKind }
 
 export type PendingApproval = {
   toolCallId: string
   name: string
-  diff: FileDiff[]
-  resolve: (approved: boolean) => void
+  kind: ApprovalKind
+  action: PermissionAction
+  capability: PermissionCapabilityKey
+  title: string
+  detail?: string
+  unsandboxed?: boolean
+  allowedScopes: PermissionScope[]
+  diff?: FileDiff[]
+  resolve: (result: ApprovalResolution) => void
 }
+
+export type ApprovalResolution =
+  | { approved: false; scope: 'once' | 'never' }
+  | { approved: true; scope: Exclude<PermissionScope, 'never'> }
 
 const pending = new Map<string, PendingApproval>()
 
 export const requestApproval = (
-  toolCallId: string,
-  name: string,
-  diff: FileDiff[],
-): Promise<boolean> =>
+  entry: Omit<PendingApproval, 'resolve'>,
+): Promise<ApprovalResolution> =>
   new Promise((resolve) => {
-    pending.set(toolCallId, { toolCallId, name, diff, resolve })
+    pending.set(entry.toolCallId, { ...entry, resolve })
   })
 
 export const getPendingApproval = (toolCallId: string): PendingApproval | undefined =>
   pending.get(toolCallId)
 
-export const resolveApproval = (toolCallId: string, approved: boolean): void => {
+export const resolveApproval = (toolCallId: string, result: ApprovalResolution): void => {
   const entry = pending.get(toolCallId)
   if (!entry) {
     return
   }
   pending.delete(toolCallId)
-  entry.resolve(approved)
+  entry.resolve(result)
 }
 
 export const rejectAllPending = (): void => {
   for (const entry of pending.values()) {
-    entry.resolve(false)
+    entry.resolve({ approved: false, scope: 'once' })
   }
   pending.clear()
 }
@@ -50,4 +67,6 @@ export const matchesAutoApproveGlob = (path: string, globs: string[]): boolean =
 export const shouldAutoApprove = (
   paths: string[],
   autoApproveGlobs: string[],
-): boolean => paths.every((path) => matchesAutoApproveGlob(path, autoApproveGlobs))
+): boolean =>
+  autoApproveGlobs.length > 0 &&
+  paths.every((path) => matchesAutoApproveGlob(path, autoApproveGlobs))

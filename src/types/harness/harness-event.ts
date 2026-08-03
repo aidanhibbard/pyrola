@@ -1,6 +1,7 @@
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { FileDiff } from '@/types/harness/file-diff'
+import type { ApprovalKind, PermissionScope } from '@/types/harness/permission'
 import type { SideTaskKind } from '@/types/harness/side-task-kind'
 import type { ChatMeta } from '@/types/chat/chat-meta'
 
@@ -14,7 +15,17 @@ export type HarnessEvent =
   | { type: 'text-delta'; delta: string; messageId?: string; stepId?: string }
   | { type: 'reasoning-delta'; delta: string; messageId?: string; stepId?: string }
   | { type: 'tool-start'; toolCallId: string; name: string; args: unknown }
-  | { type: 'tool-pending-approval'; toolCallId: string; name: string; diff: FileDiff[] }
+  | {
+      type: 'tool-pending-approval'
+      toolCallId: string
+      name: string
+      kind: ApprovalKind
+      title: string
+      detail?: string
+      unsandboxed?: boolean
+      allowedScopes: PermissionScope[]
+      diff: FileDiff[]
+    }
   | {
       type: 'tool-result'
       toolCallId: string
@@ -35,6 +46,7 @@ export type HarnessEvent =
       name: string
       blocking: boolean
       prompt?: string
+      model?: string
     }
   | {
       type: 'subagent-event'
@@ -53,9 +65,10 @@ export type HarnessEvent =
   | { type: 'side-task-start'; taskId: string; kind: SideTaskKind }
   | { type: 'side-task-complete'; taskId: string; kind: SideTaskKind; result: unknown }
   | { type: 'chat-meta-changed'; projectSlug: string; chatId: string; patch: Partial<ChatMeta> }
-  | { type: 'context-budget'; modelId: string; used: number; limit: number; buckets: ContextBucket[] }
+  | { type: 'context-budget'; modelId: string; used: number; promptUsed: number; limit: number; reservedOutput: number; safetyBuffer: number; free: number; buckets: ContextBucket[] }
   | { type: 'terminal-output'; shellId: string; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'shell-complete'; shellId: string; exitCode: number }
   | { type: 'chat-status-changed'; projectSlug: string; chatId: string; status: 'idle' | 'running' }
   | { type: 'turn-aborted'; reason: 'user-stop' | 'error'; partialSteps: number }
   | { type: 'question-request'; toolCallId: string; question: string; options?: string[] }
+  | { type: 'compaction'; summary: string; focus: string | null }

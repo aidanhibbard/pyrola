@@ -13,6 +13,8 @@ import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
+import chatRouteFor from '@/utils/chat-route-for'
+import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 
 const route = useRoute()
 const fleet = useFleetRegistry()
@@ -20,16 +22,23 @@ const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
 
 const isStandalone = computed(
-  () => route.name === 'home-chat' || isHomeChatSlug(String(route.params.slug ?? '')),
+  () =>
+    route.name === 'home-chat' ||
+    route.name === 'home-chat-subagent' ||
+    isHomeChatSlug(String(route.params.slug ?? '')),
 )
 const projectSlug = computed(() =>
   isStandalone.value ? HOME_CHAT_SLUG : String(route.params.slug ?? ''),
 )
 const chatId = computed(() => String(route.params.chatId ?? ''))
+const subagentId = computed(() => String(route.params.subagentId ?? ''))
 
 const isChatRoute = computed(
   () =>
-    (route.name === 'chat' || route.name === 'home-chat') &&
+    (route.name === 'chat' ||
+      route.name === 'home-chat' ||
+      route.name === 'chat-subagent' ||
+      route.name === 'home-chat-subagent') &&
     Boolean(chatId.value),
 )
 
@@ -66,6 +75,21 @@ const chatTitle = computed(() => {
 
   return 'Chat'
 })
+
+const subagentTitle = computed(() => {
+  if (!subagentId.value) {
+    return null
+  }
+  const item = chatStore.getSubagent(subagentId.value)
+  const name = item?.name?.trim() || 'Sub-agent'
+  const modelLabel = formatModelLabelFromRef(item?.model)
+  if (!modelLabel) {
+    return name
+  }
+  return `${name} on ${modelLabel}`
+})
+
+const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value))
 </script>
 
 <template>
@@ -85,13 +109,37 @@ const chatTitle = computed(() => {
         </BreadcrumbItem>
         <BreadcrumbSeparator class="shrink-0" />
         <BreadcrumbItem class="min-w-0">
+          <BreadcrumbLink
+            v-if="subagentTitle"
+            as-child
+          >
+            <RouterLink
+              :to="parentChatTo"
+              class="block max-w-[10rem] truncate text-muted-foreground sm:max-w-[14rem]"
+              :title="chatTitle"
+            >
+              {{ chatTitle }}
+            </RouterLink>
+          </BreadcrumbLink>
           <BreadcrumbPage
+            v-else
             class="block truncate text-muted-foreground"
             :title="chatTitle"
           >
             {{ chatTitle }}
           </BreadcrumbPage>
         </BreadcrumbItem>
+        <template v-if="subagentTitle">
+          <BreadcrumbSeparator class="shrink-0" />
+          <BreadcrumbItem class="min-w-0">
+            <BreadcrumbPage
+              class="block truncate text-muted-foreground"
+              :title="subagentTitle"
+            >
+              {{ subagentTitle }}
+            </BreadcrumbPage>
+          </BreadcrumbItem>
+        </template>
       </BreadcrumbList>
     </Breadcrumb>
   </div>

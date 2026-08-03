@@ -1,4 +1,5 @@
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
 export type ChatStatus = 'idle' | 'running'
 
@@ -15,4 +16,10 @@ export type ChatMeta = {
   forkedFrom: string | null
   pinned: boolean
   pinnedAt: string | null
+  prefixSnapshot?: PrefixSnapshot
+  activeContext?: {
+    checkpointLineId?: string
+    includeFromCreatedAt?: string
+    summary?: string
+  }
 }

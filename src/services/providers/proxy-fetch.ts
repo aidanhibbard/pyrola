@@ -206,31 +206,38 @@ const bufferedProxyFetch = async (
         ? init.body
         : await new Response(init.body).text()
 
-  const result = await httpProxyRequest({
-    url,
-    method,
-    headers,
-    body,
-  })
+  try {
+    const result = await httpProxyRequest({
+      url,
+      method,
+      headers,
+      body,
+    })
 
-  if (signal?.aborted) {
-    throw abortError()
+    if (signal?.aborted) {
+      throw abortError()
+    }
+
+    const responseHeaders = new Headers(result.headers)
+    if (!responseHeaders.has('content-type')) {
+      const isSse = result.body.includes('data: ') && result.body.includes('\n\n')
+      responseHeaders.set(
+        'content-type',
+        isSse ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8',
+      )
+    }
+
+    return new Response(result.body, {
+      status: result.status,
+      statusText: result.status >= 400 ? 'Error' : 'OK',
+      headers: responseHeaders,
+    })
+  } catch (error) {
+    if (signal?.aborted) {
+      throw abortError()
+    }
+    throw toError(error)
   }
-
-  const responseHeaders = new Headers(result.headers)
-  if (!responseHeaders.has('content-type')) {
-    const isSse = result.body.includes('data: ') && result.body.includes('\n\n')
-    responseHeaders.set(
-      'content-type',
-      isSse ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8',
-    )
-  }
-
-  return new Response(result.body, {
-    status: result.status,
-    statusText: result.status >= 400 ? 'Error' : 'OK',
-    headers: responseHeaders,
-  })
 }
 
 const proxyFetch: typeof fetch = async (input, init) => {

@@ -7,17 +7,11 @@ describe('load-prompt', () => {
       mode: 'agent',
       projectName: 'pyrola',
       projectRoot: '/tmp/pyrola',
-      branchSuffix: '\n\nGit branch: main',
     })
 
     expect(rendered).toMatchInlineSnapshot(`
       "You are Pyrola, an AI coding agent in agent mode.
-
-      Project: pyrola (/tmp/pyrola)
-
-      Git branch: main
-
-      Use tools to explore and modify the codebase when appropriate."
+      Project: pyrola (/tmp/pyrola)"
     `)
   })
 

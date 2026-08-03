@@ -1,0 +1,30 @@
+const MAX_TOOL_RESULT_CHARS = 20_000
+const TRUNCATION_MARKER = '\n\n[Result truncated — content exceeded limit]'
+
+export default (result: unknown): unknown => {
+  if (typeof result === 'string') {
+    if (result.length <= MAX_TOOL_RESULT_CHARS) {
+      return result
+    }
+    return result.slice(0, MAX_TOOL_RESULT_CHARS) + TRUNCATION_MARKER
+  }
+
+  if (!result || typeof result !== 'object') {
+    return result
+  }
+
+  const record = result as Record<string, unknown>
+  const patched: Record<string, unknown> = {}
+  let changed = false
+
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === 'string' && value.length > MAX_TOOL_RESULT_CHARS) {
+      patched[key] = value.slice(0, MAX_TOOL_RESULT_CHARS) + TRUNCATION_MARKER
+      changed = true
+    } else {
+      patched[key] = value
+    }
+  }
+
+  return changed ? patched : result
+}

@@ -14,7 +14,11 @@ import assembleSystemPromptParts, {
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
-import { resolveContextWindow } from '@/services/models/resolve-model-call-options'
+import {
+  resolveContextWindow,
+  resolveModelCallOptions,
+  DEFAULT_MAX_OUTPUT_TOKENS,
+} from '@/services/models/resolve-model-call-options'
 
 export type CountContextBudgetInput = {
   modelId: string
@@ -53,6 +57,20 @@ const resolveContextLimit = (
   } catch {
     return DEFAULT_CONTEXT_LIMIT
   }
+}
+
+const resolveReservedOutput = (
+  modelId: string,
+  providerId?: string,
+  settings?: PyrolaSettings,
+): number => {
+  if (providerId && settings) {
+    const options = resolveModelCallOptions(settings, { providerId, modelId })
+    if (typeof options.maxOutputTokens === 'number' && options.maxOutputTokens > 0) {
+      return options.maxOutputTokens
+    }
+  }
+  return DEFAULT_MAX_OUTPUT_TOKENS
 }
 
 const serializeMessages = (messages: UIMessage[]): string =>
@@ -153,13 +171,21 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
   }
 
   const buckets = CONTEXT_BUCKET_ORDER.map((id) => buildBucket(id, bucketTokens[id]))
-  const used = buckets.reduce((sum, bucket) => sum + bucket.tokens, 0)
+  const promptUsed = buckets.reduce((sum, bucket) => sum + bucket.tokens, 0)
   const limit = resolveContextLimit(input.modelId, input.providerId, input.settings)
+  const reservedOutput = resolveReservedOutput(input.modelId, input.providerId, input.settings)
+  const safetyBuffer = Math.min(2000, Math.floor(limit * 0.02))
+  const usablePrompt = limit - reservedOutput - safetyBuffer
+  const free = Math.max(0, usablePrompt - promptUsed)
 
   return {
     modelId: input.modelId,
-    used,
+    promptUsed,
+    used: promptUsed,
     limit,
+    reservedOutput,
+    safetyBuffer,
+    free,
     buckets,
   }
 }
