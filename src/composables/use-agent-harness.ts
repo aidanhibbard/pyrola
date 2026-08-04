@@ -23,7 +23,6 @@ import listConfiguredProviders from '@/services/providers/list-configured-provid
 import createModel from '@/services/providers/create-model'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import { browserReadArtifact, createChat } from '@/services/pyrola/pyrola-tauri'
-import type { FileUIPart } from 'ai'
 import {
   abort as abortSubagentsForChat,
   abortOne,
