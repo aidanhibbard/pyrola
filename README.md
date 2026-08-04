@@ -8,6 +8,16 @@ It can edit files, run a terminal, show diffs, and (in theory) drive an embedded
 
 ---
 
+## Providers
+
+Any provider the [Vercel AI SDK](https://ai-sdk.dev/) supports, plus custom OpenAI-compatible endpoints.
+
+First-party AI SDK entries (OpenAI, Anthropic, Google, Amazon Bedrock, Azure, AI Gateway, Alibaba, and the rest of the catalog) show up in Settings. You can also add a **Custom OpenAI-compatible** provider with your own base URL, headers, and model list. Keys live in the OS keychain, not in a hosted account.
+
+![Add provider](media/providers.png)
+
+---
+
 ## Honest status
 
 Pyrola is **usable for tinkering**, not something I would trust as a daily driver yet.
@@ -56,7 +66,7 @@ Integrated terminal for the active project; agents can also run shell tools agai
 
 A **local agent IDE**:
 
-- **BYOK providers** (OpenAI, Anthropic, Google, OpenAI-compatible, gateway-style setups) with keys in settings / OS keychain, not a hosted chat product.
+- **BYOK providers**: AI SDK catalog + custom OpenAI-compatible endpoints (see [Providers](#providers)). Keys in settings / OS keychain, not a hosted chat product.
 - **Fleet** of projects: register dirs, switch active project, keep chats per project under `~/.pyrola/`.
 - **Workbench** tabs: Editor, Terminal, Browser, Changes (git informational), plus Plan / Studio flows in chat modes.
 - **MCP**: connect stdio / bearer-style servers and call tools from the harness (`call_mcp_tool`). Full OAuth is not there yet.
