@@ -25,13 +25,18 @@ const activeTabId = computed(() => workbench.activeTabId.value)
 
 <template>
   <div class="relative h-full min-h-0 overflow-hidden">
-    <div
-      v-for="tab in workbench.tabs.value"
-      :key="tab.id"
-      v-show="tab.id === activeTabId"
-      class="absolute inset-0 min-h-0 overflow-hidden"
-    >
-      <component :is="tabComponentMap[tab.type]" :tab="tab" />
-    </div>
+    <template v-for="tab in workbench.tabs.value" :key="tab.id">
+      <!--
+        Browser must unmount when inactive: the native child webview is not
+        clipped by v-show and would stay painted over the rest of the app.
+      -->
+      <div
+        v-if="tab.type === 'browser' ? tab.id === activeTabId : true"
+        v-show="tab.type === 'browser' || tab.id === activeTabId"
+        class="absolute inset-0 min-h-0 overflow-hidden"
+      >
+        <component :is="tabComponentMap[tab.type]" :tab="tab" />
+      </div>
+    </template>
   </div>
 </template>

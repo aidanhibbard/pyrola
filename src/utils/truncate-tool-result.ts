@@ -1,3 +1,5 @@
+import { stripImageParts } from '@/services/harness/tool-result-image-parts'
+
 const MAX_TOOL_RESULT_CHARS = 20_000
 const TRUNCATION_MARKER = '\n\n[Result truncated — content exceeded limit]'
 
@@ -13,9 +15,11 @@ export default (result: unknown): unknown => {
     return result
   }
 
-  const record = result as Record<string, unknown>
+  // Strip imageParts before truncation/persistence — paths stay on sibling fields;
+  // base64 never belongs in messages.jsonl.
+  const record = stripImageParts(result) as Record<string, unknown>
   const patched: Record<string, unknown> = {}
-  let changed = false
+  let changed = record !== result
 
   for (const [key, value] of Object.entries(record)) {
     if (typeof value === 'string' && value.length > MAX_TOOL_RESULT_CHARS) {

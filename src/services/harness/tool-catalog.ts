@@ -31,6 +31,21 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   update_plan_todo: 'Update a plan todo item',
   write_studio_artifact: 'Write a studio artifact',
   spawn_subagent: 'Spawn sub-agent',
+  browser_tabs: 'List, select, or close shared browser tabs',
+  browser_navigate: 'Navigate the shared browser to a URL',
+  browser_lock: 'Lock or unlock a browser tab for this chat',
+  browser_snapshot: 'Accessibility snapshot with refs for the page',
+  browser_take_screenshot: 'Capture a browser screenshot (vision models receive the image)',
+  browser_click: 'Click an element by snapshot ref',
+  browser_hover: 'Hover an element by snapshot ref',
+  browser_type: 'Type text into an element by ref',
+  browser_fill: 'Fill an input by ref',
+  browser_select_option: 'Select option(s) in a select by ref',
+  browser_press_key: 'Press a key in the browser tab',
+  browser_scroll: 'Scroll the page or an element',
+  browser_drag: 'Drag from one ref to another',
+  browser_highlight: 'Highlight an element by ref',
+  browser_get_bounding_box: 'Get bounding box for a ref',
 }
 
 export const formatToolCatalogForMode = (mode: PyrolaChatMode): string => {

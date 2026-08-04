@@ -26,7 +26,10 @@ This document surveys tools exposed in **Cursor's editor/agent window** and maps
 | Git | 6 | 2 | 0 | 1 |
 | Terminal / shell | 3 | 0 | 0 | 0 |
 | Web | 2 | 0 | 0 | 1 |
-| Browser automation | 0 | 1 | 0 | 1 |
+| Browser automation | 0 | 0 | 0 | 0 |
+
+**Update (2026-08-02):** First-party `browser_*` tools drive an embedded Tauri OS webview (app-global, multi-agent locks, vision via `LanguageModel.supportedUrls` / custom `vision` flag). Enable agent tools via Fleet settings (`agent.browser.enabled`). CDP is not available on the platform webview.
+
 | Search | 2 | 0 | 0 | 1 |
 | MCP | 2 | 1 | 0 | 5 |
 | Sub-agents | 4 | 1 | 0 | 3 |
@@ -118,13 +121,15 @@ Git in Pyrola was **informational by design** for early v1 (see `.pyrola/plans/g
 
 | Cursor tool | Description | Pyrola status | Pyrola equivalent |
 |-------------|-------------|---------------|-------------------|
-| `browser_navigate` | Open URL in agent-controlled browser | **Gap — future** | Workbench **Browser** tab exists (user UI); no agent harness tools |
-| `browser_snapshot` | Accessibility snapshot of page | **Gap — future** | — |
-| `browser_click` / `browser_type` / etc. | DOM interaction automation | **Gap — future** | — |
-| `browser_take_screenshot` | Visual screenshot | **Gap — future** | — |
-| `browser_lock` / `browser_unlock` | Session lock for automation | **Gap — future** | — |
+| `browser_navigate` | Open URL in agent-controlled browser | **Exists** | `browser_navigate` — embedded OS webview |
+| `browser_snapshot` | Accessibility snapshot of page | **Exists** | `browser_snapshot` (JS eval a11y-ish tree + refs) |
+| `browser_click` / `browser_type` / etc. | DOM interaction automation | **Exists** | `browser_click`, `browser_type`, `browser_fill`, `browser_hover`, … |
+| `browser_take_screenshot` | Visual screenshot | **Exists** | `browser_take_screenshot` (image parts only when model supports vision) |
+| `browser_lock` / `browser_unlock` | Session lock for automation | **Exists** | `browser_lock` — per-tab, multi-agent `chatId` locks |
+| `browser_cdp` | Filtered CDP | **Removed** | Platform webview has no CDP; use snapshot + interact |
 
-Cursor ships browser automation via the **cursor-ide-browser** MCP server. Pyrola could eventually expose similar tools through MCP or a native wrapper.
+Browser is **app-global** (not project-scoped). The workbench Browser tab embeds a real Tauri child webview (WKWebView / WebView2 / WebKitGTK) with overflow menu (screenshot, hard reload, clear cookies/cache/history). Enable agent tools via `agent.browser.enabled`.
+
 
 ---
 
@@ -336,11 +341,7 @@ Larger Cursor parity gaps deferred to later phases. Each item is a concrete futu
 
 ### Browser automation harness tools
 
-**What:** Agent-facing tools to navigate, snapshot, click, type, screenshot, and lock a browser session — matching Cursor's `cursor-ide-browser` MCP surface (`browser_navigate`, `browser_snapshot`, `browser_click`, etc.).
-
-**Why deferred:** Pyrola already has a user-facing Browser workbench tab, but agent automation requires a controllable webview/CDP bridge, session lifecycle, and security review for untrusted pages. This is a full subsystem, not a single Tauri command.
-
-**Rough approach:** Either (a) ship a first-party `browser_*` harness tool family backed by a Tauri webview + CDP layer, or (b) bundle/document a Pyrola MCP server that wraps the same primitives Cursor exposes. Start with `navigate` + `snapshot` + `screenshot`; add interaction tools behind an approval gate.
+**Status:** Shipped (2026-08). First-party `browser_*` tools + embedded Tauri child webview (native paint, no Playwright screencast). CDP removed — use snapshot/interact.
 
 ### Semantic / codebase search
 

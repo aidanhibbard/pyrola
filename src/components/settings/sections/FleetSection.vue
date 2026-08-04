@@ -4,6 +4,7 @@ import { toast } from 'vue-sonner'
 import type { AcceptableValue } from 'reka-ui'
 import { Label } from '@/components/shadcn/ui/label'
 import { Switch } from '@/components/shadcn/ui/switch'
+import { Textarea } from '@/components/shadcn/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -63,6 +64,62 @@ const setTrayBackground = async (value: boolean): Promise<void> => {
     })
   }
 }
+
+const browserEnabled = computed(
+  () => config.personalSettings.value['agent.browser.enabled'] ?? false,
+)
+
+const allowedDomainsText = computed(
+  () => (config.personalSettings.value['agent.browser.allowedDomains'] ?? []).join('\n'),
+)
+
+const deniedDomainsText = computed(
+  () => (config.personalSettings.value['agent.browser.deniedDomains'] ?? []).join('\n'),
+)
+
+const setBrowserEnabled = async (value: boolean): Promise<void> => {
+  try {
+    await config.updateSetting('personal', 'agent.browser.enabled', value)
+  } catch (error) {
+    toast.error('Failed to save browser setting', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const parseDomainLines = (value: string): string[] =>
+  value
+    .split(/[\n,]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+const saveAllowedDomains = async (value: string | number): Promise<void> => {
+  try {
+    await config.updateSetting(
+      'personal',
+      'agent.browser.allowedDomains',
+      parseDomainLines(String(value)),
+    )
+  } catch (error) {
+    toast.error('Failed to save allowed domains', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const saveDeniedDomains = async (value: string | number): Promise<void> => {
+  try {
+    await config.updateSetting(
+      'personal',
+      'agent.browser.deniedDomains',
+      parseDomainLines(String(value)),
+    )
+  } catch (error) {
+    toast.error('Failed to save denied domains', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 </script>
 
 <template>
@@ -110,6 +167,46 @@ const setTrayBackground = async (value: boolean): Promise<void> => {
           <SelectItem value="orchestrator">Orchestrator</SelectItem>
         </SelectContent>
       </Select>
+    </div>
+
+    <div class="space-y-4 border-t border-border/50 pt-6">
+      <h3 class="text-sm font-medium">Browser agent</h3>
+      <div class="space-y-2">
+        <div class="flex items-center gap-3">
+          <Label for="browser-enabled">Enable browser tools</Label>
+          <Switch
+            id="browser-enabled"
+            :model-value="browserEnabled"
+            @update:model-value="setBrowserEnabled"
+          />
+        </div>
+        <p class="text-sm text-muted-foreground">
+          Shared app-global embedded browser for agents (same pane as the workbench Browser tab).
+        </p>
+      </div>
+      <div class="space-y-2">
+        <Label for="browser-allowed">Allowed domains</Label>
+        <Textarea
+          id="browser-allowed"
+          class="min-h-20 font-mono text-xs"
+          :model-value="allowedDomainsText"
+          placeholder="localhost&#10;*.example.com"
+          @update:model-value="saveAllowedDomains"
+        />
+        <p class="text-sm text-muted-foreground">
+          Empty allow list means all domains (deny list still applies). One host per line.
+        </p>
+      </div>
+      <div class="space-y-2">
+        <Label for="browser-denied">Denied domains</Label>
+        <Textarea
+          id="browser-denied"
+          class="min-h-20 font-mono text-xs"
+          :model-value="deniedDomainsText"
+          placeholder="*.evil.com"
+          @update:model-value="saveDeniedDomains"
+        />
+      </div>
     </div>
   </section>
 </template>

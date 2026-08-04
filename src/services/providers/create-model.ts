@@ -70,6 +70,7 @@ export default async (input: CreateModelInput): Promise<LanguageModel> => {
   }
 
   if (custom) {
+    const modelMeta = custom.models?.find((entry) => entry.id === modelId)
     return createOpenAICompatible({
       name: providerId,
       baseURL: custom.baseURL,
@@ -78,6 +79,14 @@ export default async (input: CreateModelInput): Promise<LanguageModel> => {
       queryParams: custom.queryParams,
       includeUsage: custom.includeUsage ?? true,
       supportsStructuredOutputs: custom.supportsStructuredOutputs,
+      // Advertise image URL support when the user marked the model as vision-capable.
+      ...(modelMeta?.vision
+        ? {
+            supportedUrls: () => ({
+              'image/*': [/^https?:\/\/.*$/],
+            }),
+          }
+        : {}),
       fetch,
     })(modelId)
   }

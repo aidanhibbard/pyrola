@@ -47,6 +47,8 @@ import {
 import { toast } from 'vue-sonner'
 import truncateToolResult from '@/utils/truncate-tool-result'
 import fleetCounter from '@/services/harness/fleet-counter'
+import resolveModelVision from '@/services/harness/resolve-model-vision'
+import { browserUnlockAll } from '@/services/pyrola/pyrola-tauri'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -421,6 +423,13 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     createModel({ providerId, modelId, settings }),
   ])
 
+  const supportsVision = await resolveModelVision({
+    model,
+    providerId,
+    modelId,
+    settings,
+  })
+
   const frozenSnapshot = existingMeta ? getFrozenPrefix(existingMeta) : null
 
   let system: string
@@ -525,6 +534,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     sessionAllows,
     sessionDenies,
     sandboxEnabled: settings['agent.sandbox.enabled'] ?? false,
+    supportsVision,
     onPendingApproval: (entry) => {
       onEvent({
         type: 'tool-pending-approval',
@@ -676,6 +686,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
         rejectAllPendingQuestions()
         await killShellsForChat(chatId)
         abortSubagentsForChat(chatId)
+        await browserUnlockAll(chatId).catch(() => undefined)
         if (trailingText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
             id: assistantId,
@@ -848,6 +859,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     rejectAllPending()
     rejectAllPendingQuestions()
     setAgentShellEventEmitter(null)
+    await browserUnlockAll(chatId).catch(() => undefined)
     onEvent({
       type: 'chat-status-changed',
       projectSlug,

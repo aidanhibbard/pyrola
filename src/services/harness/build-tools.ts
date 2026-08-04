@@ -78,6 +78,8 @@ import {
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
 import fleetCounter from '@/services/harness/fleet-counter'
+import buildBrowserTools from '@/services/harness/build-browser-tools'
+import resolveModelVision from '@/services/harness/resolve-model-vision'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -88,6 +90,7 @@ export type HarnessToolContext = {
   sessionAllows: Set<string>
   sessionDenies: Set<string>
   sandboxEnabled: boolean
+  supportsVision: boolean
   onPendingApproval: (entry: PendingApprovalView) => void
   persistPermission?: (
     capability: PermissionCapabilityKey,
@@ -260,6 +263,7 @@ const readTerminalOutput = async (
 }
 
 const buildHarnessTools = (ctx: HarnessToolContext) => ({
+  ...buildBrowserTools(ctx),
   read_file: tool({
     description:
       'Read a file from the workspace. For image files (.png, .jpg, .jpeg, .gif, .webp, .svg), returns image metadata and optional base64 instead of plain text.',
@@ -960,6 +964,12 @@ const runSubagentGenerate = async (args: {
   const callOptions = resolveModelCallOptions(ctx.settings, modelRef, {
     maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
   })
+  const supportsVision = await resolveModelVision({
+    model,
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    settings: ctx.settings,
+  })
 
   const emitNestedEvent = (event: HarnessEvent): void => {
     ctx.onHarnessEvent?.({
@@ -972,6 +982,7 @@ const runSubagentGenerate = async (args: {
 
   const nestedCtx: HarnessToolContext = {
     ...ctx,
+    supportsVision,
     onHarnessEvent: emitNestedEvent,
     signal,
   }

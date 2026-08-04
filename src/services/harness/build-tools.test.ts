@@ -51,6 +51,15 @@ vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   mcpCallTool: vi.fn<() => Promise<unknown>>(),
   shellRunCommand: vi.fn<() => Promise<unknown>>(),
   httpProxyRequest: vi.fn<() => Promise<unknown>>(),
+  browserStart: vi.fn<() => Promise<{ running: boolean }>>(),
+  browserStop: vi.fn<() => Promise<void>>(),
+  browserStatus: vi.fn<() => Promise<{ running: boolean }>>().mockResolvedValue({ running: false }),
+  browserSetPolicy: vi.fn<() => Promise<void>>(),
+  browserRequest: vi.fn<() => Promise<unknown>>(),
+  browserLock: vi.fn<() => Promise<{ ok: boolean }>>(),
+  browserUnlock: vi.fn<() => Promise<void>>(),
+  browserUnlockAll: vi.fn<() => Promise<number>>(),
+  browserReadArtifact: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('@/services/git/git-repo-info', () => ({
@@ -131,6 +140,7 @@ describe('build-tools stage preview wiring', () => {
     sessionAllows: new Set<string>(),
     sessionDenies: new Set<string>(),
     sandboxEnabled: false,
+    supportsVision: false,
     onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 
@@ -243,6 +253,7 @@ describe('build-tools run_terminal', () => {
     sessionAllows: new Set<string>(),
     sessionDenies: new Set<string>(),
     sandboxEnabled: false,
+    supportsVision: false,
     onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 
@@ -344,6 +355,7 @@ describe('build-tools write_studio_artifact', () => {
     sessionAllows: new Set<string>(),
     sessionDenies: new Set<string>(),
     sandboxEnabled: false,
+    supportsVision: false,
     onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
   }
 

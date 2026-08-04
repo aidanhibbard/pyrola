@@ -43,6 +43,6 @@ const activeTabId = computed(() => workbench.activeTabId.value)
         </DropdownMenu>
       </span>
     </TooltipTrigger>
-    <TooltipContent>Tab menu</TooltipContent>
+    <TooltipContent class="z-[100]">Tab menu</TooltipContent>
   </Tooltip>
 </template>

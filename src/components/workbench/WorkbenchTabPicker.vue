@@ -115,6 +115,6 @@ const handleOpen = async (type: (typeof items)[number]['id']): Promise<void> => 
         </DropdownMenu>
       </span>
     </TooltipTrigger>
-    <TooltipContent>{{ props.tooltip }}</TooltipContent>
+    <TooltipContent class="z-[100]">{{ props.tooltip }}</TooltipContent>
   </Tooltip>
 </template>

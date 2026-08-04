@@ -121,6 +121,23 @@ export const decidePermission = (input: PermissionDecisionInput): PermissionDeci
     }
   }
 
+  if (
+    action === 'browser.navigate' ||
+    action === 'browser.interact' ||
+    action === 'browser.cdp' ||
+    action === 'browser.share'
+  ) {
+    // Phase A: same as shell — once / session / never only. CDP always asks (no session auto).
+    if (action !== 'browser.cdp' && sessionAllows.has(capability)) {
+      return { verdict: 'allow', allowedScopes: shellScopesPhaseA() }
+    }
+    return {
+      verdict: 'ask',
+      allowedScopes: shellScopesPhaseA(),
+      reason: action === 'browser.cdp' ? 'CDP requires approval' : undefined,
+    }
+  }
+
   // Sensitive-path check must win over persisted allow, session allow, and bypass.
   // This guard is intentionally placed before all three so none can short-circuit it.
   if (paths.some(isSensitivePath)) {
@@ -181,3 +198,6 @@ export const mcpCapability = (
   toolName?: string,
 ): PermissionCapabilityKey =>
   toolName ? `mcp:${serverId}:${toolName}` : `mcp:${serverId}`
+
+export const browserNavigateCapability = (host: string): PermissionCapabilityKey =>
+  `browser.navigate:${host}`

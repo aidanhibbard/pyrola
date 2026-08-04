@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod chat;
 pub mod config;
 pub mod fs;
@@ -37,6 +38,11 @@ pub use lsp::{lsp_ensure_server, lsp_request, lsp_status, lsp_stop_server};
 pub use mcp::{
   mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,
   mcp_status, mcp_stop,
+};
+pub use browser::{
+  browser_eval, browser_lock, browser_read_artifact, browser_request, browser_set_bounds,
+  browser_set_policy, browser_set_visible, browser_start, browser_status, browser_stop,
+  browser_unlock, browser_unlock_all,
 };
 pub use paths::{
   get_default_workspace_root, get_pyrola_dir, get_user_pyrola_dir, has_project_pyrola,

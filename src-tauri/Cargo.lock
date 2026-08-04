@@ -90,6 +90,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-mcp-bridge",
  "tokio",
+ "url",
  "uuid",
 ]
 

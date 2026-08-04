@@ -568,3 +568,68 @@ export const lspEnsureServer = (
 
 export const lspStopServer = (serverId: string): Promise<void> =>
   call('lsp_stop_server', { serverId })
+
+export type BrowserStatus = {
+  running: boolean
+  error?: string | null
+  locks?: Record<string, string>
+  url?: string | null
+  title?: string | null
+}
+
+export type BrowserArtifact = {
+  path: string
+  mimeType: string
+  base64: string
+  sizeBytes: number
+}
+
+export const browserStart = (): Promise<BrowserStatus> => call('browser_start')
+
+export const browserStop = (): Promise<void> => call('browser_stop')
+
+export const browserStatus = (): Promise<BrowserStatus> => call('browser_status')
+
+export const browserSetPolicy = (args: {
+  allowedDomains: string[]
+  deniedDomains: string[]
+}): Promise<void> => call('browser_set_policy', args)
+
+export const browserSetBounds = (args: {
+  x: number
+  y: number
+  width: number
+  height: number
+}): Promise<void> => call('browser_set_bounds', args)
+
+export const browserSetVisible = (visible: boolean): Promise<void> =>
+  call('browser_set_visible', { visible })
+
+export const browserEval = (script: string): Promise<unknown> =>
+  call('browser_eval', { script })
+
+export const browserRequest = (args: {
+  method: string
+  params?: Record<string, unknown>
+  chatId?: string
+}): Promise<unknown> =>
+  call('browser_request', {
+    method: args.method,
+    params: args.params ?? {},
+    chatId: args.chatId ?? null,
+  })
+
+export const browserLock = (
+  tabId: string,
+  chatId: string,
+): Promise<{ ok?: boolean; lockedBy?: string }> =>
+  call('browser_lock', { tabId, chatId })
+
+export const browserUnlock = (tabId: string, chatId: string): Promise<void> =>
+  call('browser_unlock', { tabId, chatId })
+
+export const browserUnlockAll = (chatId: string): Promise<number> =>
+  call('browser_unlock_all', { chatId })
+
+export const browserReadArtifact = (path: string): Promise<BrowserArtifact> =>
+  call('browser_read_artifact', { path })

@@ -164,6 +164,7 @@ const handleSubmit = async (payload: {
   text: string
   mode: PyrolaChatMode
   model: string
+  files?: import('ai').FileUIPart[]
 }): Promise<void> => {
   if (isSubagentView.value) {
     return
@@ -182,6 +183,7 @@ const handleSubmit = async (payload: {
     text: payload.text,
     mode: payload.mode,
     model: payload.model,
+    files: payload.files,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
 }

@@ -13,6 +13,9 @@ const ASK_TOOLS = [
   'diagnostics',
   'load_skill',
   'ask_user',
+  'browser_tabs',
+  'browser_snapshot',
+  'browser_take_screenshot',
 ] as const
 
 const PLAN_TOOLS = [
@@ -78,6 +81,21 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'update_plan_todo',
     'write_studio_artifact',
     'spawn_subagent',
+    'browser_tabs',
+    'browser_navigate',
+    'browser_lock',
+    'browser_snapshot',
+    'browser_take_screenshot',
+    'browser_click',
+    'browser_hover',
+    'browser_type',
+    'browser_fill',
+    'browser_select_option',
+    'browser_press_key',
+    'browser_scroll',
+    'browser_drag',
+    'browser_highlight',
+    'browser_get_bounding_box',
   ],
   orchestrator: [...ORCHESTRATOR_TOOLS],
 }

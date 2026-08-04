@@ -20,6 +20,10 @@ import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
+import createModel from '@/services/providers/create-model'
+import resolveModelVision from '@/services/harness/resolve-model-vision'
+import { browserReadArtifact, createChat } from '@/services/pyrola/pyrola-tauri'
+import type { FileUIPart } from 'ai'
 import {
   abort as abortSubagentsForChat,
   abortOne,
@@ -28,7 +32,6 @@ import {
 import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import compactSession from '@/services/harness/compact-session'
 import writeHandoff from '@/services/harness/write-handoff'
-import { createChat } from '@/services/pyrola/pyrola-tauri'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import chatRouteFor from '@/utils/chat-route-for'
 import formatUnknownError from '@/utils/format-unknown-error'
@@ -347,6 +350,7 @@ export default (options: AgentHarnessOptions) => {
     mode: PyrolaChatMode
     model: string
     mentions?: ContextMention[]
+    files?: import('ai').FileUIPart[]
     skipUserMessage?: boolean
     skipUserPersist?: boolean
   }): Promise<void> => {
@@ -390,10 +394,61 @@ export default (options: AgentHarnessOptions) => {
     }
 
     if (!args.skipUserMessage) {
+      const fileParts = args.files ?? []
+      const modelInstance = await createModel({
+        providerId: parsedModel.providerId,
+        modelId: parsedModel.modelId,
+        settings: config.effectiveSettings.value,
+      })
+      const supportsVision = await resolveModelVision({
+        model: modelInstance,
+        providerId: parsedModel.providerId,
+        modelId: parsedModel.modelId,
+        settings: config.effectiveSettings.value,
+      })
+
+      const parts: Array<
+        | { type: 'text'; text: string }
+        | { type: 'file'; mediaType: string; url: string; filename?: string }
+      > = [{ type: 'text', text: args.text }]
+
+      for (const file of fileParts) {
+        if (!supportsVision) {
+          parts.push({
+            type: 'text',
+            text: `[Attachment: ${file.filename || 'file'} (${file.mediaType || 'unknown'})]`,
+          })
+          continue
+        }
+
+        let url = file.url
+        if (url?.startsWith('file://')) {
+          try {
+            const artifact = await browserReadArtifact(url.replace('file://', ''))
+            url = `data:${artifact.mimeType};base64,${artifact.base64}`
+          } catch {
+            parts.push({
+              type: 'text',
+              text: `[Attachment unavailable: ${file.filename || url}]`,
+            })
+            continue
+          }
+        }
+
+        if (url) {
+          parts.push({
+            type: 'file',
+            mediaType: file.mediaType || 'image/png',
+            url,
+            filename: file.filename,
+          })
+        }
+      }
+
       chatStore.appendLocalMessage({
         id: crypto.randomUUID(),
         role: 'user',
-        parts: [{ type: 'text', text: args.text }],
+        parts,
         metadata: {
           createdAt: new Date().toISOString(),
           model: args.model,

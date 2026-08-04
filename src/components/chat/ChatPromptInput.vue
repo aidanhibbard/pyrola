@@ -45,6 +45,8 @@ import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/types'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { FileUIPart } from 'ai'
+import ChatPromptAttachmentSync from '@/components/chat/ChatPromptAttachmentSync.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -76,6 +78,7 @@ const emit = defineEmits<{
     model: string
     projectId: string | null
     permissionLevel: PermissionLevel
+    files?: FileUIPart[]
   }]
   submitEdit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
   stop: []
@@ -210,7 +213,8 @@ const handleSubmit = (payload: PromptInputMessage): void => {
     return
   }
   const text = payload.text.trim()
-  if (!text || props.disabled) {
+  const files = payload.files ?? []
+  if ((!text && files.length === 0) || props.disabled) {
     return
   }
   if (!session.selectedModelRef) {
@@ -218,13 +222,14 @@ const handleSubmit = (payload: PromptInputMessage): void => {
     return
   }
   const submitPayload = {
-    text,
+    text: text || (files.length > 0 ? 'See attached image(s).' : ''),
     mode: session.selectedMode,
     model: session.selectedModelRef,
     projectId: props.showProjectSelect
       ? session.selectedProjectId
       : fleet.activeProject.value?.id ?? null,
     permissionLevel: localPermissionLevel.value,
+    files,
   }
   if (isEditing.value) {
     emit('submitEdit', {
@@ -429,6 +434,7 @@ watch(
         <ChatPromptEditSync />
         <ChatPromptMentionSync />
         <ChatPromptSkillSync />
+        <ChatPromptAttachmentSync />
         <PromptInputTextarea
           class="max-h-28 min-h-10 resize-none py-2.5"
           placeholder="Plan, build, / for skills, @ for context"
