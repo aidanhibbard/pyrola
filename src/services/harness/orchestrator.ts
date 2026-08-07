@@ -26,6 +26,12 @@ import countContextBudget from '@/services/context/count-context-budget'
 import filterMessagesForActiveContext from '@/services/context/filter-messages-for-active-context'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
+import {
+  beginPlanExecutionTurn,
+  getPlanExecutionSession,
+  hydratePlanExecutionSession,
+  PLAN_GO_BLOCKED_TOOLS,
+} from '@/services/harness/plan-execution-session'
 import { rejectPendingForChat } from '@/services/harness/approval-gate'
 import { rejectPendingQuestionsForChat } from '@/services/harness/question-gate'
 import runSideTask from '@/services/harness/run-side-task'
@@ -257,9 +263,18 @@ const persistStepText = async (
 const filterToolsForMode = (
   mode: PyrolaChatMode,
   tools: ReturnType<typeof buildTools>,
+  options?: { awaitingPlanGo?: boolean },
 ): Partial<ReturnType<typeof buildTools>> => {
   const allow = new Set(MODE_TOOL_ALLOWLIST[mode])
-  const entries = Object.entries(tools).filter(([name]) => allow.has(name))
+  const entries = Object.entries(tools).filter(([name]) => {
+    if (!allow.has(name)) {
+      return false
+    }
+    if (options?.awaitingPlanGo && PLAN_GO_BLOCKED_TOOLS.has(name)) {
+      return false
+    }
+    return true
+  })
   return Object.fromEntries(entries) as Partial<ReturnType<typeof buildTools>>
 }
 
@@ -430,6 +445,14 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     createModel({ providerId, modelId, settings }),
   ])
 
+  const planSession = beginPlanExecutionTurn(projectSlug, chatId)
+  if (existingMeta) {
+    hydratePlanExecutionSession(projectSlug, chatId, {
+      awaitingPlanGo: existingMeta.awaitingPlanGo ?? null,
+      subagentModel: existingMeta.subagentModel ?? null,
+    })
+  }
+
   const supportsVision = await resolveModelVision({
     model,
     providerId,
@@ -564,7 +587,9 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     onHarnessEvent: handleHarnessEvent,
     signal,
   })
-  const tools = filterToolsForMode(mode, allTools)
+  const tools = filterToolsForMode(mode, allTools, {
+    awaitingPlanGo: Boolean(planSession.awaitingPlanGo),
+  })
 
   let trailingText = ''
   let assistantReasoning = ''
@@ -693,6 +718,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       stopWhen: [
         isLoopFinished(),
         stepCountIs(settings['agent.maxStepsPerTurn'] ?? 40),
+        () => getPlanExecutionSession(projectSlug, chatId).createdPlanThisTurn,
       ],
       abortSignal: signal,
       onAbort: async () => {

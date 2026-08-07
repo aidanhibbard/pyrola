@@ -344,6 +344,8 @@ const mapMeta = (record: {
   pinnedAt: string | null
   prefixSnapshot?: ChatMeta['prefixSnapshot']
   activeContext?: ChatMeta['activeContext']
+  awaitingPlanGo?: ChatMeta['awaitingPlanGo']
+  subagentModel?: ChatMeta['subagentModel']
 }): ChatMeta =>
   chatMetaSchema.parse({
     id: record.id,
@@ -361,6 +363,8 @@ const mapMeta = (record: {
     pinnedAt: record.pinnedAt,
     prefixSnapshot: record.prefixSnapshot,
     activeContext: record.activeContext,
+    awaitingPlanGo: record.awaitingPlanGo,
+    subagentModel: record.subagentModel,
   })
 
 const parsePart = (part: Record<string, unknown>): MessagePart => {

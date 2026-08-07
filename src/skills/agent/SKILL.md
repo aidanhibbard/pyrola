@@ -21,3 +21,4 @@ Implement changes end-to-end.
 - Network via user MCP only.
 - Do not commit unless the user asks.
 - On repeated tool failure, stop and explain the blocker.
+- After create_plan, stop immediately. Do not implement, write files, run shell, or spawn subagents until the user clicks Build now or Orchestrate on the plan tab.

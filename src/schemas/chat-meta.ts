@@ -32,6 +32,13 @@ export const chatAttentionSchema = z
   .enum(['needs_approval', 'needs_input', 'completed', 'error'])
   .nullable()
 
+const awaitingPlanGoSchema = z
+  .object({
+    planPath: z.string(),
+    planId: z.string(),
+  })
+  .nullable()
+
 export const chatMetaSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -48,4 +55,6 @@ export const chatMetaSchema = z.object({
   pinnedAt: z.string().nullable(),
   prefixSnapshot: prefixSnapshotSchema.optional(),
   activeContext: activeContextSchema.optional(),
+  awaitingPlanGo: awaitingPlanGoSchema.optional(),
+  subagentModel: z.string().nullable().optional(),
 })

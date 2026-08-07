@@ -1,4 +1,5 @@
 import type { ChatAttention } from '@/types/chat/chat-attention'
+import type { AwaitingPlanGo } from '@/types/plans/awaiting-plan-go'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
@@ -24,4 +25,6 @@ export type ChatMeta = {
     includeFromCreatedAt?: string
     summary?: string
   }
+  awaitingPlanGo?: AwaitingPlanGo | null
+  subagentModel?: string | null
 }

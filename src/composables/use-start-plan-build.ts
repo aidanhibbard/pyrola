@@ -9,6 +9,10 @@ import resolveModelForRole from '@/services/models/resolve-model-for-role'
 import loadPrompt from '@/services/prompts/load-prompt'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import updatePlanFrontmatter from '@/services/plans/update-plan-frontmatter'
+import {
+  clearAwaitingPlanGo,
+  setSubagentModelLock,
+} from '@/services/harness/plan-execution-session'
 import { readChatMeta, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 
@@ -20,6 +24,7 @@ export type StartPlanBuildInput = {
   planTitle: string
   sourceChatId?: string | null
   model?: string
+  subagentModel?: string
   executionMode?: PlanExecutionMode
 }
 
@@ -70,6 +75,18 @@ export default () => {
       return false
     }
 
+    const subagentModel =
+      executionMode === 'orchestrator'
+        ? input.subagentModel?.trim() ||
+          resolveModelForRole('agent', config.effectiveSettings.value) ||
+          ''
+        : null
+
+    if (executionMode === 'orchestrator' && !subagentModel) {
+      toast.error('Select a sub-agent model before orchestrating')
+      return false
+    }
+
     const promptPath =
       executionMode === 'orchestrator'
         ? 'handoffs/plan-orchestrate.md'
@@ -93,24 +110,23 @@ export default () => {
           title: input.planTitle,
         })
         chatId = chat.id
-      } else {
-        const meta = await readChatMeta(project.slug, chatId)
-        const patch: { model?: string; mode?: PyrolaChatMode } = {}
-        if (meta.model !== model) {
-          patch.model = model
-        }
-        if (meta.mode !== chatMode) {
-          patch.mode = chatMode
-        }
-        if (Object.keys(patch).length > 0) {
-          await updateChatMeta(project.slug, chatId, patch)
-        }
       }
+
+      await updateChatMeta(project.slug, chatId, {
+        model,
+        mode: chatMode,
+        awaitingPlanGo: null,
+        subagentModel,
+      })
+
+      clearAwaitingPlanGo(project.slug, chatId)
+      setSubagentModelLock(project.slug, chatId, subagentModel)
 
       setPendingChatMessage({
         text: prompt,
         mode: chatMode,
         model,
+        ...(subagentModel ? { subagentModel } : {}),
       })
 
       await updatePlanFrontmatter({

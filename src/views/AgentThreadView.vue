@@ -18,8 +18,12 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import { consumePendingChatMessage } from '@/services/chat/pending-message'
-import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
+import { consumePendingChatMessage, PENDING_CHAT_MESSAGE_EVENT } from '@/services/chat/pending-message'
+import {
+  clearAwaitingPlanGo,
+  setSubagentModelLock,
+} from '@/services/harness/plan-execution-session'
+import { getUserHomeDir, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import { killAgentShell, listShellsForChat } from '@/services/harness/agent-shell-registry'
@@ -111,6 +115,49 @@ const initHarness = (root: string, name: string): void => {
   nextHarness.restorePendingApprovals()
 }
 
+const flushPendingChatMessage = async (): Promise<void> => {
+  if (isSubagentView.value) {
+    return
+  }
+  if (!harness.value) {
+    return
+  }
+
+  const pending = consumePendingChatMessage()
+  if (!pending) {
+    return
+  }
+
+  if (pending.permissionLevel) {
+    permissionLevelTouched.value = true
+    sessionPermissionLevel.value = pending.permissionLevel
+    harness.value.setPermissionLevel(pending.permissionLevel)
+  }
+
+  if (pending.subagentModel) {
+    setSubagentModelLock(projectSlug.value, chatId.value, pending.subagentModel)
+    try {
+      await updateChatMeta(projectSlug.value, chatId.value, {
+        subagentModel: pending.subagentModel,
+        awaitingPlanGo: null,
+      })
+    } catch (error) {
+      toast.error('Failed to update chat for plan build', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  } else {
+    clearAwaitingPlanGo(projectSlug.value, chatId.value)
+  }
+
+  await harness.value.send({
+    text: pending.text,
+    mode: pending.mode,
+    model: pending.model,
+  })
+  await fleetSidebar.refreshSlug(projectSlug.value)
+}
+
 const loadThread = async (): Promise<void> => {
   if (!chatId.value || !fleet.loaded.value) {
     return
@@ -122,6 +169,7 @@ const loadThread = async (): Promise<void> => {
   const threadKey = `${projectSlug.value}:${chatId.value}`
   if (loadedThreadKey.value === threadKey && harness.value) {
     harness.value.restorePendingApprovals()
+    await flushPendingChatMessage()
     return
   }
 
@@ -154,24 +202,7 @@ const loadThread = async (): Promise<void> => {
   loadedThreadKey.value = threadKey
   threadReady.value = true
 
-  if (isSubagentView.value) {
-    return
-  }
-
-  const pending = consumePendingChatMessage()
-  if (pending && harness.value) {
-    if (pending.permissionLevel) {
-      permissionLevelTouched.value = true
-      sessionPermissionLevel.value = pending.permissionLevel
-      harness.value.setPermissionLevel(pending.permissionLevel)
-    }
-    await harness.value.send({
-      text: pending.text,
-      mode: pending.mode,
-      model: pending.model,
-    })
-    await fleetSidebar.refreshSlug(projectSlug.value)
-  }
+  await flushPendingChatMessage()
 }
 
 const handleSubmit = async (payload: {
@@ -356,7 +387,21 @@ watch(
   { immediate: true },
 )
 
+let removePendingListener: (() => void) | null = null
+
 onMounted(() => {
+  const handlePendingMessageEvent = (): void => {
+    flushPendingChatMessage().catch((error) => {
+      toast.error('Failed to start plan build', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }
+  window.addEventListener(PENDING_CHAT_MESSAGE_EVENT, handlePendingMessageEvent)
+  removePendingListener = () => {
+    window.removeEventListener(PENDING_CHAT_MESSAGE_EVENT, handlePendingMessageEvent)
+  }
+
   loadThread().catch((error) => {
     toast.error('Failed to load chat', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -365,6 +410,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  removePendingListener?.()
+  removePendingListener = null
   contextActions.clear()
 })
 

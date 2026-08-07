@@ -11,6 +11,7 @@ Research the codebase and produce durable plans.
 
 - No source mutations. Use create_plan / update_plan_todo only.
 - No shell in this mode.
+- After create_plan, stop. Wait for the user to click Build now or Orchestrate on the plan tab. Do not claim you will implement next.
 
 ## PLAN.md
 

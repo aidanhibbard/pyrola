@@ -1,16 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { Hammer, Network } from '@lucide/vue'
+import {
+  CheckCircle2Icon,
+  CircleDashedIcon,
+  CircleDotIcon,
+  CircleIcon,
+  Hammer,
+  Network,
+  XCircleIcon,
+} from '@lucide/vue'
 import { Markdown } from 'vue-stream-markdown'
 import 'vue-stream-markdown/index.css'
 import { toast } from 'vue-sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/shadcn/ui/alert'
 import { Badge } from '@/components/shadcn/ui/badge'
 import { Button } from '@/components/shadcn/ui/button'
-import ModelsSearchModelSearchPicker from '@/components/models/search/ModelSearchPicker.vue'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
+import WorkbenchPlansOrchestratePlanDialog from '@/components/workbench/plans/OrchestratePlanDialog.vue'
 import StudioBlocksMermaid from '@/components/studio/blocks/StudioBlocksMermaid.vue'
-import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useStartPlanBuild from '@/composables/use-start-plan-build'
 import useWorkbenchStore from '@/composables/use-workbench-store'
@@ -27,33 +38,38 @@ type PlanBodySegment =
 
 const MERMAID_FENCE_RE = /```mermaid\s*\n([\s\S]*?)```/g
 
+const STATUS_LABELS: Record<PlanTodoItem['status'], string> = {
+  pending: 'Pending',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+}
+
 const props = defineProps<{
   tab: WorkbenchTab
 }>()
 
-const router = useRouter()
 const workbench = useWorkbenchStore()
-const fleet = useFleetRegistry()
 const config = usePyrolaConfig()
 const { building, startPlanBuild } = useStartPlanBuild()
 const body = ref('')
 const todos = ref<PlanTodoItem[]>([])
 const title = ref('')
 const sourceChatId = ref<string | null>(null)
-const lastBuildChatId = ref<string | null>(null)
-const selectedModel = ref('')
 const loading = ref(false)
 const parseError = ref<string | null>(null)
+const orchestrateOpen = ref(false)
 
 const planPayload = computed(() => props.tab.payload as PlanPayload)
 const projectRoot = computed(() => workbench.getProject(props.tab.projectId)?.rootPath ?? null)
-const projectSlug = computed(
-  () => fleet.projects.value.find((project) => project.id === props.tab.projectId)?.slug ?? null,
-)
 const refreshToken = computed(() => workbench.tabRefreshTokens.value[props.tab.id] ?? 0)
 
 const hasProviders = computed(
   () => listConfiguredProviders(config.effectiveSettings.value).length > 0,
+)
+
+const actionsDisabled = computed(
+  () => loading.value || building.value || Boolean(parseError.value) || !hasProviders.value,
 )
 
 const allTodosDone = computed(
@@ -93,11 +109,33 @@ const bodySegments = computed((): PlanBodySegment[] => {
   return segments
 })
 
-const resolveDefaultModel = (lastBuildModel?: string): string => {
-  if (lastBuildModel?.trim()) {
-    return lastBuildModel.trim()
+const statusIcon = (status: PlanTodoItem['status']) => {
+  if (status === 'completed') {
+    return CheckCircle2Icon
   }
-  return resolveModelForRole('agent', config.effectiveSettings.value) ?? ''
+  if (status === 'in_progress') {
+    return CircleDotIcon
+  }
+  if (status === 'cancelled') {
+    return XCircleIcon
+  }
+  if (status === 'pending') {
+    return CircleDashedIcon
+  }
+  return CircleIcon
+}
+
+const statusClass = (status: PlanTodoItem['status']): string => {
+  if (status === 'completed') {
+    return 'text-emerald-500'
+  }
+  if (status === 'in_progress') {
+    return 'text-primary'
+  }
+  if (status === 'cancelled') {
+    return 'text-muted-foreground'
+  }
+  return 'text-muted-foreground'
 }
 
 const loadPlan = async (): Promise<void> => {
@@ -117,7 +155,6 @@ const loadPlan = async (): Promise<void> => {
       body.value = parsed.body
       todos.value = []
       sourceChatId.value = null
-      lastBuildChatId.value = null
       return
     }
 
@@ -125,8 +162,6 @@ const loadPlan = async (): Promise<void> => {
     body.value = parsed.body
     todos.value = parsed.frontmatter?.todos ?? []
     sourceChatId.value = parsed.frontmatter?.sourceChatId ?? null
-    lastBuildChatId.value = parsed.frontmatter?.lastBuildChatId ?? null
-    selectedModel.value = resolveDefaultModel(parsed.frontmatter?.lastBuildModel)
   } catch (error) {
     toast.error('Failed to load plan', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -136,81 +171,70 @@ const loadPlan = async (): Promise<void> => {
   }
 }
 
-const handleModelChange = (value: string): void => {
-  if (value.length > 0) {
-    selectedModel.value = value
-  }
-}
-
-const handleOpenBuiltChat = async (): Promise<void> => {
-  const slug = projectSlug.value
-  const chatId = lastBuildChatId.value
-  if (!slug || !chatId) {
+const handleBuildNow = (): void => {
+  if (!hasProviders.value) {
+    toast.error('Configure a provider before building')
     return
   }
 
-  try {
-    await router.push(`/project/${slug}/chat/${chatId}`)
-  } catch (error) {
-    toast.error('Could not open build chat', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const handleBuildNow = async (): Promise<void> => {
-  if (!selectedModel.value) {
-    toast.error('Select a model before building')
+  const model = resolveModelForRole('agent', config.effectiveSettings.value)
+  if (!model) {
+    toast.error('Select a default Agent model in Settings before building')
     return
   }
 
-  const success = await startPlanBuild({
+  startPlanBuild({
     projectId: props.tab.projectId,
     planPath: planPayload.value.path,
     planTitle: title.value || props.tab.label,
     sourceChatId: sourceChatId.value,
-    model: selectedModel.value,
+    model,
     executionMode: 'agent',
   })
-
-  if (success) {
-    await loadPlan()
-  }
+    .then(async (success) => {
+      if (success) {
+        await loadPlan()
+      }
+    })
+    .catch((error) => {
+      toast.error('Could not start plan build', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
 }
 
-const handleOrchestrate = async (): Promise<void> => {
-  if (!selectedModel.value) {
-    toast.error('Select a model before orchestrating')
+const handleOpenOrchestrate = (): void => {
+  if (!hasProviders.value) {
+    toast.error('Configure a provider before orchestrating')
     return
   }
+  orchestrateOpen.value = true
+}
 
-  const success = await startPlanBuild({
+const handleOrchestrateConfirm = (payload: {
+  parentModel: string
+  subagentModel: string
+}): void => {
+  startPlanBuild({
     projectId: props.tab.projectId,
     planPath: planPayload.value.path,
     planTitle: title.value || props.tab.label,
     sourceChatId: sourceChatId.value,
-    model: selectedModel.value,
+    model: payload.parentModel,
+    subagentModel: payload.subagentModel,
     executionMode: 'orchestrator',
   })
-
-  if (success) {
-    await loadPlan()
-  }
+    .then(async (success) => {
+      if (success) {
+        await loadPlan()
+      }
+    })
+    .catch((error) => {
+      toast.error('Could not start orchestration', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
 }
-
-watch(
-  () => config.hydrated.value,
-  (hydrated) => {
-    if (!hydrated || selectedModel.value) {
-      return
-    }
-    const resolved = resolveDefaultModel()
-    if (resolved) {
-      selectedModel.value = resolved
-    }
-  },
-  { immediate: true },
-)
 
 onMounted(() => {
   loadPlan().catch((error) => {
@@ -231,60 +255,46 @@ watch([planPayload, projectRoot, refreshToken], () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-y-auto">
-    <div class="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
+    <div class="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
       <div class="min-w-0">
         <h2 class="text-sm font-semibold">{{ title || tab.label }}</h2>
         <p v-if="loading" class="text-xs text-muted-foreground">Loading…</p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <button
-          v-if="lastBuildChatId"
-          type="button"
-          class="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          @click="handleOpenBuiltChat"
-        >
-          Built
-        </button>
         <Badge v-if="allTodosDone" variant="secondary" class="pointer-events-none opacity-70">
           Done
         </Badge>
         <template v-else>
-          <ModelsSearchModelSearchPicker
-            :model-value="selectedModel"
-            compact
-            :disabled="!hasProviders || loading || building || Boolean(parseError)"
-            placeholder="Select model"
-            @update:model-value="handleModelChange"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="
-              loading ||
-              building ||
-              Boolean(parseError) ||
-              !selectedModel ||
-              !hasProviders
-            "
-            @click="handleOrchestrate"
-          >
-            <Network class="mr-1.5 h-3.5 w-3.5" />
-            Orchestrate
-          </Button>
-          <Button
-            size="sm"
-            :disabled="
-              loading ||
-              building ||
-              Boolean(parseError) ||
-              !selectedModel ||
-              !hasProviders
-            "
-            @click="handleBuildNow"
-          >
-            <Hammer class="mr-1.5 h-3.5 w-3.5" />
-            Build now
-          </Button>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :disabled="actionsDisabled"
+                aria-label="Orchestrate"
+                @click="handleOpenOrchestrate"
+              >
+                <Network class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent class="z-60">Orchestrate</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :disabled="actionsDisabled"
+                aria-label="Build now"
+                @click="handleBuildNow"
+              >
+                <Hammer class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent class="z-60">Build now</TooltipContent>
+          </Tooltip>
         </template>
       </div>
     </div>
@@ -299,7 +309,21 @@ watch([planPayload, projectRoot, refreshToken], () => {
         <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Todos</p>
         <ul class="space-y-1 text-sm">
           <li v-for="todo in todos" :key="todo.id" class="flex items-start gap-2">
-            <span class="mt-0.5 text-xs text-muted-foreground">{{ todo.status }}</span>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <span
+                  class="mt-0.5 inline-flex shrink-0"
+                  :aria-label="STATUS_LABELS[todo.status]"
+                >
+                  <component
+                    :is="statusIcon(todo.status)"
+                    class="size-3.5"
+                    :class="statusClass(todo.status)"
+                  />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{{ STATUS_LABELS[todo.status] }}</TooltipContent>
+            </Tooltip>
             <span>{{ todo.content }}</span>
           </li>
         </ul>
@@ -316,5 +340,11 @@ watch([planPayload, projectRoot, refreshToken], () => {
         </template>
       </div>
     </template>
+
+    <WorkbenchPlansOrchestratePlanDialog
+      v-model:open="orchestrateOpen"
+      :disabled="building"
+      @confirm="handleOrchestrateConfirm"
+    />
   </div>
 </template>

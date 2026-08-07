@@ -32,6 +32,7 @@ import {
   mcpCallTool,
   mcpStatus,
   readMcpConfig,
+  updateChatMeta,
   workspaceGlob,
   workspaceGrep,
 } from '@/services/pyrola/pyrola-tauri'
@@ -80,6 +81,11 @@ import {
 import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import withToolExamples from '@/services/harness/with-tool-examples'
+import {
+  assertNotAwaitingPlanGo,
+  getPlanExecutionSession,
+  markCreatedPlanThisTurn,
+} from '@/services/harness/plan-execution-session'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -745,15 +751,18 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   create_plan: tool({
-    description: withToolExamples('Create a plan file under .pyrola/plans/.', [
-      {
-        title: 'Add harness tool examples',
-        body: '## Goal\nSurface usage examples on high-friction tools.\n',
-        todos: [
-          { id: 'helper', content: 'Add with-tool-examples helper', status: 'pending' },
-        ],
-      },
-    ]),
+    description: withToolExamples(
+      'Create a plan file under .pyrola/plans/. After success, stop and wait for the user to click Build now or Orchestrate.',
+      [
+        {
+          title: 'Add harness tool examples',
+          body: '## Goal\nSurface usage examples on high-friction tools.\n',
+          todos: [
+            { id: 'helper', content: 'Add with-tool-examples helper', status: 'pending' },
+          ],
+        },
+      ],
+    ),
     inputSchema: z.object({
       title: z.string().describe('Plan title'),
       body: z.string().describe('Markdown plan body'),
@@ -763,12 +772,24 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       const planTodos = todos ?? []
       const plan = createPlan({ title, body, todos: planTodos, sourceChatId: ctx.chatId })
       await fsWriteFile({ projectRoot: ctx.projectRoot, path: plan.path, content: plan.content })
+      const awaiting = { planPath: plan.path, planId: plan.planId }
+      markCreatedPlanThisTurn(ctx.projectSlug, ctx.chatId, awaiting)
+      await updateChatMeta(ctx.projectSlug, ctx.chatId, {
+        awaitingPlanGo: awaiting,
+      })
       const workbench = useWorkbenchStore()
       const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
       if (projectId) {
         workbench.openPlan(projectId, plan.planId, plan.path, title)
       }
-      return { planId: plan.planId, path: plan.path, todos: planTodos }
+      return {
+        planId: plan.planId,
+        path: plan.path,
+        todos: planTodos,
+        awaitingGo: true,
+        message:
+          'Plan created. Stop and wait for the user to click Build now or Orchestrate on the plan tab before making any further changes.',
+      }
     },
   }),
   update_plan_todo: tool({
@@ -1070,7 +1091,11 @@ const runSubagentGenerate = async (args: {
 }): Promise<string> => {
   const { ctx, subagentId, agentName, prompt, toolCallId, signal } = args
 
-  const modelRef = resolveParsedModelForRole('agent', ctx.settings)
+  const modelRef = resolveParsedModelForRole(
+    'agent',
+    ctx.settings,
+    getPlanExecutionSession(ctx.projectSlug, ctx.chatId).subagentModel ?? undefined,
+  )
   if (!modelRef) {
     throw new Error('No model configured for agent role')
   }
@@ -1202,6 +1227,8 @@ const buildTools = (ctx: HarnessToolContext) => ({
       | { subagentId: string; name: string; summary: string }
       | { subagentId: string; status: 'running' }
     > => {
+      assertNotAwaitingPlanGo(ctx.projectSlug, ctx.chatId)
+
       if (ctx.signal?.aborted) {
         throw new Error('Subagent aborted')
       }
@@ -1214,7 +1241,16 @@ const buildTools = (ctx: HarnessToolContext) => ({
       }
 
       const subagentId = crypto.randomUUID()
-      const model = resolveModelForRole('agent', ctx.settings)
+      const lockedSubagentModel = getPlanExecutionSession(
+        ctx.projectSlug,
+        ctx.chatId,
+      ).subagentModel
+      const model =
+        lockedSubagentModel?.trim() ||
+        resolveModelForRole('agent', ctx.settings)
+      if (!model) {
+        throw new Error('No sub-agent model configured')
+      }
       const blocking = mode === 'blocking'
 
       ctx.onHarnessEvent?.({

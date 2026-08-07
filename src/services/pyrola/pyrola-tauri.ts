@@ -228,6 +228,11 @@ export type ChatMetaRecord = {
     includeFromCreatedAt?: string
     summary?: string
   }
+  awaitingPlanGo?: {
+    planPath: string
+    planId: string
+  } | null
+  subagentModel?: string | null
 }
 
 export const createChat = (args: {

@@ -19,6 +19,8 @@ Coordinate work through sub-agents.
 
 - Never mutate files or run shell yourself.
 - Network via user MCP only (no built-in fetch).
+- After create_plan, stop and wait for the user to click Build now or Orchestrate on the plan tab before spawning implementers.
+- Spawn only with the user-selected sub-agent model for this chat (the harness locks it).
 
 ## Workflow
 
