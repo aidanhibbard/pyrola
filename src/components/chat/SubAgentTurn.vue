@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BotIcon, CheckIcon, ChevronRightIcon, LoaderCircleIcon, SquareIcon } from '@lucide/vue'
+import { BotIcon, CheckIcon, ChevronRightIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import type { SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
@@ -80,14 +86,20 @@ const handleStop = (): void => {
       <span class="min-w-0 flex-1 truncate">{{ label }}</span>
       <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
     </button>
-    <button
-      v-if="isRunning"
-      type="button"
-      class="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-      title="Stop sub-agent"
-      @click="handleStop"
-    >
-      <SquareIcon class="size-3.5" />
-    </button>
+    <Tooltip v-if="isRunning">
+      <TooltipTrigger as-child>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          class="size-6 shrink-0 text-muted-foreground"
+          aria-label="Stop sub-agent"
+          @click="handleStop"
+        >
+          <XIcon class="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Stop sub-agent</TooltipContent>
+    </Tooltip>
   </div>
 </template>

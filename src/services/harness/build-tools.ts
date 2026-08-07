@@ -1,4 +1,4 @@
-import { generateText, stepCountIs, tool } from 'ai'
+import { generateText, isLoopFinished, tool } from 'ai'
 import { z } from 'zod'
 import createModel from '@/services/providers/create-model'
 import resolveModelForRole, {
@@ -130,7 +130,6 @@ const mapDiffs = (raw: FileDiffRecord[]): FileDiff[] =>
 
 const DEFAULT_BLOCKING_TIMEOUT_MS = 120_000
 const SUBAGENT_MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
-const SUBAGENT_MAX_STEPS = 15
 
 const LSP_DIAGNOSTICS_METHODS = new Set([
   'diagnostics',
@@ -1117,7 +1116,7 @@ const runSubagentGenerate = async (args: {
     system: `You are a read-only sub-agent named "${agentName}". Explore the codebase with read-only tools. Do not modify files or run commands. Provide a concise summary when finished.`,
     prompt,
     tools: nestedTools,
-    stopWhen: stepCountIs(SUBAGENT_MAX_STEPS),
+    stopWhen: isLoopFinished(),
     maxOutputTokens: callOptions.maxOutputTokens,
     temperature: callOptions.temperature,
     topP: callOptions.topP,

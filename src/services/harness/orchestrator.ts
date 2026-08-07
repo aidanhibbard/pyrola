@@ -1,5 +1,5 @@
 import type { ChatStatus, ModelMessage, UIMessage } from 'ai'
-import { convertToModelMessages, smoothStream, stepCountIs, streamText } from 'ai'
+import { convertToModelMessages, isLoopFinished, smoothStream, streamText } from 'ai'
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
@@ -88,7 +88,6 @@ export type ResumeOrchestratorInput = Omit<
   skipUserPersist: true
 }
 const MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
-const MAX_CONSECUTIVE_TOOL_ERRORS = 5
 
 const nowIso = (): string => new Date().toISOString()
 
@@ -566,7 +565,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   let assistantReasoning = ''
   let stepCount = 0
   let streamError: Error | null = null
-  let consecutiveToolErrors = 0
   let currentStepId = ''
   let currentStepText = ''
   let collectedStepText = ''
@@ -687,7 +685,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       seed: callOptions.seed,
       providerOptions: callOptions.providerOptions,
       experimental_transform: smoothStream({ chunking: 'word' }),
-      stopWhen: stepCountIs(25),
+      stopWhen: isLoopFinished(),
       abortSignal: signal,
       onAbort: async () => {
         rejectAllPending()
@@ -771,7 +769,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       }
 
       if (part.type === 'tool-result') {
-        consecutiveToolErrors = 0
         await emitToolResult(
           part.toolCallId,
           part.toolName,
@@ -784,7 +781,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 
       if (part.type === 'tool-error') {
         const message = enrichToolError(resolveToolErrorMessage(part.error))
-        consecutiveToolErrors += 1
         await ensureStepOpen()
         await emitToolStart(part.toolCallId, part.toolName, part.input)
         await emitToolResult(
@@ -794,12 +790,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
           true,
           part.input,
         )
-        if (consecutiveToolErrors >= MAX_CONSECUTIVE_TOOL_ERRORS) {
-          streamError = new Error(
-            `Too many consecutive tool failures (${MAX_CONSECUTIVE_TOOL_ERRORS}). Last error: ${message}`,
-          )
-          break
-        }
         continue
       }
 
