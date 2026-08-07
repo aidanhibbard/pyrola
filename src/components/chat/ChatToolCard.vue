@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { AlertTriangleIcon } from '@lucide/vue'
+import { computed } from 'vue'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import type { PermissionScope } from '@/types/harness/permission'
 import ChatInlineFileDiff from '@/components/chat/InlineFileDiff.vue'
-import { Alert, AlertDescription } from '@/components/shadcn/ui/alert'
 import { Badge } from '@/components/shadcn/ui/badge'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -13,9 +12,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/shadcn/ui/collapsible'
 import { Marker, MarkerContent } from '@/components/shadcn/ui/marker'
-import { Separator } from '@/components/shadcn/ui/separator'
 
-defineProps<{
+const props = defineProps<{
   approval: PendingApprovalView
 }>()
 
@@ -26,17 +24,24 @@ const emit = defineEmits<{
 type ScopeConfig = {
   scope: PermissionScope
   label: string
-  variant: 'default' | 'secondary' | 'outline' | 'destructive'
   approved: boolean
 }
 
 const SCOPE_CONFIG: Record<PermissionScope, ScopeConfig> = {
-  once: { scope: 'once', label: 'Allow once', variant: 'default', approved: true },
-  session: { scope: 'session', label: 'Allow session', variant: 'secondary', approved: true },
-  workspace: { scope: 'workspace', label: 'Allow workspace', variant: 'secondary', approved: true },
-  always: { scope: 'always', label: 'Always allow', variant: 'secondary', approved: true },
-  never: { scope: 'never', label: 'Deny permanently', variant: 'destructive', approved: false },
+  once: { scope: 'once', label: 'Allow once', approved: true },
+  session: { scope: 'session', label: 'Allow session', approved: true },
+  workspace: { scope: 'workspace', label: 'Allow workspace', approved: true },
+  always: { scope: 'always', label: 'Always allow', approved: true },
+  never: { scope: 'never', label: 'Never', approved: false },
 }
+
+const optionScopes = computed(() =>
+  props.approval.allowedScopes.filter((scope) => scope !== 'never'),
+)
+
+const showNever = computed(() =>
+  props.approval.allowedScopes.includes('never'),
+)
 
 const handleScope = (scope: PermissionScope): void => {
   const cfg = SCOPE_CONFIG[scope]
@@ -67,24 +72,13 @@ const handleDeny = (): void => {
         </MarkerContent>
       </Marker>
     </CollapsibleTrigger>
-    <CollapsibleContent class="space-y-3 px-2 py-2">
+    <CollapsibleContent class="space-y-2 px-2 py-2">
       <p
         v-if="approval.detail"
         class="text-sm text-muted-foreground"
       >
         {{ approval.detail }}
       </p>
-
-      <Alert
-        v-if="approval.unsandboxed"
-        variant="destructive"
-        class="py-2"
-      >
-        <AlertTriangleIcon class="size-4" />
-        <AlertDescription>
-          This command runs outside the sandbox and has full system access.
-        </AlertDescription>
-      </Alert>
 
       <div
         v-if="approval.kind === 'fs' && approval.diff && approval.diff.length > 0"
@@ -97,25 +91,42 @@ const handleDeny = (): void => {
         />
       </div>
 
-      <Separator />
-
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+        <span
+          v-if="approval.unsandboxed"
+          class="text-destructive"
+        >
+          This command runs outside the sandbox and has full system access.
+        </span>
         <Button
-          v-for="scope in approval.allowedScopes"
+          v-for="scope in optionScopes"
           :key="scope"
-          :variant="SCOPE_CONFIG[scope].variant"
-          size="sm"
+          type="button"
+          variant="link"
+          size="xs"
+          class="h-auto px-0 py-0 text-xs font-normal"
           @click="handleScope(scope)"
         >
           {{ SCOPE_CONFIG[scope].label }}
         </Button>
         <Button
-          variant="ghost"
-          size="sm"
-          class="ml-auto text-muted-foreground hover:text-foreground"
+          type="button"
+          variant="link"
+          size="xs"
+          class="h-auto px-0 py-0 text-xs font-normal text-muted-foreground"
           @click="handleDeny"
         >
           Deny
+        </Button>
+        <Button
+          v-if="showNever"
+          type="button"
+          variant="link"
+          size="xs"
+          class="ml-auto h-auto px-0 py-0 text-xs font-normal text-destructive"
+          @click="handleScope('never')"
+        >
+          {{ SCOPE_CONFIG.never.label }}
         </Button>
       </div>
     </CollapsibleContent>
