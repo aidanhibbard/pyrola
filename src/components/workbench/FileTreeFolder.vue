@@ -12,10 +12,18 @@ import {
 } from '@/components/shadcn/ui/context-menu'
 import { Input } from '@/components/shadcn/ui/input'
 import { cn } from '@/lib/utils'
-import { computed, nextTick, provide, ref, watch } from 'vue'
+import { computed, inject, nextTick, provide, ref, watch } from 'vue'
 import { FileTreeFolderKey, useFileTreeContext } from '@/components/ai-elements/file-tree/context'
+import FileTreeActions from '@/components/ai-elements/file-tree/FileTreeActions.vue'
 import FileTreeName from '@/components/ai-elements/file-tree/FileTreeName.vue'
 import WorkbenchFileTreeContextMenuContent from '@/components/workbench/FileTreeContextMenuContent.vue'
+import WorkbenchFileTreeGitLetter from '@/components/workbench/FileTreeGitLetter.vue'
+import { FileTreeGitDecorationKey } from '@/composables/use-git-status'
+import {
+  decorationNameClass,
+  hasDecorationLetter,
+  resolvePathDecoration,
+} from '@/utils/git-file-decoration'
 
 interface Props extends /* @vue-ignore */ HTMLAttributes {
   path: string
@@ -32,6 +40,7 @@ const emit = defineEmits<{
 }>()
 
 const { expandedPaths, togglePath, selectedPath } = useFileTreeContext()
+const gitDecorations = inject(FileTreeGitDecorationKey, null)
 
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const renameValue = ref('')
@@ -39,6 +48,30 @@ const renameValue = ref('')
 const isExpanded = computed(() => expandedPaths.value.has(props.path))
 const isSelected = computed(() => selectedPath.value === props.path)
 const isRenaming = computed(() => props.renamingPath === props.path)
+
+const folderDecoration = computed(() => {
+  if (!gitDecorations) {
+    return null
+  }
+  return resolvePathDecoration(
+    props.path,
+    gitDecorations.byPath.value,
+    gitDecorations.folderByPath.value,
+    gitDecorations.ignoredRoots.value,
+    'folder',
+  )
+})
+
+const folderNameClass = computed(() => {
+  const decoration = folderDecoration.value
+  if (!decoration) {
+    return 'min-w-0 flex-1 font-sans text-[13px]'
+  }
+  return cn(
+    'min-w-0 flex-1 font-sans text-[13px] font-medium',
+    decorationNameClass(decoration),
+  )
+})
 
 provide(FileTreeFolderKey, {
   path: props.path,
@@ -135,7 +168,12 @@ const handleRenameBlur = (): void => {
                 @blur="handleRenameBlur"
                 @click.stop
               />
-              <FileTreeName v-else class="font-sans text-[13px]">{{ props.name }}</FileTreeName>
+              <FileTreeName v-else :class="folderNameClass">{{ props.name }}</FileTreeName>
+              <FileTreeActions
+                v-if="folderDecoration && hasDecorationLetter(folderDecoration) && !isRenaming"
+              >
+                <WorkbenchFileTreeGitLetter :status="folderDecoration" />
+              </FileTreeActions>
             </button>
           </CollapsibleTrigger>
         </ContextMenuTrigger>

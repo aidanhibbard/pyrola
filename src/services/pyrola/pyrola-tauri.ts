@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
+import type { GitStatusResult } from '@/types/git/git-status-result'
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -462,9 +463,7 @@ export const workspaceGlob = async (
   return result
 }
 
-export const gitStatus = (
-  projectRoot: string,
-): Promise<{ branch: string | null; entries: unknown[] }> =>
+export const gitStatus = (projectRoot: string): Promise<GitStatusResult> =>
   call('git_status', { projectRoot })
 
 export const gitDiff = (args: {

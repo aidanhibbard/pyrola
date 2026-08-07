@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 import {
   ContextMenu,
   ContextMenuTrigger,
 } from '@/components/shadcn/ui/context-menu'
 import { Input } from '@/components/shadcn/ui/input'
-import { FileTreeFile } from '@/components/ai-elements/file-tree'
+import { FileTreeActions, FileTreeFile } from '@/components/ai-elements/file-tree'
 import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import WorkbenchFileTreeContextMenuContent from '@/components/workbench/FileTreeContextMenuContent.vue'
 import WorkbenchFileTreeFolder from '@/components/workbench/FileTreeFolder.vue'
+import WorkbenchFileTreeGitLetter from '@/components/workbench/FileTreeGitLetter.vue'
 import WorkbenchFileTreeNode from '@/components/workbench/FileTreeNode.vue'
+import { FileTreeGitDecorationKey } from '@/composables/use-git-status'
+import { cn } from '@/lib/utils'
+import {
+  decorationNameClass,
+  hasDecorationLetter,
+  resolvePathDecoration,
+} from '@/utils/git-file-decoration'
 
 type TreeNode = {
   name: string
@@ -28,10 +36,36 @@ const emit = defineEmits<{
   renameCancel: []
 }>()
 
+const gitDecorations = inject(FileTreeGitDecorationKey, null)
+
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const renameValue = ref('')
 
 const isRenaming = computed(() => props.renamingPath === props.node.path)
+
+const fileDecoration = computed(() => {
+  if (!gitDecorations) {
+    return null
+  }
+  return resolvePathDecoration(
+    props.node.path,
+    gitDecorations.byPath.value,
+    gitDecorations.folderByPath.value,
+    gitDecorations.ignoredRoots.value,
+    'file',
+  )
+})
+
+const nameClass = computed(() => {
+  const decoration = fileDecoration.value
+  if (!decoration) {
+    return 'min-w-0 flex-1 truncate font-sans text-[13px]'
+  }
+  return cn(
+    'min-w-0 flex-1 truncate font-sans text-[13px] font-medium',
+    decorationNameClass(decoration),
+  )
+})
 
 const focusRenameInput = async (): Promise<void> => {
   await nextTick()
@@ -123,8 +157,13 @@ const handleRenameBlur = (): void => {
           />
           <span
             v-else
-            class="truncate font-sans text-[13px]"
+            :class="nameClass"
           >{{ node.name }}</span>
+          <FileTreeActions
+            v-if="fileDecoration && hasDecorationLetter(fileDecoration) && !isRenaming"
+          >
+            <WorkbenchFileTreeGitLetter :status="fileDecoration" />
+          </FileTreeActions>
         </template>
       </FileTreeFile>
     </ContextMenuTrigger>

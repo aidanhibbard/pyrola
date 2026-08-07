@@ -176,6 +176,7 @@ pub struct GitStatusEntry {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub unstaged_status: Option<String>,
   pub is_untracked: bool,
+  pub is_ignored: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +249,18 @@ fn parse_porcelain_status(line: &str) -> Option<GitStatusEntry> {
       staged_status: None,
       unstaged_status: Some("?".to_string()),
       is_untracked: true,
+      is_ignored: false,
+    });
+  }
+  if x == '!' && y == '!' {
+    let path = line[3..].trim().to_string();
+    return Some(GitStatusEntry {
+      path,
+      old_path: None,
+      staged_status: None,
+      unstaged_status: Some("!".to_string()),
+      is_untracked: false,
+      is_ignored: true,
     });
   }
 
@@ -264,6 +277,7 @@ fn parse_porcelain_status(line: &str) -> Option<GitStatusEntry> {
     staged_status: parse_status_code(x),
     unstaged_status: parse_status_code(y),
     is_untracked: false,
+    is_ignored: false,
   })
 }
 
@@ -278,7 +292,9 @@ pub async fn git_status(project_root: String) -> Result<GitStatusResult, String>
     .ok()
     .filter(|value| !value.is_empty());
 
-  let output = run_git_async(&project_root, &["status", "--porcelain=1"]).await?;
+  // --ignored matches VS Code explorer (dimmed gitignored paths like node_modules).
+  let output =
+    run_git_async(&project_root, &["status", "--porcelain=1", "--ignored"]).await?;
   let entries = output
     .lines()
     .filter_map(parse_porcelain_status)

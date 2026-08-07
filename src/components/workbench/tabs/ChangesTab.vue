@@ -3,15 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { gitStatus } from '@/services/pyrola/pyrola-tauri'
+import type { GitStatusEntry } from '@/types/git/git-status-entry'
 import type { WorkbenchTab } from '@/types/workbench/workbench-tab'
-
-type GitStatusEntry = {
-  path: string
-  oldPath?: string | null
-  stagedStatus?: string | null
-  unstagedStatus?: string | null
-  isUntracked?: boolean
-}
 
 const props = defineProps<{
   tab: WorkbenchTab
@@ -38,7 +31,7 @@ const loadStatus = async (): Promise<void> => {
   try {
     const result = await gitStatus(root)
     branch.value = result.branch
-    entries.value = (result.entries as GitStatusEntry[]) ?? []
+    entries.value = (result.entries ?? []).filter((entry) => !entry.isIgnored)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load git status'
     entries.value = []
@@ -49,6 +42,9 @@ const loadStatus = async (): Promise<void> => {
 }
 
 const formatStatus = (entry: GitStatusEntry): string => {
+  if (entry.isIgnored) {
+    return '!!'
+  }
   if (entry.isUntracked) {
     return '??'
   }

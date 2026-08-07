@@ -45,6 +45,9 @@ import {
   FileTreeStartDeleteKey,
   FileTreeStartRenameKey,
 } from '@/composables/use-file-tree-node-menu'
+import useGitStatus, {
+  FileTreeGitDecorationKey,
+} from '@/composables/use-git-status'
 import WorkbenchFileTreeNode from '@/components/workbench/FileTreeNode.vue'
 
 const props = defineProps<{
@@ -92,8 +95,15 @@ const projectRoot = computed(
 
 const projectIdRef = computed(() => props.projectId)
 
+const gitStatus = useGitStatus(projectRoot)
+
 provide(FileTreeProjectRootKey, projectRoot)
 provide(FileTreeProjectIdKey, projectIdRef)
+provide(FileTreeGitDecorationKey, {
+  byPath: gitStatus.byPath,
+  folderByPath: gitStatus.folderByPath,
+  ignoredRoots: gitStatus.ignoredRoots,
+})
 
 const findNode = (
   nodes: TreeNode[] | undefined,
@@ -226,6 +236,7 @@ const revealPath = async (path: string): Promise<void> => {
 const refresh = async (): Promise<void> => {
   try {
     await loadTree()
+    await gitStatus.refresh()
   } catch (error) {
     toast.error('Failed to refresh file tree', {
       description: treeErrorMessage(error),
@@ -435,11 +446,13 @@ const handlePointerDownOutsideRename = (event: PointerEvent): void => {
 
 onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDownOutsideRename)
-  loadTree().catch((error) => {
-    toast.error('Failed to load file tree', {
-      description: treeErrorMessage(error),
+  loadTree()
+    .then(() => gitStatus.refresh())
+    .catch((error) => {
+      toast.error('Failed to load file tree', {
+        description: treeErrorMessage(error),
+      })
     })
-  })
 })
 
 onUnmounted(() => {
@@ -449,11 +462,13 @@ onUnmounted(() => {
 watch(
   projectRoot,
   () => {
-    loadTree().catch((error) => {
-      toast.error('Failed to load file tree', {
-        description: treeErrorMessage(error),
+    loadTree()
+      .then(() => gitStatus.refresh())
+      .catch((error) => {
+        toast.error('Failed to load file tree', {
+          description: treeErrorMessage(error),
+        })
       })
-    })
   },
 )
 
