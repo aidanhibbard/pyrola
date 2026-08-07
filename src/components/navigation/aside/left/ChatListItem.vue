@@ -2,8 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { CircleAlert, CircleCheck, GitFork, LoaderCircle, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
+import { CircleAlert, CircleCheck, GitFork, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
 import type { FleetSidebarChat } from '@/types/fleet/fleet-sidebar-chat'
+import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -217,10 +218,8 @@ watch(
         <span class="block min-w-0 flex-1 truncate text-left text-sm">
           {{ chat.title }}
         </span>
-        <LoaderCircle
+        <NavigationAsideLeftChatRunningDots
           v-if="chat.status === 'running' && !chat.attention"
-          class="size-3.5 shrink-0 animate-spin text-muted-foreground"
-          aria-label="Running"
         />
         <ShieldAlert
           v-else-if="chat.attention === 'needs_approval'"
