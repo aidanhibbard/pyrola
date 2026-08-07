@@ -1,3 +1,4 @@
+import type { SystemPromptParts } from '@/services/context/system-prompt-parts'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
 type PrefixParts = {
@@ -5,6 +6,7 @@ type PrefixParts = {
   toolSchemasJson: string
   mcpCatalogSnapshot: string
   rulesBodies: string
+  parts?: SystemPromptParts
 }
 
 const djb2 = (str: string): string => {
@@ -33,7 +35,43 @@ export const buildPrefixSnapshot = (parts: PrefixParts): PrefixSnapshot => ({
   rulesBodies: parts.rulesBodies,
   hash: hashPrefixParts(parts),
   frozenAt: new Date().toISOString(),
+  parts: parts.parts,
 })
+
+const isSystemPromptParts = (value: unknown): value is SystemPromptParts => {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.base === 'string' &&
+    typeof record.tools === 'string' &&
+    typeof record.mcp === 'string' &&
+    typeof record.rules === 'string' &&
+    typeof record.subagents === 'string' &&
+    typeof record.mentions === 'string' &&
+    typeof record.skills === 'string'
+  )
+}
+
+/** Rebuild bucket parts from a frozen snapshot (new or legacy). */
+export const partsFromFrozenPrefix = (snap: PrefixSnapshot): SystemPromptParts => {
+  if (snap.parts && isSystemPromptParts(snap.parts)) {
+    return { ...snap.parts }
+  }
+
+  // Legacy snapshots only stored catalog slices; keep systemString as base so
+  // totals stay honest, and leave discrete buckets empty rather than double-count.
+  return {
+    base: snap.systemString,
+    tools: '',
+    mcp: '',
+    rules: '',
+    subagents: '',
+    mentions: '',
+    skills: '',
+  }
+}
 
 export const getFrozenPrefix = (meta: { prefixSnapshot?: unknown }): PrefixSnapshot | null => {
   const snap = meta.prefixSnapshot
@@ -46,5 +84,17 @@ export const getFrozenPrefix = (meta: { prefixSnapshot?: unknown }): PrefixSnaps
   ) {
     return null
   }
-  return snap as PrefixSnapshot
+  const record = snap as Record<string, unknown>
+  const parts = isSystemPromptParts(record.parts) ? record.parts : undefined
+  return {
+    systemString: record.systemString as string,
+    toolSchemasJson:
+      typeof record.toolSchemasJson === 'string' ? record.toolSchemasJson : '',
+    mcpCatalogSnapshot:
+      typeof record.mcpCatalogSnapshot === 'string' ? record.mcpCatalogSnapshot : '',
+    rulesBodies: typeof record.rulesBodies === 'string' ? record.rulesBodies : '',
+    hash: record.hash as string,
+    frozenAt: record.frozenAt as string,
+    parts,
+  }
 }

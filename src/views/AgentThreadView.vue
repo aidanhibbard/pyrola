@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, unref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, unref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
@@ -9,11 +9,15 @@ import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
 import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import RunningTerminalsPanel from '@/components/chat/RunningTerminalsPanel.vue'
+import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
+import useChatContextActions from '@/composables/use-chat-context-actions'
+import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import useWorkbenchStore from '@/composables/use-workbench-store'
 import { consumePendingChatMessage } from '@/services/chat/pending-message'
 import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
@@ -26,6 +30,9 @@ const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
 const config = usePyrolaConfig()
+const contextActions = useChatContextActions()
+const workbench = useWorkbenchStore()
+useChatContextBudgetSync()
 
 const harness = ref<ReturnType<typeof useAgentHarness> | null>(null)
 const threadReady = ref(false)
@@ -296,6 +303,40 @@ const handleHandoff = async (): Promise<void> => {
 }
 
 watch(
+  [harnessStatus, threadReady, isSubagentView],
+  () => {
+    if (isSubagentView.value) {
+      contextActions.clear()
+      return
+    }
+    contextActions.register({
+      onCompact: () => {
+        handleCompact().catch((error) => {
+          toast.error('Failed to compact chat', {
+            description: error instanceof Error ? error.message : 'Unknown error',
+          })
+        })
+      },
+      onHandoff: () => {
+        handleHandoff().catch((error) => {
+          toast.error('Failed to hand off chat', {
+            description: error instanceof Error ? error.message : 'Unknown error',
+          })
+        })
+      },
+    })
+    contextActions.setDisabled({
+      triggerDisabled: !threadReady.value,
+      actionsDisabled:
+        !threadReady.value ||
+        harnessStatus.value === 'streaming' ||
+        harnessStatus.value === 'submitted',
+    })
+  },
+  { immediate: true },
+)
+
+watch(
   () => config.hydrated.value,
   (hydrated) => {
     if (!hydrated || permissionLevelTouched.value) {
@@ -316,6 +357,10 @@ onMounted(() => {
   })
 })
 
+onUnmounted(() => {
+  contextActions.clear()
+})
+
 watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
   loadThread().catch((error) => {
     toast.error('Failed to load chat', {
@@ -327,6 +372,21 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
 
 <template>
   <div class="relative flex h-full min-h-0 flex-col">
+    <!--
+      Always host the ring on the chat column titlebar band. Parent main uses
+      pt-(--titlebar-height). z-51 sits above the titlebar drag region; the
+      sidebar trigger uses z-52 so it stays clickable when the workbench is closed.
+    -->
+    <div
+      v-if="contextActions.available.value"
+      class="pointer-events-none absolute inset-x-0 top-0 z-[51] flex h-(--titlebar-height) -translate-y-full items-center justify-end"
+      :class="workbench.rightSidebarOpen.value ? 'pr-2' : 'pr-12'"
+      style="--titlebar-height: 40px"
+    >
+      <div class="pointer-events-auto" data-tauri-drag-region="false">
+        <ChatContextUsageBar />
+      </div>
+    </div>
     <ChatThread
       class="min-h-0 flex-1"
       :timeline="timeline"
@@ -355,10 +415,7 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       <ChatPromptInput
         :status="harnessStatus"
         :disabled="!threadReady"
-        show-context-usage
         :permission-level="activePermissionLevel"
-        :on-compact="handleCompact"
-        :on-handoff="handleHandoff"
         @submit="handleSubmit"
         @submit-edit="handleSubmitEdit"
         @stop="handleStop"

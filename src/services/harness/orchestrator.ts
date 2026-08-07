@@ -17,7 +17,11 @@ import assembleSystemPromptParts, {
   formatMentionsAsText,
   joinSystemPromptParts,
 } from '@/services/context/system-prompt-parts'
-import { buildPrefixSnapshot, getFrozenPrefix } from '@/services/harness/prefix-contract'
+import {
+  buildPrefixSnapshot,
+  getFrozenPrefix,
+  partsFromFrozenPrefix,
+} from '@/services/harness/prefix-contract'
 import countContextBudget from '@/services/context/count-context-budget'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
@@ -437,15 +441,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 
   if (frozenSnapshot) {
     system = frozenSnapshot.systemString
-    parts = {
-      base: frozenSnapshot.systemString,
-      tools: '',
-      mcp: '',
-      rules: '',
-      subagents: '',
-      mentions: '',
-      skills: '',
-    }
+    parts = partsFromFrozenPrefix(frozenSnapshot)
   } else {
     const freshParts = await assembleSystemPromptParts({
       mode,
@@ -455,16 +451,27 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       agentCatalog: [],
       standalone: input.standalone,
     })
-    system = joinSystemPromptParts(freshParts)
-    parts = { ...freshParts, mentions: '' }
+    // Mentions are injected into the last user message, not the frozen prefix.
+    const prefixParts: SystemPromptParts = { ...freshParts, mentions: '' }
+    system = joinSystemPromptParts(prefixParts)
+    parts = prefixParts
 
     const snapshot = buildPrefixSnapshot({
       systemString: system,
       toolSchemasJson: freshParts.tools,
       mcpCatalogSnapshot: freshParts.mcp,
       rulesBodies: freshParts.rules,
+      parts: prefixParts,
     })
-    updateChatMeta(projectSlug, chatId, { prefixSnapshot: snapshot as unknown as Record<string, unknown> }).catch(() => {})
+    updateChatMeta(projectSlug, chatId, {
+      prefixSnapshot: snapshot as unknown as Record<string, unknown>,
+    }).catch(() => {})
+    onEvent({
+      type: 'chat-meta-changed',
+      projectSlug,
+      chatId,
+      patch: { prefixSnapshot: snapshot },
+    })
   }
 
   const mentionsText = formatMentionsAsText(mentions)
@@ -483,6 +490,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     messages,
     standalone: input.standalone,
     parts,
+    frozenSnapshot,
   })
   onEvent({
     type: 'context-budget',

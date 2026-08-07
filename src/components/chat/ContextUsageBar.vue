@@ -9,23 +9,10 @@ import {
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import { CONTEXT_BUCKET_META } from '@/types/harness/context-bucket-meta'
 import useContextUsage from '@/composables/use-context-usage'
-
-const props = withDefaults(
-  defineProps<{
-    triggerDisabled?: boolean
-    actionsDisabled?: boolean
-    onCompact?: () => void
-    onHandoff?: () => void
-  }>(),
-  {
-    triggerDisabled: false,
-    actionsDisabled: false,
-    onCompact: undefined,
-    onHandoff: undefined,
-  },
-)
+import useChatContextActions from '@/composables/use-chat-context-actions'
 
 const contextUsage = useContextUsage()
+const contextActions = useChatContextActions()
 const open = ref(false)
 
 const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact' })
@@ -100,6 +87,21 @@ const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
 const safetyBufferLabel = computed(() => formatTokens(safetyBuffer.value))
 const reservedOutputLabel = computed(() => formatTokens(reservedOutput.value))
 const freeLabel = computed(() => formatTokens(free.value))
+
+const showManageActions = computed(
+  () =>
+    isHighUsage.value ||
+    Boolean(contextActions.onCompact.value) ||
+    Boolean(contextActions.onHandoff.value),
+)
+
+const handleCompact = (): void => {
+  contextActions.onCompact.value?.()
+}
+
+const handleHandoff = (): void => {
+  contextActions.onHandoff.value?.()
+}
 </script>
 
 <template>
@@ -111,7 +113,7 @@ const freeLabel = computed(() => formatTokens(free.value))
         size="sm"
         class="h-7 gap-1.5 px-2 text-xs"
         :class="statusClass"
-        :disabled="triggerDisabled || contextUsage.pending.value"
+        :disabled="contextActions.triggerDisabled.value || contextUsage.pending.value"
       >
         <svg
           aria-hidden="true"
@@ -257,7 +259,7 @@ const freeLabel = computed(() => formatTokens(free.value))
       </div>
 
       <div
-        v-if="isHighUsage || props.onCompact || props.onHandoff"
+        v-if="showManageActions"
         class="flex items-center gap-2 p-3"
       >
         <p
@@ -274,24 +276,24 @@ const freeLabel = computed(() => formatTokens(free.value))
           Manage context
         </div>
         <Button
-          v-if="props.onCompact"
+          v-if="contextActions.onCompact.value"
           type="button"
           variant="outline"
           size="sm"
           class="h-7 px-2 text-xs"
-          :disabled="actionsDisabled"
-          @click="props.onCompact?.()"
+          :disabled="contextActions.actionsDisabled.value"
+          @click="handleCompact"
         >
           Compact
         </Button>
         <Button
-          v-if="props.onHandoff"
+          v-if="contextActions.onHandoff.value"
           type="button"
           variant="outline"
           size="sm"
           class="h-7 px-2 text-xs"
-          :disabled="actionsDisabled"
-          @click="props.onHandoff?.()"
+          :disabled="contextActions.actionsDisabled.value"
+          @click="handleHandoff"
         >
           Handoff
         </Button>

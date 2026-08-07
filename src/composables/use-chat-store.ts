@@ -239,6 +239,8 @@ const mapMeta = (record: {
   forkedFrom: string | null
   pinned: boolean
   pinnedAt: string | null
+  prefixSnapshot?: ChatMeta['prefixSnapshot']
+  activeContext?: ChatMeta['activeContext']
 }): ChatMeta =>
   chatMetaSchema.parse({
     id: record.id,
@@ -253,6 +255,8 @@ const mapMeta = (record: {
     forkedFrom: record.forkedFrom,
     pinned: record.pinned,
     pinnedAt: record.pinnedAt,
+    prefixSnapshot: record.prefixSnapshot,
+    activeContext: record.activeContext,
   })
 
 const parsePart = (part: Record<string, unknown>): MessagePart => {

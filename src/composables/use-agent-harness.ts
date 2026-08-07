@@ -249,10 +249,9 @@ export default (options: AgentHarnessOptions) => {
     if (event.type === 'chat-meta-changed') {
       if (
         event.projectSlug === options.projectSlug &&
-        event.chatId === options.chatId &&
-        event.patch.title
+        event.chatId === options.chatId
       ) {
-        chatStore.patchMeta({ title: event.patch.title })
+        chatStore.patchMeta(event.patch)
       }
       fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
         toast.error('Failed to refresh sidebar', {

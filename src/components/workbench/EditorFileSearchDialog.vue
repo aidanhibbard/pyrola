@@ -184,33 +184,8 @@ watch(
         autofocus
       >
     </div>
-    <CommandList>
-      <p
-        v-if="!query.trim()"
-        class="py-6 text-center text-sm text-muted-foreground"
-      >
-        Type to search files…
-      </p>
-      <p
-        v-else-if="!projectRoot"
-        class="py-6 text-center text-sm text-muted-foreground"
-      >
-        No project root available.
-      </p>
-      <p
-        v-else-if="loading && files.length === 0"
-        class="py-6 text-center text-sm text-muted-foreground"
-      >
-        Searching…
-      </p>
-      <p
-        v-else-if="!loading && files.length === 0"
-        class="py-6 text-center text-sm text-muted-foreground"
-      >
-        No files found.
-      </p>
+    <CommandList v-if="files.length > 0">
       <CommandGroup
-        v-if="query.trim() && !loading && files.length > 0"
         :heading="truncated ? `Files (first ${FILE_SEARCH_LIMIT})` : undefined"
       >
         <CommandItem

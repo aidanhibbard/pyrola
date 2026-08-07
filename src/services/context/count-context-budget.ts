@@ -4,13 +4,16 @@ import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-setti
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket, ContextBucketId } from '@/types/harness/context-bucket'
+import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import { CONTEXT_BUCKET_META, CONTEXT_BUCKET_ORDER } from '@/types/harness/context-bucket-meta'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { TOOL_DESCRIPTIONS } from '@/services/harness/tool-catalog'
 import estimateTextTokens from '@/utils/estimate-text-tokens'
 import assembleSystemPromptParts, {
+  formatMentionsAsText,
   type SystemPromptParts,
 } from '@/services/context/system-prompt-parts'
+import { partsFromFrozenPrefix } from '@/services/harness/prefix-contract'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
@@ -32,6 +35,7 @@ export type CountContextBudgetInput = {
   agentCatalog?: Array<{ name: string; description: string }>
   standalone?: boolean
   parts?: SystemPromptParts
+  frozenSnapshot?: PrefixSnapshot | null
 }
 
 const DEFAULT_CONTEXT_LIMIT = 128_000
@@ -138,17 +142,38 @@ const buildBucket = (id: ContextBucketId, tokens: number): ContextBucket => ({
   tokens,
 })
 
+const resolveParts = async (input: CountContextBudgetInput): Promise<SystemPromptParts> => {
+  if (input.parts) {
+    return input.parts
+  }
+  if (input.frozenSnapshot) {
+    return partsFromFrozenPrefix(input.frozenSnapshot)
+  }
+  return assembleSystemPromptParts({
+    mode: input.mode,
+    projectName: input.projectName,
+    projectRoot: input.projectRoot,
+    mentions: input.mentions,
+    agentCatalog: input.agentCatalog ?? [],
+    standalone: input.standalone,
+  })
+}
+
+const resolveMentionsTokens = (
+  parts: SystemPromptParts,
+  mentions: ContextMention[],
+): number => {
+  // Mentions are injected into the last user message, not the frozen system
+  // prefix. Prefer the live mentions payload; fall back to parts.mentions.
+  const injected = formatMentionsAsText(mentions)
+  if (injected) {
+    return estimateTextTokens(`Context:\n${injected}`)
+  }
+  return estimateTextTokens(parts.mentions)
+}
+
 export default async (input: CountContextBudgetInput): Promise<ContextBudget> => {
-  const parts =
-    input.parts ??
-    (await assembleSystemPromptParts({
-      mode: input.mode,
-      projectName: input.projectName,
-      projectRoot: input.projectRoot,
-      mentions: input.mentions,
-      agentCatalog: input.agentCatalog ?? [],
-      standalone: input.standalone,
-    }))
+  const parts = await resolveParts(input)
 
   const builtinToolSchemas = estimateBuiltinToolSchemas(input.mode)
   const mcpToolSchemas = await estimateMcpToolSchemas(
@@ -165,7 +190,7 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
       mcpToolSchemas,
     rules: estimateTextTokens(parts.rules),
     skills: estimateTextTokens(parts.skills),
-    mentions: estimateTextTokens(parts.mentions),
+    mentions: resolveMentionsTokens(parts, input.mentions),
     subagentDefinitions: estimateTextTokens(parts.subagents),
     messages: estimateTextTokens(serializeMessages(input.messages)),
   }

@@ -60,7 +60,7 @@ const leftChromeWidth = computed(() => {
 
     <div
       v-if="!workbench.rightSidebarOpen.value"
-      class="pointer-events-auto mr-3"
+      class="pointer-events-auto relative z-[52] mr-3"
       data-tauri-drag-region="false"
     >
       <RightSidebarTrigger />

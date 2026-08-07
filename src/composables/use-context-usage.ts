@@ -3,6 +3,7 @@ import type { UIMessage } from 'ai'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import countContextBudget from '@/services/context/count-context-budget'
 import parseModelRef from '@/utils/parse-model-ref'
@@ -28,6 +29,7 @@ export type RefreshContextUsageInput = {
   messages: UIMessage[]
   settings?: PyrolaSettings
   standalone?: boolean
+  frozenSnapshot?: PrefixSnapshot | null
 }
 
 export default () => {
@@ -72,6 +74,7 @@ export default () => {
         mentions: input.mentions ?? [],
         messages: input.messages,
         standalone: input.standalone,
+        frozenSnapshot: input.frozenSnapshot,
       })
 
       if (generation !== refreshGeneration) {

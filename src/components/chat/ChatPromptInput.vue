@@ -26,7 +26,6 @@ import {
 import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
 import ChatMcpServerPicker from '@/components/chat/ChatMcpServerPicker.vue'
 import ChatSkillsPicker from '@/components/chat/ChatSkillsPicker.vue'
-import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import ChatPermissionDial from '@/components/chat/ChatPermissionDial.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
@@ -36,7 +35,7 @@ import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
 import useChatStore from '@/composables/use-chat-store'
-import useContextUsage from '@/composables/use-context-usage'
+import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import resolveModelForRole from '@/services/models/resolve-model-for-role'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
@@ -53,21 +52,13 @@ const props = withDefaults(
     status?: ChatStatus
     disabled?: boolean
     showProjectSelect?: boolean
-    showContextUsage?: boolean
     permissionLevel?: PermissionLevel
-    actionsDisabled?: boolean
-    onCompact?: () => void
-    onHandoff?: () => void
   }>(),
   {
     status: 'ready',
     disabled: false,
     showProjectSelect: false,
-    showContextUsage: false,
     permissionLevel: undefined,
-    actionsDisabled: false,
-    onCompact: undefined,
-    onHandoff: undefined,
   },
 )
 
@@ -89,7 +80,11 @@ const fleet = useFleetRegistry()
 const config = usePyrolaConfig()
 const git = useGitBranches()
 const chatStore = useChatStore()
-const contextUsage = useContextUsage()
+const contextBudgetSync = useChatContextBudgetSync()
+
+const syncDraftSelection = (): void => {
+  contextBudgetSync.setDraftSelection(session.selectedModelRef, session.selectedMode)
+}
 
 const resolveDefaultPermissionLevel = (): PermissionLevel =>
   props.permissionLevel
@@ -180,6 +175,7 @@ const handleModeSelect = (mode: PyrolaChatMode): void => {
       session.selectedModelRef = resolved
     }
   }
+  syncDraftSelection()
 }
 
 const handleProjectSelect = async (projectId: string | null): Promise<void> => {
@@ -199,6 +195,7 @@ const handleProjectSelect = async (projectId: string | null): Promise<void> => {
 const handleModelChange = (value: string): void => {
   if (value.length > 0) {
     session.selectedModelRef = value
+    syncDraftSelection()
   }
 }
 
@@ -244,41 +241,6 @@ const handleSubmit = (payload: PromptInputMessage): void => {
 
 const handleCancelEdit = (): void => {
   chatStore.cancelEditMessage()
-}
-
-const refreshContextBudget = async (): Promise<void> => {
-  if (!props.showContextUsage) {
-    return
-  }
-
-  const modelId = session.selectedModelRef || chatStore.meta.value?.model || ''
-  if (!modelId) {
-    return
-  }
-
-  const meta = chatStore.meta.value
-  const project = fleet.activeProject.value
-  const standalone = meta?.projectSlug === HOME_CHAT_SLUG
-  const projectRoot = standalone
-    ? meta?.projectRoot
-    : project?.rootPath ?? meta?.projectRoot
-  if (!projectRoot) {
-    return
-  }
-
-  const projectName = standalone
-    ? 'Home'
-    : project?.name ?? meta?.projectSlug ?? 'Home'
-
-  await contextUsage.refresh({
-    modelId,
-    mode: session.selectedMode,
-    projectName,
-    projectRoot,
-    messages: chatStore.messages.value,
-    settings: config.effectiveSettings.value,
-    standalone,
-  })
 }
 
 watch(
@@ -331,6 +293,7 @@ watch(
       }
       session.modelInitialized = true
     }
+    syncDraftSelection()
   },
   { immediate: true },
 )
@@ -338,7 +301,7 @@ watch(
 watch(
   () => chatStore.meta.value,
   (meta) => {
-    if (!meta || !props.showContextUsage) {
+    if (!meta) {
       return
     }
     if (meta.model) {
@@ -351,28 +314,7 @@ watch(
     if (meta.mode) {
       session.selectedMode = meta.mode
     }
-  },
-  { immediate: true },
-)
-
-watch(
-  [
-    () => props.showContextUsage,
-    () => session.selectedModelRef,
-    () => session.selectedMode,
-    () => chatStore.messages.value.length,
-    () => fleet.activeProject.value?.id,
-    () => chatStore.meta.value?.model,
-  ],
-  () => {
-    const timer = window.setTimeout(() => {
-      refreshContextBudget().catch((error) => {
-        toast.error('Failed to refresh context usage', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
-      })
-    }, 0)
-    return () => window.clearTimeout(timer)
+    syncDraftSelection()
   },
   { immediate: true },
 )
@@ -495,17 +437,6 @@ watch(
       <div class="ml-auto flex items-center gap-2">
         <ChatMcpServerPicker />
         <ChatSkillsPicker :mode="session.selectedMode" />
-        <ChatContextUsageBar
-          v-if="showContextUsage"
-          :trigger-disabled="disabled"
-          :actions-disabled="
-            props.actionsDisabled
-            || status === 'streaming'
-            || status === 'submitted'
-          "
-          :on-compact="props.onCompact"
-          :on-handoff="props.onHandoff"
-        />
       </div>
     </div>
   </div>

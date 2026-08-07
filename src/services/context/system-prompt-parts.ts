@@ -172,6 +172,9 @@ const resolveModeSkillBlock = (mode: PyrolaChatMode): string => {
 export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
   if (input.frozenSnapshot) {
     const snap = input.frozenSnapshot
+    if (snap.parts) {
+      return { ...snap.parts }
+    }
     return {
       base: snap.systemString,
       tools: '',

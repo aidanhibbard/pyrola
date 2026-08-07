@@ -2,6 +2,16 @@ import { z } from 'zod'
 
 const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator'])
 
+const systemPromptPartsSchema = z.object({
+  base: z.string(),
+  tools: z.string(),
+  mcp: z.string(),
+  rules: z.string(),
+  subagents: z.string(),
+  mentions: z.string(),
+  skills: z.string(),
+})
+
 export const prefixSnapshotSchema = z.object({
   systemString: z.string(),
   toolSchemasJson: z.string(),
@@ -9,6 +19,7 @@ export const prefixSnapshotSchema = z.object({
   rulesBodies: z.string(),
   hash: z.string(),
   frozenAt: z.string(),
+  parts: systemPromptPartsSchema.optional(),
 })
 
 export const activeContextSchema = z.object({
