@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
+use similar::{ChangeTag, TextDiff};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -217,41 +218,66 @@ fn build_file_diff(
   }
 }
 
+fn strip_line_ending(value: &str) -> String {
+  value
+    .trim_end_matches('\n')
+    .trim_end_matches('\r')
+    .to_string()
+}
+
+fn range_start_1based(start: usize, len: usize) -> u32 {
+  if len == 0 {
+    start as u32
+  } else {
+    (start + 1) as u32
+  }
+}
+
 fn build_hunks(old: &str, new: &str) -> Vec<FileDiffHunk> {
   if old == new {
     return vec![];
   }
 
-  let old_lines: Vec<&str> = if old.is_empty() {
-    vec![]
-  } else {
-    old.lines().collect()
-  };
-  let new_lines: Vec<&str> = if new.is_empty() {
-    vec![]
-  } else {
-    new.lines().collect()
-  };
+  let diff = TextDiff::from_lines(old, new);
+  let mut hunks = Vec::new();
 
-  let mut lines = Vec::new();
-  for line in &old_lines {
-    lines.push(DiffLine {
-      kind: "remove".to_string(),
-      content: (*line).to_string(),
+  for group in diff.grouped_ops(3) {
+    if group.is_empty() {
+      continue;
+    }
+
+    let first = &group[0];
+    let last = &group[group.len() - 1];
+    let old_len = last.old_range().end.saturating_sub(first.old_range().start);
+    let new_len = last.new_range().end.saturating_sub(first.new_range().start);
+
+    let mut lines = Vec::new();
+    for op in &group {
+      for change in diff.iter_changes(op) {
+        let kind = match change.tag() {
+          ChangeTag::Equal => "context",
+          ChangeTag::Delete => "remove",
+          ChangeTag::Insert => "add",
+        };
+        lines.push(DiffLine {
+          kind: kind.to_string(),
+          content: strip_line_ending(change.value()),
+        });
+      }
+    }
+
+    if lines.is_empty() {
+      continue;
+    }
+
+    hunks.push(FileDiffHunk {
+      old_start: range_start_1based(first.old_range().start, old_len),
+      new_start: range_start_1based(first.new_range().start, new_len),
+      lines,
     });
   }
-  for line in &new_lines {
-    lines.push(DiffLine {
-      kind: "add".to_string(),
-      content: (*line).to_string(),
-    });
-  }
 
-  vec![FileDiffHunk {
-    old_start: if old_lines.is_empty() { 0 } else { 1 },
-    new_start: if new_lines.is_empty() { 0 } else { 1 },
-    lines,
-  }]
+  hunks
 }
 
 fn apply_replacements(content: &str, replacements: &[FsEditReplacement]) -> Result<String, String> {
@@ -932,5 +958,58 @@ pub fn fs_stage_preview(
         None,
       )])
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn build_hunks_empty_when_identical() {
+    let hunks = build_hunks("a\nb\n", "a\nb\n");
+    assert!(hunks.is_empty());
+  }
+
+  #[test]
+  fn build_hunks_middle_change_is_focused() {
+    let old = "line1\nline2\nline3\nline4\nline5\nline6\nline7\n";
+    let new = "line1\nline2\nline3\nchanged\nline5\nline6\nline7\n";
+    let hunks = build_hunks(old, new);
+    assert_eq!(hunks.len(), 1);
+    let hunk = &hunks[0];
+    let removes: Vec<_> = hunk
+      .lines
+      .iter()
+      .filter(|line| line.kind == "remove")
+      .collect();
+    let adds: Vec<_> = hunk
+      .lines
+      .iter()
+      .filter(|line| line.kind == "add")
+      .collect();
+    assert_eq!(removes.len(), 1);
+    assert_eq!(adds.len(), 1);
+    assert_eq!(removes[0].content, "line4");
+    assert_eq!(adds[0].content, "changed");
+    assert!(hunk.lines.iter().any(|line| line.kind == "context"));
+    // Must not paint the whole file as remove-then-add.
+    assert!(hunk.lines.len() < 14);
+  }
+
+  #[test]
+  fn build_hunks_create_file() {
+    let hunks = build_hunks("", "hello\nworld\n");
+    assert_eq!(hunks.len(), 1);
+    assert!(hunks[0].lines.iter().all(|line| line.kind == "add"));
+    assert_eq!(hunks[0].lines.len(), 2);
+  }
+
+  #[test]
+  fn build_hunks_delete_file() {
+    let hunks = build_hunks("hello\nworld\n", "");
+    assert_eq!(hunks.len(), 1);
+    assert!(hunks[0].lines.iter().all(|line| line.kind == "remove"));
+    assert_eq!(hunks[0].lines.len(), 2);
   }
 }

@@ -3,9 +3,15 @@ import { computed, ref } from 'vue'
 import { ChevronRightIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
 import type { ToolRun } from '@/types/harness/tool-run'
 import type { FileDiff } from '@/types/harness/file-diff'
+import countDiffLines from '@/utils/count-diff-lines'
 import formatToolRunLabel from '@/utils/format-tool-run-label'
+import resolveFileDiffHunks from '@/utils/resolve-file-diff-hunks'
 import ChatArtifactLink from '@/components/chat/ChatArtifactLink.vue'
 import ChatInlineFileDiff from '@/components/chat/InlineFileDiff.vue'
+import {
+  CommitFileAdditions,
+  CommitFileDeletions,
+} from '@/components/ai-elements/commit'
 import {
   Collapsible,
   CollapsibleContent,
@@ -32,21 +38,46 @@ const formatDetail = (value: unknown): string => {
 
 const open = ref(false)
 
-const label = computed(() => formatToolRunLabel(props.run))
+const hasArtifactChip = computed(
+  () => props.run.artifact !== undefined && props.run.status === 'done',
+)
+const label = computed(() =>
+  formatToolRunLabel(props.run, {
+    omitPathHint: hasArtifactChip.value,
+  }),
+)
 const isRunning = computed(() => props.run.status === 'running')
 const isError = computed(() => props.run.status === 'error')
 const hasDetails = computed(
   () => props.run.args !== undefined || props.run.result !== undefined,
 )
-const argsText = computed(() => formatDetail(props.run.args))
-const resultText = computed(() => formatDetail(props.run.result))
 const diffs = computed((): FileDiff[] => props.run.diffs ?? [])
+const hasDiffs = computed(
+  () => diffs.value.length > 0 && props.run.status === 'done',
+)
+const showInput = computed(
+  () => props.run.args !== undefined && !hasDiffs.value,
+)
+const argsText = computed(() =>
+  showInput.value ? formatDetail(props.run.args) : '',
+)
+const resultText = computed(() => formatDetail(props.run.result))
 const showRawOutput = computed(
   () =>
     resultText.value.length > 0 &&
     (props.run.status === 'done' || props.run.status === 'error') &&
     diffs.value.length === 0,
 )
+const diffCounts = computed(() => {
+  let additions = 0
+  let deletions = 0
+  for (const diff of diffs.value) {
+    const counts = countDiffLines(resolveFileDiffHunks(diff))
+    additions += counts.additions
+    deletions += counts.deletions
+  }
+  return { additions, deletions }
+})
 </script>
 
 <template>
@@ -71,11 +102,24 @@ const showRawOutput = computed(
         class="size-3.5 shrink-0 transition-transform"
         :class="open ? 'rotate-90' : ''"
       />
-      <span class="min-w-0 truncate">{{ label }}</span>
+      <span class="shrink-0">{{ label }}</span>
       <ChatArtifactLink
-        v-if="run.artifact && run.status === 'done'"
+        v-if="run.artifact && hasArtifactChip"
         :artifact="run.artifact"
       />
+      <span
+        v-if="hasDiffs && (diffCounts.additions > 0 || diffCounts.deletions > 0)"
+        class="flex shrink-0 items-center gap-1.5 tabular-nums"
+      >
+        <CommitFileAdditions
+          :count="diffCounts.additions"
+          class="inline-flex items-center gap-0.5 text-[11px]"
+        />
+        <CommitFileDeletions
+          :count="diffCounts.deletions"
+          class="inline-flex items-center gap-0.5 text-[11px]"
+        />
+      </span>
     </CollapsibleTrigger>
     <CollapsibleContent
       class="mt-1 space-y-2 border-l border-border/60 pl-5 text-xs text-muted-foreground"
@@ -93,7 +137,7 @@ const showRawOutput = computed(
         <pre class="max-h-40 overflow-auto whitespace-pre-wrap wrap-break-word">{{ argsText }}</pre>
       </div>
       <div
-        v-if="diffs.length > 0 && run.status === 'done'"
+        v-if="hasDiffs"
         class="space-y-2"
       >
         <ChatInlineFileDiff

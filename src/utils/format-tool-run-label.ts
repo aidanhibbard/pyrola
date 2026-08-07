@@ -29,12 +29,20 @@ const TOOL_LABELS: Record<string, string> = {
   diagnostics: 'Read diagnostics',
 }
 
-const formatArgsHint = (args: unknown): string | null => {
+const formatArgsHint = (
+  args: unknown,
+  options?: { omitPathHint?: boolean },
+): string | null => {
   if (!args || typeof args !== 'object') {
     return null
   }
   const record = args as Record<string, unknown>
-  if (typeof record.path === 'string' && record.path.length > 0) {
+  const omitPath = options?.omitPathHint === true
+  if (
+    !omitPath &&
+    typeof record.path === 'string' &&
+    record.path.length > 0
+  ) {
     return record.path
   }
   if (typeof record.pattern === 'string' && record.pattern.length > 0) {
@@ -49,15 +57,22 @@ const formatArgsHint = (args: unknown): string | null => {
   if (typeof record.query === 'string' && record.query.length > 0) {
     return record.query
   }
-  if (typeof record.from === 'string' && record.from.length > 0) {
+  if (
+    !omitPath &&
+    typeof record.from === 'string' &&
+    record.from.length > 0
+  ) {
     return record.from
   }
   return null
 }
 
-export default (run: ToolRun): string => {
+export default (
+  run: ToolRun,
+  options?: { omitPathHint?: boolean },
+): string => {
   const prefix = TOOL_LABELS[run.name] ?? run.name.replaceAll('_', ' ')
-  const hint = formatArgsHint(run.args)
+  const hint = formatArgsHint(run.args, options)
   const target = hint ? ` ${hint}` : ''
 
   if (run.status === 'running') {

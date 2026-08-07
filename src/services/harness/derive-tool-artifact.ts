@@ -3,6 +3,28 @@ import type { ChatArtifact } from '@/types/chat/chat-artifact'
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object'
 
+const fileArtifact = (path: string | undefined): ChatArtifact | undefined => {
+  if (!path) {
+    return undefined
+  }
+  return { kind: 'file', path }
+}
+
+const pathFromResultOrArgs = (
+  result: Record<string, unknown>,
+  args: unknown,
+  resultKey = 'path',
+  argsKey = 'path',
+): string | undefined => {
+  if (typeof result[resultKey] === 'string') {
+    return result[resultKey] as string
+  }
+  if (isRecord(args) && typeof args[argsKey] === 'string') {
+    return args[argsKey] as string
+  }
+  return undefined
+}
+
 export default (
   name: string,
   result: unknown,
@@ -40,17 +62,36 @@ export default (
     return { kind: 'studio', path }
   }
 
-  if (name === 'write_file' || name === 'edit_file') {
-    const path =
-      typeof result.path === 'string'
-        ? result.path
-        : isRecord(args) && typeof args.path === 'string'
-          ? args.path
-          : undefined
-    if (!path) {
-      return undefined
+  if (
+    name === 'write_file' ||
+    name === 'edit_file' ||
+    name === 'read_file' ||
+    name === 'delete_file'
+  ) {
+    return fileArtifact(pathFromResultOrArgs(result, args))
+  }
+
+  if (name === 'move_file') {
+    return fileArtifact(pathFromResultOrArgs(result, args, 'to', 'to'))
+  }
+
+  if (name === 'apply_patch') {
+    if (Array.isArray(result.paths)) {
+      const first = result.paths.find(
+        (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+      )
+      if (first) {
+        return fileArtifact(first)
+      }
     }
-    return { kind: 'file', path }
+    if (Array.isArray(result.diffs)) {
+      for (const entry of result.diffs) {
+        if (isRecord(entry) && typeof entry.path === 'string') {
+          return fileArtifact(entry.path)
+        }
+      }
+    }
+    return undefined
   }
 
   return undefined

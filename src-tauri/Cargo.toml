@@ -38,6 +38,7 @@ portable-pty = "0.9"
 notify = "7.0"
 base64 = "0.22"
 url = "2"
+similar = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

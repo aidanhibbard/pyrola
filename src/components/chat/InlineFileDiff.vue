@@ -1,19 +1,41 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { FileDiff } from '@/types/harness/file-diff'
+import countDiffLines from '@/utils/count-diff-lines'
+import filePathBasename from '@/utils/file-path-basename'
+import resolveFileDiffHunks from '@/utils/resolve-file-diff-hunks'
+import {
+  CommitFileAdditions,
+  CommitFileDeletions,
+} from '@/components/ai-elements/commit'
 
-defineProps<{
+const props = defineProps<{
   diff: FileDiff
 }>()
+
+const hunks = computed(() => resolveFileDiffHunks(props.diff))
+const basename = computed(() => filePathBasename(props.diff.path))
+const counts = computed(() => countDiffLines(hunks.value))
 </script>
 
 <template>
   <div class="overflow-hidden rounded-md border border-border/50 text-xs">
-    <div class="border-b border-border/50 bg-muted/40 px-2 py-1 font-medium">
-      {{ diff.path }}
+    <div class="flex items-center gap-2 border-b border-border/50 bg-muted/40 px-2 py-1 font-medium">
+      <span class="min-w-0 truncate">{{ basename }}</span>
+      <span class="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
+        <CommitFileAdditions
+          :count="counts.additions"
+          class="inline-flex items-center gap-0.5 text-[11px]"
+        />
+        <CommitFileDeletions
+          :count="counts.deletions"
+          class="inline-flex items-center gap-0.5 text-[11px]"
+        />
+      </span>
     </div>
     <div class="max-h-64 overflow-auto p-2 font-mono">
       <div
-        v-for="(hunk, hunkIndex) in diff.hunks"
+        v-for="(hunk, hunkIndex) in hunks"
         :key="hunkIndex"
         class="space-y-0"
       >
