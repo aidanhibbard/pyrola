@@ -16,6 +16,11 @@ const sanitizeMermaidSvg = (svg: string): string => {
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 }
 
+const removeMermaidTempNode = (id: string): void => {
+  document.getElementById(`d${id}`)?.remove()
+  document.getElementById(id)?.remove()
+}
+
 const renderDiagram = async (): Promise<void> => {
   const source = props.code?.trim() ?? ''
   if (!source || !container.value) {
@@ -28,12 +33,18 @@ const renderDiagram = async (): Promise<void> => {
     const { svg } = await mermaid.render(id, source)
     rendered.value = sanitizeMermaidSvg(svg)
   } catch {
+    removeMermaidTempNode(id)
     rendered.value = ''
   }
 }
 
 onMounted(() => {
-  mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' })
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'strict',
+    suppressErrorRendering: true,
+  })
   renderDiagram().catch(() => {
     rendered.value = ''
   })
