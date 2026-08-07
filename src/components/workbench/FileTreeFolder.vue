@@ -145,6 +145,7 @@ const handleRenameBlur = (): void => {
                 cn(
                   'flex w-full items-center gap-1 rounded px-2 py-1 text-left font-sans text-[13px] transition-colors hover:bg-muted/50',
                   isSelected && 'bg-muted',
+                  folderDecoration === 'ignored' && 'opacity-50',
                 )
               "
               type="button"

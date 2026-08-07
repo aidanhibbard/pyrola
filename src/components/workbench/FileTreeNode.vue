@@ -141,7 +141,12 @@ const handleRenameBlur = (): void => {
         :path="node.path"
         :name="node.name"
         :data-path="node.path"
-        class="font-sans text-[13px]"
+        :class="
+          cn(
+            'font-sans text-[13px]',
+            fileDecoration === 'ignored' && 'opacity-50',
+          )
+        "
       >
         <template #default>
           <WorkbenchFileEntryIcon :name="node.name" />

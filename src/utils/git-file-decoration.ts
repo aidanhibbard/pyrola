@@ -20,7 +20,7 @@ const DECORATION_CLASS: Record<GitFileDecoration, string> = {
   deleted: 'text-red-500 dark:text-red-300',
   renamed: 'text-sky-500 dark:text-sky-300',
   conflicted: 'text-red-500 dark:text-red-300',
-  ignored: 'text-muted-foreground/45',
+  ignored: 'text-foreground/40',
 }
 
 const DECORATION_LETTER: Record<GitFileDecoration, string> = {
@@ -109,6 +109,9 @@ export const decorationNameClass = (decoration: GitFileDecoration): string => {
   }
   if (decoration === 'deleted') {
     return `${DECORATION_CLASS[decoration]} line-through`
+  }
+  if (decoration === 'ignored') {
+    return `${DECORATION_CLASS[decoration]} font-normal`
   }
   return DECORATION_CLASS[decoration]
 }

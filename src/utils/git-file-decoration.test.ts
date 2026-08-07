@@ -37,7 +37,7 @@ describe('decorationFromEntry', () => {
       ),
     ).toBe('ignored')
     expect(hasDecorationLetter('ignored')).toBe(false)
-    expect(decorationNameClass('ignored')).toContain('muted-foreground')
+    expect(decorationNameClass('ignored')).toContain('foreground/40')
   })
 
   it('prefers conflicted over modified', () => {

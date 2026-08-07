@@ -108,6 +108,16 @@ export default (projectRoot: Ref<string | null> | ComputedRef<string | null>) =>
     }, DEBOUNCE_MS)
   }
 
+  const handleWindowFocus = (): void => {
+    refreshDebounced()
+  }
+
+  const handleVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') {
+      refreshDebounced()
+    }
+  }
+
   onMounted(() => {
     refreshNow().catch((err) => {
       if (!error.value) {
@@ -115,9 +125,15 @@ export default (projectRoot: Ref<string | null> | ComputedRef<string | null>) =>
           err instanceof Error ? err.message : 'Failed to load git status'
       }
     })
+    // Commits/pushes from the terminal do not remount the tree; refresh when the
+    // app is focused again so decorations match the working tree.
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
   })
 
   onUnmounted(() => {
+    window.removeEventListener('focus', handleWindowFocus)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
     if (debounceTimer !== null) {
       clearTimeout(debounceTimer)
       debounceTimer = null
