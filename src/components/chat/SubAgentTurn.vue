@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BotIcon, CheckIcon, ChevronRightIcon, XIcon } from '@lucide/vue'
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  SquareIcon,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import { Button } from '@/components/shadcn/ui/button'
@@ -28,15 +33,29 @@ const router = useRouter()
 
 const isRunning = computed(() => props.subagent.status === 'running')
 const modelLabel = computed(() => formatModelLabelFromRef(props.subagent.model))
-const label = computed(() => {
+const displayName = computed(() => {
   const name = props.subagent.name.trim() || 'Sub-agent'
-  const base = isRunning.value
-    ? `Spawned sub-agent ${name}…`
-    : `Spawned sub-agent ${name}`
-  if (!modelLabel.value) {
-    return base
+  return isRunning.value ? `${name}…` : name
+})
+
+const statusIcon = computed(() => {
+  if (props.subagent.status === 'stopped') {
+    return SquareIcon
   }
-  return `${base} on ${modelLabel.value}`
+  if (props.subagent.status === 'error') {
+    return CircleAlertIcon
+  }
+  return CheckIcon
+})
+
+const statusIconClass = computed(() => {
+  if (props.subagent.status === 'error') {
+    return 'size-3.5 shrink-0 text-destructive'
+  }
+  if (props.subagent.status === 'stopped') {
+    return 'size-3 shrink-0'
+  }
+  return 'size-3.5 shrink-0'
 })
 
 const openSubagentChat = async (): Promise<void> => {
@@ -78,12 +97,18 @@ const handleStop = (): void => {
       <NavigationAsideLeftChatRunningDots
         v-if="isRunning"
       />
-      <CheckIcon
+      <component
+        :is="statusIcon"
         v-else
-        class="size-3.5 shrink-0"
+        :class="statusIconClass"
       />
-      <BotIcon class="size-3.5 shrink-0" />
-      <span class="min-w-0 flex-1 truncate">{{ label }}</span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate">{{ displayName }}</span>
+        <span
+          v-if="modelLabel"
+          class="block truncate text-[10px] leading-tight text-muted-foreground/80"
+        >{{ modelLabel }}</span>
+      </span>
       <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
     </button>
     <Tooltip v-if="isRunning">
@@ -96,7 +121,7 @@ const handleStop = (): void => {
           aria-label="Stop sub-agent"
           @click="handleStop"
         >
-          <XIcon class="size-3.5" />
+          <SquareIcon class="size-3" />
         </Button>
       </TooltipTrigger>
       <TooltipContent>Stop sub-agent</TooltipContent>

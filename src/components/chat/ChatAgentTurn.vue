@@ -104,7 +104,7 @@ const errorTitle = computed(() => {
 
     <!--
       AI SDK parts order per step: reasoning → text → tools.
-      Spawned sub-agents render inline at their tool call site so later
+      Sub-agents render inline at their tool call site so later
       assistant text stays below them instead of pushing a bottom stack.
     -->
     <template

@@ -54,7 +54,13 @@ export type HarnessEvent =
       parentToolCallId: string
       event: HarnessEvent
     }
-  | { type: 'subagent-result'; subagentId: string; summary: string; blocking: boolean }
+  | {
+      type: 'subagent-result'
+      subagentId: string
+      summary: string
+      blocking: boolean
+      outcome?: 'completed' | 'failed' | 'aborted'
+    }
   | {
       type: 'pending-subagent'
       toolCallId: string

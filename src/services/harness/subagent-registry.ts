@@ -145,9 +145,9 @@ export const abortOne = (subagentId: string): void => {
   const result: SubagentResult = {
     subagentId,
     name: record.agentName,
-    summary: 'Subagent stopped',
+    summary: 'Stopped',
   }
-  setSubagentStatus(record, 'failed', result)
+  setSubagentStatus(record, 'aborted', result)
   resolveCompletionWaiters(subagentId, result)
 }
 

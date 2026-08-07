@@ -74,7 +74,9 @@ import studioDataSchema from '@/schemas/studio/studio-data'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 import { requestQuestion } from '@/services/harness/question-gate'
 import {
+  abortOne as abortSubagent,
   fail as failSubagent,
+  getSubagent,
   register as registerSubagent,
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
@@ -142,6 +144,61 @@ const DEFAULT_SUBAGENT_MAX_STEPS = 20
 const sanitizeSubagentName = (name: string): string => {
   const cleaned = name.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned.slice(0, 64) || 'subagent'
+}
+
+const emitSubagentResult = (
+  ctx: HarnessToolContext,
+  args: {
+    subagentId: string
+    summary: string
+    blocking: boolean
+    outcome: 'completed' | 'failed' | 'aborted'
+  },
+): void => {
+  ctx.onHarnessEvent?.({
+    type: 'subagent-result',
+    subagentId: args.subagentId,
+    summary: args.summary,
+    blocking: args.blocking,
+    outcome: args.outcome,
+  })
+}
+
+const finishSubagentWithError = (
+  ctx: HarnessToolContext,
+  args: {
+    subagentId: string
+    error: unknown
+    blocking: boolean
+  },
+): void => {
+  const message = args.error instanceof Error ? args.error.message : 'Subagent failed'
+  const record = getSubagent(args.subagentId)
+  const aborted =
+    record?.status === 'aborted' ||
+    /aborted|stopped/i.test(message)
+
+  if (aborted) {
+    if (record?.status === 'running') {
+      abortSubagent(args.subagentId)
+    }
+    const stopped = getSubagent(args.subagentId)
+    emitSubagentResult(ctx, {
+      subagentId: args.subagentId,
+      summary: stopped?.result?.summary ?? 'Stopped',
+      blocking: args.blocking,
+      outcome: 'aborted',
+    })
+    return
+  }
+
+  failSubagent(args.subagentId, message)
+  emitSubagentResult(ctx, {
+    subagentId: args.subagentId,
+    summary: message,
+    blocking: args.blocking,
+    outcome: 'failed',
+  })
 }
 
 const LSP_DIAGNOSTICS_METHODS = new Set([
@@ -1252,22 +1309,26 @@ const buildTools = (ctx: HarnessToolContext) => ({
   ...buildHarnessTools(ctx),
   spawn_subagent: tool({
     description: withToolExamples(
-      'Spawn a subagent. Default mode is blocking (waits until complete). Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes.',
+      'Spawn a subagent. Default mode is blocking (waits until complete). Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes. agentName must be a very brief verb phrase that explains the work (for example "Reading auth", "Editing config").',
       [
         {
-          agentName: 'explore-auth',
+          agentName: 'Reading auth',
           prompt: 'Find where MCP trust is granted and summarize the flow.',
           mode: 'blocking',
         },
         {
-          agentName: 'scan-permissions',
+          agentName: 'Scanning permissions',
           prompt: 'List shell and MCP permission gates.',
           mode: 'background',
         },
       ],
     ),
     inputSchema: z.object({
-      agentName: z.string().describe('Short name shown in the UI'),
+      agentName: z
+        .string()
+        .describe(
+          'Very brief UI label. Prefer a verb phrase that explains the work, such as "Reading auth", "Editing config", or "Exploring LSP".',
+        ),
       prompt: z.string().describe('Task instructions for the subagent'),
       mode: z
         .enum(['blocking', 'background'])
@@ -1346,31 +1407,25 @@ const buildTools = (ctx: HarnessToolContext) => ({
             })
 
             resolveSubagent(subagentId, { subagentId, name: agentName, summary })
-            ctx.onHarnessEvent?.({
-              type: 'subagent-result',
+            emitSubagentResult(ctx, {
               subagentId,
               summary,
               blocking: false,
+              outcome: 'completed',
             })
           } catch (error) {
-            const message = error instanceof Error ? error.message : 'Subagent failed'
-            failSubagent(subagentId, message)
-            ctx.onHarnessEvent?.({
-              type: 'subagent-result',
+            finishSubagentWithError(ctx, {
               subagentId,
-              summary: message,
+              error,
               blocking: false,
             })
           }
         }
 
         completeSubagent().catch((error) => {
-          const message = error instanceof Error ? error.message : 'Subagent failed'
-          failSubagent(subagentId, message)
-          ctx.onHarnessEvent?.({
-            type: 'subagent-result',
+          finishSubagentWithError(ctx, {
             subagentId,
-            summary: message,
+            error,
             blocking: false,
           })
         })
@@ -1388,20 +1443,18 @@ const buildTools = (ctx: HarnessToolContext) => ({
           signal: ctx.signal ?? new AbortController().signal,
         })
 
-        ctx.onHarnessEvent?.({
-          type: 'subagent-result',
+        emitSubagentResult(ctx, {
           subagentId,
           summary,
           blocking: true,
+          outcome: 'completed',
         })
 
         return { subagentId, name: agentName, summary }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Subagent failed'
-        ctx.onHarnessEvent?.({
-          type: 'subagent-result',
+        finishSubagentWithError(ctx, {
           subagentId,
-          summary: message,
+          error,
           blocking: true,
         })
         throw error

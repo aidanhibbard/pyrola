@@ -4,7 +4,7 @@ export type SubagentEntry = {
   subagentId: string
   name: string
   blocking: boolean
-  status: 'running' | 'done'
+  status: 'running' | 'done' | 'stopped' | 'error'
   summary?: string
   events: HarnessEvent[]
 }

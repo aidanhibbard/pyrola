@@ -1,5 +1,6 @@
 import type { SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { ToolRun } from '@/types/harness/tool-run'
+import mapSubagentResultStatus from '@/utils/map-subagent-result-status'
 
 export default (
   run: ToolRun,
@@ -34,7 +35,11 @@ export default (
   const summary = typeof result?.summary === 'string' ? result.summary : undefined
   const blocking = typeof args?.blocking === 'boolean' ? args.blocking : true
   const status: SubagentTimelineItem['status'] =
-    run.status === 'running' || result?.status === 'running' ? 'running' : 'done'
+    run.status === 'running' || result?.status === 'running'
+      ? 'running'
+      : run.status === 'error' || run.status === 'rejected'
+        ? 'error'
+        : mapSubagentResultStatus(undefined, summary)
 
   return {
     type: 'subagent',

@@ -25,6 +25,7 @@ import { type PendingApprovalView } from '@/services/harness/gate-tool-permissio
 import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import parseModelRef from '@/utils/parse-model-ref'
+import mapSubagentResultStatus from '@/utils/map-subagent-result-status'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import createModel from '@/services/providers/create-model'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
@@ -270,12 +271,13 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       session.setLocalSubagentPrompt(event.subagentId, event.prompt)
     }
     if (event.type === 'subagent-result') {
+      const status = mapSubagentResultStatus(event.outcome, event.summary)
       subagents.value = subagents.value.map((item) =>
         item.subagentId === event.subagentId
-          ? { ...item, status: 'done', summary: event.summary }
+          ? { ...item, status, summary: event.summary }
           : item,
       )
-      session.completeLocalSubagent(event.subagentId, event.summary)
+      session.completeLocalSubagent(event.subagentId, event.summary, status)
       if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
         resumingSubagents.add(event.subagentId)
         resumeAfterSubagent(event.subagentId, event.summary)
@@ -702,6 +704,12 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
 
   const stopSubagent = (subagentId: string): void => {
     abortOne(subagentId)
+    session.completeLocalSubagent(subagentId, 'Stopped', 'stopped')
+    subagents.value = subagents.value.map((item) =>
+      item.subagentId === subagentId
+        ? { ...item, status: 'stopped', summary: 'Stopped' }
+        : item,
+    )
   }
 
   const stop = async (): Promise<void> => {

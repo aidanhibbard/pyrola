@@ -9,7 +9,7 @@ export type SubagentTimelineItem = {
   toolCallId?: string
   name: string
   blocking: boolean
-  status: 'running' | 'done'
+  status: 'running' | 'done' | 'stopped' | 'error'
   summary?: string
   prompt?: string
   model?: string

@@ -24,7 +24,6 @@ const TOOL_LABELS: Record<string, string> = {
   get_mcp_tools: 'Listed MCP tools',
   create_plan: 'Created plan',
   update_plan_todo: 'Updated plan',
-  spawn_subagent: 'Spawned sub-agent',
   lsp: 'LSP lookup',
   diagnostics: 'Read diagnostics',
 }
@@ -67,10 +66,26 @@ const formatArgsHint = (
   return null
 }
 
+const formatSpawnSubagentLabel = (run: ToolRun): string => {
+  const hint = formatArgsHint(run.args)
+  const name = hint?.trim() || 'Sub-agent'
+  if (run.status === 'running') {
+    return `${name}…`
+  }
+  if (run.status === 'rejected') {
+    return `${name} (rejected)`
+  }
+  return name
+}
+
 export default (
   run: ToolRun,
   options?: { omitPathHint?: boolean },
 ): string => {
+  if (run.name === 'spawn_subagent') {
+    return formatSpawnSubagentLabel(run)
+  }
+
   const prefix = TOOL_LABELS[run.name] ?? run.name.replaceAll('_', ' ')
   const hint = formatArgsHint(run.args, options)
   const target = hint ? ` ${hint}` : ''

@@ -19,6 +19,7 @@ import { chatMetaSchema } from '@/schemas/chat-meta'
 import { chatMessageLineSchema } from '@/schemas/chat-message-line'
 import { fileDiffListSchema } from '@/schemas/file-diff'
 import applySubagentToolEvent from '@/utils/apply-subagent-tool-event'
+import mapSubagentResultStatus from '@/utils/map-subagent-result-status'
 import {
   createChat,
   listChats,
@@ -78,7 +79,11 @@ type SessionMutations = {
   }) => void
   appendLocalSubagentToolEvent: (subagentId: string, event: HarnessEvent) => void
   setLocalSubagentPrompt: (subagentId: string, prompt: string) => void
-  completeLocalSubagent: (subagentId: string, summary: string) => void
+  completeLocalSubagent: (
+    subagentId: string,
+    summary: string,
+    status?: Exclude<SubagentTimelineItem['status'], 'running'>,
+  ) => void
   getSubagent: (subagentId: string) => SubagentTimelineItem | null
   setPendingQuestion: (question: PendingQuestionState) => void
   clearPendingQuestion: () => void
@@ -252,6 +257,7 @@ const completeSubagentTimelineItem = (
   items: ChatTimelineItem[],
   subagentId: string,
   summary: string,
+  status: Exclude<SubagentTimelineItem['status'], 'running'> = 'done',
 ): ChatTimelineItem[] => {
   const index = items.findIndex(
     (item) => item.type === 'subagent' && item.subagentId === subagentId,
@@ -262,7 +268,7 @@ const completeSubagentTimelineItem = (
     if (existing?.type === 'subagent') {
       next[index] = {
         ...existing,
-        status: 'done',
+        status,
         summary,
       }
     }
@@ -275,7 +281,7 @@ const completeSubagentTimelineItem = (
       subagentId,
       name: 'Sub-agent',
       blocking: false,
-      status: 'done',
+      status,
       summary,
       tools: [],
     },
@@ -729,6 +735,7 @@ const hydrateSessionFromDisk = async (session: ChatSession): Promise<void> => {
     if (harnessEvent?.type === 'subagent-result') {
       const subagentId = String(harnessEvent.subagentId ?? '')
       const summary = String(harnessEvent.summary ?? '')
+      const status = mapSubagentResultStatus(harnessEvent.outcome, summary)
       if (subagentId) {
         const inPending = pendingSubagents.some(
           (item) => item.type === 'subagent' && item.subagentId === subagentId,
@@ -738,12 +745,14 @@ const hydrateSessionFromDisk = async (session: ChatSession): Promise<void> => {
             pendingSubagents,
             subagentId,
             summary,
+            status,
           )
         } else {
           const merged = completeSubagentTimelineItem(
             nextTimeline,
             subagentId,
             summary,
+            status,
           )
           nextTimeline.length = 0
           nextTimeline.push(...merged)
@@ -1290,11 +1299,16 @@ const createSessionMutations = (session: ChatSession): SessionMutations => {
     setLocalSubagentPrompt: (subagentId: string, prompt: string): void => {
       session.timeline.value = setSubagentPrompt(session.timeline.value, subagentId, prompt)
     },
-    completeLocalSubagent: (subagentId: string, summary: string): void => {
+    completeLocalSubagent: (
+      subagentId: string,
+      summary: string,
+      status: Exclude<SubagentTimelineItem['status'], 'running'> = 'done',
+    ): void => {
       session.timeline.value = completeSubagentTimelineItem(
         session.timeline.value,
         subagentId,
         summary,
+        status,
       )
     },
     getSubagent: (subagentId: string): SubagentTimelineItem | null => {
@@ -1603,9 +1617,13 @@ export default () => {
     })
   }
 
-  const completeLocalSubagent = (subagentId: string, summary: string): void => {
+  const completeLocalSubagent = (
+    subagentId: string,
+    summary: string,
+    status?: Exclude<SubagentTimelineItem['status'], 'running'>,
+  ): void => {
     withActiveSession(undefined, (_session, api) => {
-      api.completeLocalSubagent(subagentId, summary)
+      api.completeLocalSubagent(subagentId, summary, status)
     })
   }
 
