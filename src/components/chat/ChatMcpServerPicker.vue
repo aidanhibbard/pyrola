@@ -60,9 +60,11 @@ const filteredServers = computed(() => {
   )
 })
 
-const enabledCount = computed(
+const connectedCount = computed(
   () =>
-    effectiveServers.value.filter((server) => isMcpServerEnabled(server.config)).length,
+    effectiveServers.value.filter(
+      (server) => serverStates.value[server.id]?.status === 'connected',
+    ).length,
 )
 
 const serverStatus = (serverId: string): string =>
@@ -192,13 +194,13 @@ const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> =
         variant="ghost"
         size="sm"
         class="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-        :title="`${enabledCount} of ${effectiveServers.length} MCP servers enabled`"
+        :title="`${connectedCount} of ${effectiveServers.length} MCP servers connected`"
       >
         <ServerIcon class="size-3.5 shrink-0" />
         <span class="max-w-32 truncate">
           MCP
           <template v-if="effectiveServers.length > 0">
-            ({{ enabledCount }}/{{ effectiveServers.length }})
+            ({{ connectedCount }}/{{ effectiveServers.length }})
           </template>
         </span>
         <ChevronDownIcon class="size-3 shrink-0 opacity-60" />
