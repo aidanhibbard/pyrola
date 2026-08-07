@@ -100,7 +100,7 @@ const lspEnabled = computed({
   },
 })
 const lineNumbers = ref(true)
-const wordWrap = ref(true)
+const wordWrap = ref(false)
 const autoSave = ref(false)
 const formatOnSave = ref(false)
 

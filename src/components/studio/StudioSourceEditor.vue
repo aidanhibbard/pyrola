@@ -60,7 +60,7 @@ onMounted(() => {
     minimap: { enabled: false },
     readOnly: props.readOnly,
     scrollBeyondLastLine: false,
-    wordWrap: 'on',
+    wordWrap: 'off',
   })
 
   setEditorValue(props.modelValue)

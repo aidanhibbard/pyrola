@@ -88,7 +88,7 @@ const lineNumbersOption = computed((): 'on' | 'off' =>
 )
 
 const wordWrapOption = computed((): 'on' | 'off' =>
-  props.wordWrap !== false ? 'on' : 'off',
+  props.wordWrap === true ? 'on' : 'off',
 )
 
 const formatError = (error: unknown): string => {
