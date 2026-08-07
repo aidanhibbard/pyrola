@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
-import { File, Search } from '@lucide/vue'
+import { Search } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
   CommandDialog,
@@ -9,6 +9,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/shadcn/ui/command'
+import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import { workspaceGlob } from '@/services/pyrola/pyrola-tauri'
 
 const FILE_SEARCH_LIMIT = 100
@@ -216,9 +217,10 @@ watch(
           v-for="path in files"
           :key="path"
           :value="path"
+          class="[&_img]:pointer-events-none [&_img]:size-4 [&_img]:shrink-0"
           @select="handleSelect(path)"
         >
-          <File />
+          <WorkbenchFileEntryIcon :name="fileName(path)" />
           <span class="truncate">{{ fileName(path) }}</span>
           <span
             v-if="fileDirectory(path)"

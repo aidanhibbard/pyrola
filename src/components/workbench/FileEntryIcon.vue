@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
+import { cn } from '@/lib/utils'
 import resolveFileIcon from '@/utils/resolve-file-icon'
 
 const props = defineProps<{
   name: string
   isDirectory?: boolean
   isOpen?: boolean
+  class?: HTMLAttributes['class']
 }>()
 
 const icon = computed(() =>
@@ -21,7 +24,9 @@ const icon = computed(() =>
     v-if="icon"
     :src="icon.src"
     alt=""
-    class="size-4 shrink-0"
+    width="16"
+    height="16"
+    :class="cn('block size-4 shrink-0 object-contain', props.class)"
     draggable="false"
-  />
+  >
 </template>
