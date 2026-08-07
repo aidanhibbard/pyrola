@@ -929,28 +929,27 @@ export default async (input: OrchestratorInput): Promise<void> => {
   }
 
   if (isFirstUserMessage) {
-    const fallbackTitle = deriveChatTitle(userText)
-    if (fallbackTitle) {
-      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
-      emitTitleChange(fallbackTitle)
-    }
-
+    // Keep the short "New Agent" placeholder while naming runs. Do not dump the
+    // prompt into the sidebar. Apply deriveChatTitle only if the title LLM is
+    // skipped or fails.
     runSideTask({
       projectSlug,
       chatId,
       prompt: userText,
       settings: input.settings,
+    }).then(async (generatedTitle) => {
+      if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
+        emitTitleChange(generatedTitle)
+        return
+      }
+
+      const fallbackTitle = deriveChatTitle(userText)
+      if (!fallbackTitle) {
+        return
+      }
+      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
+      emitTitleChange(fallbackTitle)
     })
-      .then((generatedTitle) => {
-        if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
-          emitTitleChange(generatedTitle)
-        }
-      })
-      .catch((error) => {
-        toast.error('Chat title generation failed', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
-      })
   }
 
   const baseModelMessages = await convertToModelMessages(messages)

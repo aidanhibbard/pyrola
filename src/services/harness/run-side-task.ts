@@ -7,11 +7,24 @@ import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
 import { resolveSideTaskCallOptions } from '@/services/models/resolve-model-call-options'
 
+/** Cap title-model input so huge pastes are not fully re-sent for naming. */
+const TITLE_PROMPT_MAX_CHARS = 2000
+
+/** Titles are max ~6 words; keep generation cheap. */
+const TITLE_MAX_OUTPUT_TOKENS = 64
+
 export type ChatTitleTaskInput = {
   projectSlug: string
   chatId: string
   prompt: string
   settings: PyrolaSettings
+}
+
+const truncateTitlePrompt = (prompt: string): string => {
+  if (prompt.length <= TITLE_PROMPT_MAX_CHARS) {
+    return prompt
+  }
+  return prompt.slice(0, TITLE_PROMPT_MAX_CHARS)
 }
 
 export default async (input: ChatTitleTaskInput): Promise<string | null> => {
@@ -31,10 +44,14 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
       settings: input.settings,
     })
     const callOptions = resolveSideTaskCallOptions(input.settings, modelRef)
+    const maxOutputTokens = Math.min(
+      callOptions.maxOutputTokens ?? TITLE_MAX_OUTPUT_TOKENS,
+      TITLE_MAX_OUTPUT_TOKENS,
+    )
 
     const result = await generateText({
       model,
-      maxOutputTokens: callOptions.maxOutputTokens,
+      maxOutputTokens,
       temperature: callOptions.temperature,
       topP: callOptions.topP,
       topK: callOptions.topK,
@@ -42,7 +59,9 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
       presencePenalty: callOptions.presencePenalty,
       seed: callOptions.seed,
       providerOptions: callOptions.providerOptions,
-      prompt: loadPrompt('side-tasks/chat-title.md', { prompt: input.prompt }),
+      prompt: loadPrompt('side-tasks/chat-title.md', {
+        prompt: truncateTitlePrompt(input.prompt),
+      }),
     })
 
     const title = result.text.trim().replace(/^["']|["']$/g, '').slice(0, 80)
