@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 const stdioServerSchema = z.object({
+  // Hard allowlist is enforced in Rust mcp_start. Keep schema permissive so
+  // migrateMcpConfig does not wipe existing server entries.
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
   env: z.record(z.string()).optional(),

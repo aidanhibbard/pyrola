@@ -81,8 +81,5 @@ export default (
   if (run.status === 'rejected') {
     return `${prefix}${target} (rejected)`
   }
-  if (run.status === 'error') {
-    return `${prefix}${target} (failed)`
-  }
   return `${prefix}${target}`
 }

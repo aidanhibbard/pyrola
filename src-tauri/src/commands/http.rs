@@ -87,11 +87,56 @@ fn build_headers(map: Option<HashMap<String, String>>) -> Result<HeaderMap, Stri
 }
 
 fn build_client(request_timeout: Option<Duration>) -> Result<reqwest::Client, String> {
-  let mut builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT);
+  let mut builder = reqwest::Client::builder()
+    .connect_timeout(CONNECT_TIMEOUT)
+    // Avoid silent redirect hops to blocked hosts (SSRF).
+    .redirect(reqwest::redirect::Policy::none());
   if let Some(timeout) = request_timeout {
     builder = builder.timeout(timeout);
   }
   builder.build().map_err(|e| e.to_string())
+}
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+  match ip {
+    IpAddr::V4(v4) => {
+      if v4.is_unspecified() || v4.is_broadcast() || v4.is_link_local() {
+        return true;
+      }
+      // Cloud metadata (AWS/GCP/Azure IMDS and related link-local).
+      let octets = v4.octets();
+      if octets[0] == 169 && octets[1] == 254 {
+        return true;
+      }
+      false
+    }
+    IpAddr::V6(v6) => {
+      if v6.is_unspecified() || v6.is_unicast_link_local() {
+        return true;
+      }
+      if let Some(v4) = v6.to_ipv4_mapped() {
+        return is_blocked_ip(IpAddr::V4(v4));
+      }
+      // IPv4-compatible / embedded forms occasionally used to reach 169.254.x.x
+      let segments = v6.segments();
+      if segments[0] == 0
+        && segments[1] == 0
+        && segments[2] == 0
+        && segments[3] == 0
+        && segments[4] == 0
+        && (segments[5] == 0 || segments[5] == 0xffff)
+      {
+        let v4 = std::net::Ipv4Addr::new(
+          (segments[6] >> 8) as u8,
+          (segments[6] & 0xff) as u8,
+          (segments[7] >> 8) as u8,
+          (segments[7] & 0xff) as u8,
+        );
+        return is_blocked_ip(IpAddr::V4(v4));
+      }
+      false
+    }
+  }
 }
 
 fn is_blocked_proxy_host(host: &str) -> bool {
@@ -101,36 +146,29 @@ fn is_blocked_proxy_host(host: &str) -> bool {
   }
 
   let lower = trimmed.to_ascii_lowercase();
-  if lower == "0.0.0.0"
-    || lower == "169.254.169.254"
-    || lower == "metadata.google.internal"
-  {
+  const BLOCKED_HOSTS: &[&str] = &[
+    "0.0.0.0",
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.goog",
+    "instance-data",
+  ];
+  if BLOCKED_HOSTS.contains(&lower.as_str()) || lower.ends_with(".metadata.google.internal") {
     return true;
   }
 
   if let Ok(ip) = trimmed.parse::<IpAddr>() {
-    match ip {
-      IpAddr::V4(v4) => {
-        if v4.octets() == [0, 0, 0, 0] || v4.octets() == [169, 254, 169, 254] {
-          return true;
-        }
-      }
-      IpAddr::V6(v6) => {
-        // Link-local fe80::/10
-        let segments = v6.segments();
-        if segments[0] & 0xffc0 == 0xfe80 {
-          return true;
-        }
-      }
-    }
-  } else if lower.starts_with("fe80:") {
+    return is_blocked_ip(ip);
+  }
+
+  if lower.starts_with("fe80:") || lower.starts_with("169.254.") {
     return true;
   }
 
   false
 }
 
-fn validate_proxy_url(raw: &str) -> Result<(), String> {
+async fn validate_proxy_url(raw: &str) -> Result<(), String> {
   let parsed = Url::parse(raw).map_err(|error| format!("Invalid URL: {error}"))?;
   let scheme = parsed.scheme();
   if scheme != "http" && scheme != "https" {
@@ -147,12 +185,29 @@ fn validate_proxy_url(raw: &str) -> Result<(), String> {
     return Err("URL host is not allowed".to_string());
   }
 
+  // Resolve and reject link-local / metadata addresses. Loopback and RFC1918 stay
+  // allowed so local model endpoints (Ollama, etc.) keep working.
+  let port = parsed.port_or_known_default().unwrap_or(80);
+  let lookup = format!("{host}:{port}");
+  match tokio::net::lookup_host(&lookup).await {
+    Ok(addrs) => {
+      for addr in addrs {
+        if is_blocked_ip(addr.ip()) {
+          return Err("URL host resolves to a blocked address".to_string());
+        }
+      }
+    }
+    Err(error) => {
+      return Err(format!("Failed to resolve URL host: {error}"));
+    }
+  }
+
   Ok(())
 }
 
 #[tauri::command]
 pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyResponse, String> {
-  validate_proxy_url(&request.url)?;
+  validate_proxy_url(&request.url).await?;
   let client = build_client(Some(BUFFERED_REQUEST_TIMEOUT))?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
   let headers = build_headers(request.headers)?;
@@ -213,7 +268,7 @@ async fn run_proxy_stream(
   on_event: Channel<HttpProxyStreamEvent>,
   cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
-  validate_proxy_url(&request.url)?;
+  validate_proxy_url(&request.url).await?;
   // No overall request timeout: streams can run for a long time once connected.
   let client = build_client(None)?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
@@ -291,4 +346,28 @@ async fn run_proxy_stream(
 
   let _ = on_event.send(HttpProxyStreamEvent::End);
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::net::{Ipv4Addr, Ipv6Addr};
+
+  #[test]
+  fn blocks_metadata_and_link_local() {
+    assert!(is_blocked_proxy_host("169.254.169.254"));
+    assert!(is_blocked_proxy_host("metadata.google.internal"));
+    assert!(is_blocked_proxy_host("fe80::1"));
+    assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1))));
+    assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
+  }
+
+  #[test]
+  fn allows_loopback_and_public() {
+    assert!(!is_blocked_proxy_host("127.0.0.1"));
+    assert!(!is_blocked_proxy_host("localhost"));
+    assert!(!is_blocked_proxy_host("api.openai.com"));
+    assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+    assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+  }
 }

@@ -183,15 +183,48 @@ fn is_sensitive_relative_path(path: &str) -> bool {
     if segment == ".env" || segment.starts_with(".env.") {
       return true;
     }
-    if segment == ".ssh" || segment == ".aws" || segment == ".gnupg" {
+    if matches!(
+      segment,
+      ".ssh"
+        | ".aws"
+        | ".gnupg"
+        | ".netrc"
+        | ".npmrc"
+        | ".pypirc"
+        | "id_rsa"
+        | "id_dsa"
+        | "id_ecdsa"
+        | "id_ed25519"
+        | "credentials"
+        | "credentials.json"
+        | "secrets.json"
+    ) {
       return true;
     }
-    if segment.ends_with(".pem") || segment.ends_with(".key") {
+    if segment.ends_with(".pem")
+      || segment.ends_with(".key")
+      || segment.ends_with(".p12")
+      || segment.ends_with(".pfx")
+      || segment.ends_with(".jks")
+    {
       return true;
     }
-    if segment.contains("credential") || segment.contains("secret") {
+    if segment.contains("credential")
+      || segment.contains("secret")
+      || segment.contains("password")
+    {
       return true;
     }
+  }
+
+  // Well-known secret file paths (segment-aware checks above miss nested config names).
+  if lower.ends_with("/.docker/config.json")
+    || lower == ".docker/config.json"
+    || lower.ends_with("/kube/config")
+    || lower.ends_with("/.kube/config")
+    || lower == ".kube/config"
+  {
+    return true;
   }
 
   false
@@ -862,6 +895,8 @@ fn resolve_copy_destination(from: &Path, to: &Path) -> PathBuf {
 
 #[tauri::command]
 pub fn fs_rename(project_root: String, from: String, to: String) -> Result<(), String> {
+  reject_sensitive_path(&from)?;
+  reject_sensitive_path(&to)?;
   let absolute_from = resolve_workspace_path(&project_root, &from)?;
   let absolute_to = resolve_workspace_path(&project_root, &to)?;
   if !absolute_from.exists() {
@@ -902,6 +937,8 @@ pub fn fs_delete(
 
 #[tauri::command]
 pub fn fs_copy(project_root: String, from: String, to: String) -> Result<(), String> {
+  reject_sensitive_path(&from)?;
+  reject_sensitive_path(&to)?;
   let absolute_from = resolve_workspace_path(&project_root, &from)?;
   let absolute_to = resolve_workspace_path(&project_root, &to)?;
   if !absolute_from.exists() {
@@ -909,6 +946,9 @@ pub fn fs_copy(project_root: String, from: String, to: String) -> Result<(), Str
   }
 
   let destination = resolve_copy_destination(&absolute_from, &absolute_to);
+  if let Some(name) = destination.file_name().and_then(|value| value.to_str()) {
+    reject_sensitive_path(name)?;
+  }
   if destination.exists() {
     return Err("Destination already exists".to_string());
   }
@@ -918,6 +958,8 @@ pub fn fs_copy(project_root: String, from: String, to: String) -> Result<(), Str
 
 #[tauri::command]
 pub fn fs_move(project_root: String, from: String, to: String) -> Result<(), String> {
+  reject_sensitive_path(&from)?;
+  reject_sensitive_path(&to)?;
   let absolute_from = resolve_workspace_path(&project_root, &from)?;
   let absolute_to = resolve_workspace_path(&project_root, &to)?;
   if !absolute_from.exists() {
@@ -925,6 +967,9 @@ pub fn fs_move(project_root: String, from: String, to: String) -> Result<(), Str
   }
 
   let destination = resolve_copy_destination(&absolute_from, &absolute_to);
+  if let Some(name) = destination.file_name().and_then(|value| value.to_str()) {
+    reject_sensitive_path(name)?;
+  }
   if destination.exists() {
     return Err("Destination already exists".to_string());
   }
@@ -1067,6 +1112,11 @@ mod tests {
     assert!(is_sensitive_relative_path("keys/api.key"));
     assert!(is_sensitive_relative_path("aws/credentials"));
     assert!(is_sensitive_relative_path("my-secret-token"));
+    assert!(is_sensitive_relative_path(".netrc"));
+    assert!(is_sensitive_relative_path(".npmrc"));
+    assert!(is_sensitive_relative_path("certs/server.p12"));
+    assert!(is_sensitive_relative_path(".kube/config"));
+    assert!(is_sensitive_relative_path("id_ed25519"));
     assert!(!is_sensitive_relative_path("src/main.rs"));
     assert!(!is_sensitive_relative_path("README.md"));
   }

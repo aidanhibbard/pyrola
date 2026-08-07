@@ -146,6 +146,18 @@ describe('formatToolRunLabel', () => {
       ),
     ).toBe('Searched TODO')
   })
+
+  it('does not append a failed suffix on error', () => {
+    expect(
+      formatToolRunLabel(
+        toolRun({
+          name: 'read_file',
+          args: { path: 'missing.ts' },
+          status: 'error',
+        }),
+      ),
+    ).toBe('Read missing.ts')
+  })
 })
 
 describe('filePathBasename', () => {

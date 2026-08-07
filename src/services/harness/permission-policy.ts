@@ -30,14 +30,20 @@ export type PermissionDecision = {
 }
 
 const SENSITIVE_PATH_PATTERNS = [
-  /^\.env(\.|$)/i,
+  /(^|\/)\.env(\.|$|\/)/i,
   /(^|\/)\.ssh(\/|$)/i,
   /(^|\/)\.aws(\/|$)/i,
   /(^|\/)\.gnupg(\/|$)/i,
+  /(^|\/)\.netrc(\/|$)/i,
+  /(^|\/)\.npmrc(\/|$)/i,
+  /(^|\/)\.pypirc(\/|$)/i,
+  /(^|\/)\.kube\/config$/i,
+  /(^|\/)\.docker\/config\.json$/i,
+  /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/i,
   /credential/i,
   /secret/i,
-  /\.pem$/i,
-  /\.key$/i,
+  /password/i,
+  /\.(pem|key|p12|pfx|jks)$/i,
 ]
 
 export const isSensitivePath = (path: string): boolean =>

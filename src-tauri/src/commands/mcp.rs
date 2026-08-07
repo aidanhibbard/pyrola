@@ -1,10 +1,46 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex};
+
+/// Basenames allowed for MCP stdio servers (resolved via PATH). Absolute paths are rejected.
+const ALLOWED_MCP_COMMANDS: &[&str] = &[
+  "npx", "npm", "node", "pnpm", "yarn", "bun", "deno", "uvx", "uv", "python", "python3", "pipx",
+];
+
+fn validate_mcp_spawn(command: &str, args: &[String]) -> Result<(), String> {
+  let trimmed = command.trim();
+  if trimmed.is_empty() {
+    return Err("MCP command is required".to_string());
+  }
+  if trimmed.contains('/') || trimmed.contains('\\') || Path::new(trimmed).components().count() != 1
+  {
+    return Err(
+      "MCP command must be a PATH basename (for example npx or uvx), not a filesystem path"
+        .to_string(),
+    );
+  }
+  let lower = trimmed.to_ascii_lowercase();
+  if !ALLOWED_MCP_COMMANDS
+    .iter()
+    .any(|allowed| *allowed == lower)
+  {
+    return Err(format!(
+      "MCP command '{trimmed}' is not allowed. Use one of: {}",
+      ALLOWED_MCP_COMMANDS.join(", ")
+    ));
+  }
+  for arg in args {
+    if arg.contains('\0') {
+      return Err("MCP args must not contain NUL bytes".to_string());
+    }
+  }
+  Ok(())
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,6 +164,7 @@ pub async fn mcp_start(
   command: String,
   args: Vec<String>,
 ) -> Result<McpServerState, String> {
+  validate_mcp_spawn(&command, &args)?;
   mcp_stop(server_id.clone()).await.ok();
 
   set_state(&server_id, "starting", None, vec![]).await;
@@ -338,6 +375,20 @@ pub async fn mcp_list_statuses() -> Result<HashMap<String, McpServerState>, Stri
   }
 
   Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn mcp_command_allowlist() {
+    assert!(validate_mcp_spawn("npx", &[]).is_ok());
+    assert!(validate_mcp_spawn("uvx", &["some-server".into()]).is_ok());
+    assert!(validate_mcp_spawn("/usr/bin/npx", &[]).is_err());
+    assert!(validate_mcp_spawn("bash", &["-c".into(), "id".into()]).is_err());
+    assert!(validate_mcp_spawn("npx", &["ok\0evil".into()]).is_err());
+  }
 }
 
 #[tauri::command]

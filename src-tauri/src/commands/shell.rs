@@ -387,16 +387,19 @@ fn build_bubblewrap_command(bwrap: &str, project_root: &str, command: &str, allo
 /// - Linux: `bwrap` (bubblewrap) with namespace isolation when available.
 ///   If bwrap is not installed and the caller requested sandboxing, returns
 ///   `Err("SANDBOX_UNAVAILABLE: install bubblewrap")`.
-/// - Other platforms: runs unsandboxed.
+/// - Other platforms: refuse sandboxed spawns (`SANDBOX_UNAVAILABLE`); unsandboxed
+///   only when the caller explicitly sets `sandboxed: false`.
 fn spawn_child(
   project_root: &str,
   command: &str,
   sandboxed: Option<bool>,
   allow_network: Option<bool>,
 ) -> Result<tokio::process::Child, String> {
+  let want_sandbox = sandboxed.unwrap_or(true);
+
   #[cfg(target_os = "macos")]
   {
-    if sandboxed.unwrap_or(true) {
+    if want_sandbox {
       return build_sandboxed_command(project_root, command, allow_network.unwrap_or(false))
         .spawn()
         .map_err(|e| format!("SANDBOX_FAILED: {e}"));
@@ -405,7 +408,7 @@ fn spawn_child(
 
   #[cfg(target_os = "linux")]
   {
-    if sandboxed.unwrap_or(true) {
+    if want_sandbox {
       match find_bwrap() {
         Some(bwrap) => {
           return build_bubblewrap_command(&bwrap, project_root, command, allow_network.unwrap_or(false))
@@ -419,7 +422,16 @@ fn spawn_child(
     }
   }
 
-  let _ = sandboxed;
+  #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+  {
+    if want_sandbox {
+      return Err(
+        "SANDBOX_UNAVAILABLE: no OS sandbox on this platform; approve unsandboxed shell to continue"
+          .to_string(),
+      );
+    }
+  }
+
   let _ = allow_network;
 
   build_tracked_command(project_root, command)

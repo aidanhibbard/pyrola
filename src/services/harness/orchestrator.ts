@@ -1,5 +1,5 @@
 import type { ChatStatus, ModelMessage, UIMessage } from 'ai'
-import { convertToModelMessages, isLoopFinished, smoothStream, streamText } from 'ai'
+import { convertToModelMessages, isLoopFinished, smoothStream, stepCountIs, streamText } from 'ai'
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
@@ -690,7 +690,10 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       seed: callOptions.seed,
       providerOptions: callOptions.providerOptions,
       experimental_transform: smoothStream({ chunking: 'word' }),
-      stopWhen: isLoopFinished(),
+      stopWhen: [
+        isLoopFinished(),
+        stepCountIs(settings['agent.maxStepsPerTurn'] ?? 40),
+      ],
       abortSignal: signal,
       onAbort: async () => {
         rejectPendingForChat(chatId)

@@ -362,6 +362,16 @@ const handleSaved = (payload: { path: string; content: string }): void => {
   }
 }
 
+const formatError = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === 'string') {
+    return error
+  }
+  return 'Unknown error'
+}
+
 const loadFileContent = async (): Promise<void> => {
   const root = projectRoot.value
   const path = selectedPath.value
@@ -376,7 +386,7 @@ const loadFileContent = async (): Promise<void> => {
   } catch (error) {
     fileContent.value = ''
     toast.error('Failed to load preview', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatError(error),
     })
   }
 }
@@ -403,7 +413,7 @@ watch(
   () => {
     loadFileContent().catch((error) => {
       toast.error('Failed to load preview', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatError(error),
       })
     })
   },
