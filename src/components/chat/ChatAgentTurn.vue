@@ -69,9 +69,9 @@ const isStepStreaming = (index: number): boolean => {
 
 const toolHeaderLabel = (count: number, index: number): string => {
   if (isStepStreaming(index)) {
-    return count === 1 ? 'Using tool' : `Using ${count} tools`
+    return `Using ${count} tools`
   }
-  return `Used ${count} tool${count === 1 ? '' : 's'}`
+  return `Used ${count} tools`
 }
 
 const resolveSubagent = (run: ToolRun): SubagentTimelineItem =>
@@ -147,6 +147,10 @@ const errorTitle = computed(() => {
         <ChatSubAgentTurn
           v-if="segment.type === 'subagent'"
           :subagent="resolveSubagent(segment.run)"
+        />
+        <ChatToolRun
+          v-else-if="segment.tools.length === 1"
+          :run="segment.tools[0]!"
         />
         <AiElementsChainOfThoughtChainOfThought
           v-else
