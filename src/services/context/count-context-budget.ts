@@ -6,13 +6,15 @@ import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket, ContextBucketId } from '@/types/harness/context-bucket'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import { CONTEXT_BUCKET_META, CONTEXT_BUCKET_ORDER } from '@/types/harness/context-bucket-meta'
-import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
-import { TOOL_DESCRIPTIONS } from '@/services/harness/tool-catalog'
 import estimateTextTokens from '@/utils/estimate-text-tokens'
 import assembleSystemPromptParts, {
   formatMentionsAsText,
   type SystemPromptParts,
 } from '@/services/context/system-prompt-parts'
+import filterMessagesForActiveContext, {
+  type ActiveContextSlice,
+} from '@/services/context/filter-messages-for-active-context'
+import estimateBuiltinToolDefinitionTokens from '@/services/context/estimate-builtin-tool-definition-tokens'
 import { partsFromFrozenPrefix } from '@/services/harness/prefix-contract'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
@@ -36,10 +38,10 @@ export type CountContextBudgetInput = {
   standalone?: boolean
   parts?: SystemPromptParts
   frozenSnapshot?: PrefixSnapshot | null
+  activeContext?: ActiveContextSlice | null
 }
 
 const DEFAULT_CONTEXT_LIMIT = 128_000
-const TOOL_SCHEMA_TOKEN_OVERHEAD = 180
 
 const resolveContextLimit = (
   modelId: string,
@@ -77,8 +79,8 @@ const resolveReservedOutput = (
   return DEFAULT_MAX_OUTPUT_TOKENS
 }
 
-const serializeMessages = (messages: UIMessage[]): string =>
-  messages
+const serializeMessages = (messages: UIMessage[], checkpointText: string): string => {
+  const body = messages
     .map((message) =>
       message.parts
         .map((part) => {
@@ -91,11 +93,14 @@ const serializeMessages = (messages: UIMessage[]): string =>
     )
     .join('\n\n')
 
-const estimateBuiltinToolSchemas = (mode: PyrolaChatMode): number =>
-  MODE_TOOL_ALLOWLIST[mode].reduce((total, name) => {
-    const description = TOOL_DESCRIPTIONS[name] ?? name
-    return total + estimateTextTokens(description) + TOOL_SCHEMA_TOKEN_OVERHEAD
-  }, 0)
+  if (!checkpointText) {
+    return body
+  }
+  if (!body) {
+    return checkpointText
+  }
+  return `${checkpointText}\n\n${body}`
+}
 
 const estimateMcpToolSchemas = async (
   projectRoot: string,
@@ -129,8 +134,7 @@ const estimateMcpToolSchemas = async (
       total +=
         estimateTextTokens(tool.name) +
         estimateTextTokens(tool.description ?? '') +
-        estimateTextTokens(schema) +
-        TOOL_SCHEMA_TOKEN_OVERHEAD
+        estimateTextTokens(schema)
     }
   }
   return total
@@ -163,8 +167,6 @@ const resolveMentionsTokens = (
   parts: SystemPromptParts,
   mentions: ContextMention[],
 ): number => {
-  // Mentions are injected into the last user message, not the frozen system
-  // prefix. Prefer the live mentions payload; fall back to parts.mentions.
   const injected = formatMentionsAsText(mentions)
   if (injected) {
     return estimateTextTokens(`Context:\n${injected}`)
@@ -174,25 +176,31 @@ const resolveMentionsTokens = (
 
 export default async (input: CountContextBudgetInput): Promise<ContextBudget> => {
   const parts = await resolveParts(input)
+  const { messages, checkpointText } = filterMessagesForActiveContext(
+    input.messages,
+    input.activeContext,
+  )
 
-  const builtinToolSchemas = estimateBuiltinToolSchemas(input.mode)
+  const builtinToolSchemas = estimateBuiltinToolDefinitionTokens(
+    input.mode,
+    input.settings,
+  )
   const mcpToolSchemas = await estimateMcpToolSchemas(
     input.projectRoot,
     input.standalone,
   )
 
+  // System includes tool-catalog prose that is part of instructions.
+  // Tools / MCP buckets count real definition schemas (not that prose again).
   const bucketTokens: Record<ContextBucketId, number> = {
-    system: estimateTextTokens(parts.base),
-    tools:
-      estimateTextTokens(parts.tools) +
-      estimateTextTokens(parts.mcp) +
-      builtinToolSchemas +
-      mcpToolSchemas,
+    system: estimateTextTokens(parts.base) + estimateTextTokens(parts.tools),
+    tools: builtinToolSchemas,
+    mcp: estimateTextTokens(parts.mcp) + mcpToolSchemas,
     rules: estimateTextTokens(parts.rules),
     skills: estimateTextTokens(parts.skills),
     mentions: resolveMentionsTokens(parts, input.mentions),
     subagentDefinitions: estimateTextTokens(parts.subagents),
-    messages: estimateTextTokens(serializeMessages(input.messages)),
+    messages: estimateTextTokens(serializeMessages(messages, checkpointText)),
   }
 
   const buckets = CONTEXT_BUCKET_ORDER.map((id) => buildBucket(id, bucketTokens[id]))

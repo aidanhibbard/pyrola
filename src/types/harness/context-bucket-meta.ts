@@ -8,6 +8,7 @@ export type ContextBucketMeta = {
 export const CONTEXT_BUCKET_ORDER: ContextBucketId[] = [
   'system',
   'tools',
+  'mcp',
   'rules',
   'skills',
   'mentions',
@@ -18,6 +19,7 @@ export const CONTEXT_BUCKET_ORDER: ContextBucketId[] = [
 export const CONTEXT_BUCKET_META: Record<ContextBucketId, ContextBucketMeta> = {
   system: { label: 'System prompt', colorClass: 'bg-muted-foreground/70' },
   tools: { label: 'Tool definitions', colorClass: 'bg-purple-500' },
+  mcp: { label: 'MCP', colorClass: 'bg-cyan-500' },
   rules: { label: 'Rules', colorClass: 'bg-emerald-500' },
   skills: { label: 'Skills', colorClass: 'bg-orange-500' },
   mentions: { label: 'Context mentions', colorClass: 'bg-violet-500' },

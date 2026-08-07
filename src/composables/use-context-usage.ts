@@ -5,18 +5,28 @@ import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { ActiveContextSlice } from '@/services/context/filter-messages-for-active-context'
 import countContextBudget from '@/services/context/count-context-budget'
 import parseModelRef from '@/utils/parse-model-ref'
 
-const used = ref(0)
-const promptUsed = ref(0)
+export type LastStepUsage = {
+  promptTokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+const estimatedPromptUsed = ref(0)
 const limit = ref(128_000)
 const reservedOutput = ref(8192)
 const safetyBuffer = ref(2000)
-const free = ref(0)
+const estimatedFree = ref(0)
 const buckets = ref<ContextBucket[]>([])
 const modelId = ref('')
 const pending = ref(false)
+const lastStepUsage = ref<LastStepUsage | null>(null)
+const boundChatId = ref<string | null>(null)
 
 let refreshGeneration = 0
 
@@ -30,12 +40,26 @@ export type RefreshContextUsageInput = {
   settings?: PyrolaSettings
   standalone?: boolean
   frozenSnapshot?: PrefixSnapshot | null
+  activeContext?: ActiveContextSlice | null
+  chatId?: string
 }
 
 export default () => {
   const usablePrompt = computed(() =>
     Math.max(0, limit.value - reservedOutput.value - safetyBuffer.value),
   )
+
+  const promptUsed = computed(() =>
+    lastStepUsage.value
+      ? lastStepUsage.value.promptTokens
+      : estimatedPromptUsed.value,
+  )
+
+  const free = computed(() =>
+    Math.max(0, usablePrompt.value - promptUsed.value),
+  )
+
+  const used = computed(() => promptUsed.value)
 
   const ratio = computed(() =>
     usablePrompt.value > 0 ? promptUsed.value / usablePrompt.value : 0,
@@ -47,18 +71,42 @@ export default () => {
     buckets.value.filter((bucket) => bucket.tokens > 0),
   )
 
-  const setBudget = (budget: ContextBudget): void => {
-    promptUsed.value = budget.promptUsed
-    used.value = budget.used
+  const fillFromProvider = computed(() => lastStepUsage.value !== null)
+
+  const bindChat = (chatId: string | null): void => {
+    if (boundChatId.value === chatId) {
+      return
+    }
+    boundChatId.value = chatId
+    lastStepUsage.value = null
+  }
+
+  const clearLastStepUsage = (): void => {
+    lastStepUsage.value = null
+  }
+
+  const setBudget = (budget: ContextBudget, options?: { clearProviderFill?: boolean }): void => {
+    estimatedPromptUsed.value = budget.promptUsed
     limit.value = budget.limit
     reservedOutput.value = budget.reservedOutput
     safetyBuffer.value = budget.safetyBuffer
-    free.value = budget.free
+    estimatedFree.value = budget.free
     buckets.value = budget.buckets
     modelId.value = budget.modelId
+    if (options?.clearProviderFill) {
+      lastStepUsage.value = null
+    }
+  }
+
+  const setLastStepUsage = (usage: LastStepUsage): void => {
+    lastStepUsage.value = usage
   }
 
   const refresh = async (input: RefreshContextUsageInput): Promise<void> => {
+    if (input.chatId !== undefined) {
+      bindChat(input.chatId)
+    }
+
     const generation = ++refreshGeneration
     pending.value = true
 
@@ -75,6 +123,7 @@ export default () => {
         messages: input.messages,
         standalone: input.standalone,
         frozenSnapshot: input.frozenSnapshot,
+        activeContext: input.activeContext,
       })
 
       if (generation !== refreshGeneration) {
@@ -92,10 +141,12 @@ export default () => {
   return {
     used,
     promptUsed,
+    estimatedPromptUsed,
     limit,
     reservedOutput,
     safetyBuffer,
     free,
+    estimatedFree,
     usablePrompt,
     buckets,
     modelId,
@@ -103,7 +154,12 @@ export default () => {
     ratio,
     percentUsed,
     visibleBuckets,
+    lastStepUsage,
+    fillFromProvider,
+    bindChat,
+    clearLastStepUsage,
     setBudget,
+    setLastStepUsage,
     refresh,
   }
 }

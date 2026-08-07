@@ -22,8 +22,12 @@ const limit = computed(() => contextUsage.limit.value)
 const reservedOutput = computed(() => contextUsage.reservedOutput.value)
 const safetyBuffer = computed(() => contextUsage.safetyBuffer.value)
 const free = computed(() => contextUsage.free.value)
+const estimatedFree = computed(() => contextUsage.estimatedFree.value)
 const usablePrompt = computed(() => contextUsage.usablePrompt.value)
 const ratio = computed(() => contextUsage.ratio.value)
+const fillFromProvider = computed(() => contextUsage.fillFromProvider.value)
+const lastStepUsage = computed(() => contextUsage.lastStepUsage.value)
+const estimatedPromptUsed = computed(() => contextUsage.estimatedPromptUsed.value)
 
 const statusClass = computed(() => {
   if (ratio.value >= 0.95) {
@@ -48,38 +52,34 @@ const ringDashOffset = computed(() => {
 
 const visibleBuckets = computed(() => contextUsage.visibleBuckets.value)
 
-const bucketBarWidth = (bucket: ContextBucket): string => {
+const segmentWidth = (tokens: number): string => {
   if (limit.value <= 0) {
     return '0%'
   }
-  return `${(bucket.tokens / limit.value) * 100}%`
+  return `${(tokens / limit.value) * 100}%`
 }
 
-const reservedBarWidth = computed(() => {
-  if (limit.value <= 0) {
-    return '0%'
-  }
-  return `${(reservedOutput.value / limit.value) * 100}%`
-})
+const bucketBarWidth = (bucket: ContextBucket): string => segmentWidth(bucket.tokens)
 
-const freeBarWidth = computed(() => {
-  if (limit.value <= 0) {
-    return '0%'
-  }
-  return `${(free.value / limit.value) * 100}%`
-})
+const reservedBarWidth = computed(() => segmentWidth(reservedOutput.value))
+const safetyBarWidth = computed(() => segmentWidth(safetyBuffer.value))
+// Bar uses estimated free so segments sum to the window; the status line may
+// use provider fill which can differ from the bucket estimate.
+const freeBarWidth = computed(() => segmentWidth(estimatedFree.value))
+const freeBarTokens = computed(() => estimatedFree.value)
 
 const bucketColorClass = (bucket: ContextBucket): string =>
   CONTEXT_BUCKET_META[bucket.id].colorClass
 
 const bucketShare = (bucket: ContextBucket): string => {
-  if (promptUsed.value <= 0) {
+  const base = estimatedPromptUsed.value
+  if (base <= 0) {
     return '0%'
   }
   return new Intl.NumberFormat('en-US', {
     style: 'percent',
     maximumFractionDigits: 1,
-  }).format(bucket.tokens / promptUsed.value)
+  }).format(bucket.tokens / base)
 }
 
 const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
@@ -87,6 +87,24 @@ const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
 const safetyBufferLabel = computed(() => formatTokens(safetyBuffer.value))
 const reservedOutputLabel = computed(() => formatTokens(reservedOutput.value))
 const freeLabel = computed(() => formatTokens(free.value))
+
+const lastStepLabel = computed(() => {
+  const usage = lastStepUsage.value
+  if (!usage) {
+    return ''
+  }
+  const parts = [
+    `${formatTokens(usage.promptTokens)} in`,
+    `${formatTokens(usage.outputTokens)} out`,
+  ]
+  if (usage.cacheReadTokens > 0) {
+    parts.push(`${formatTokens(usage.cacheReadTokens)} cache read`)
+  }
+  if (usage.cacheWriteTokens > 0) {
+    parts.push(`${formatTokens(usage.cacheWriteTokens)} cache write`)
+  }
+  return parts.join(', ')
+})
 
 const showManageActions = computed(
   () =>
@@ -163,6 +181,12 @@ const handleHandoff = (): void => {
           >
             {{ promptUsedLabel }} / {{ usablePromptLabel }} usable
           </p>
+          <p
+            v-if="fillFromProvider"
+            class="text-muted-foreground"
+          >
+            from last step
+          </p>
         </div>
 
         <div
@@ -182,10 +206,16 @@ const handleHandoff = (): void => {
             :title="`Reserved for reply: ${reservedOutputLabel}`"
           />
           <div
-            v-if="free > 0"
+            v-if="safetyBuffer > 0"
+            :style="{ width: safetyBarWidth }"
+            class="bg-muted-foreground/25"
+            :title="`Safety buffer: ${safetyBufferLabel}`"
+          />
+          <div
+            v-if="freeBarTokens > 0"
             :style="{ width: freeBarWidth }"
             class="bg-muted-foreground/15"
-            :title="`Free: ${freeLabel}`"
+            :title="`Free: ${formatTokens(freeBarTokens)}`"
           />
         </div>
       </div>
@@ -228,7 +258,7 @@ const handleHandoff = (): void => {
             class="flex items-center justify-between gap-3 text-xs"
           >
             <span class="flex min-w-0 items-center gap-2 text-muted-foreground">
-              <span class="size-2 shrink-0 rounded-full bg-muted-foreground/20" />
+              <span class="size-2 shrink-0 rounded-full bg-muted-foreground/25" />
               <span class="truncate">Safety buffer</span>
             </span>
             <span class="shrink-0 tabular-nums text-foreground">
@@ -249,6 +279,13 @@ const handleHandoff = (): void => {
             </span>
           </li>
         </ul>
+
+        <p
+          v-if="lastStepLabel"
+          class="text-xs text-muted-foreground"
+        >
+          Last step: {{ lastStepLabel }}
+        </p>
 
         <p
           v-if="visibleBuckets.length === 0"

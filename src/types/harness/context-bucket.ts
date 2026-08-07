@@ -4,6 +4,7 @@ export type ContextBucketId =
   | 'skills'
   | 'messages'
   | 'tools'
+  | 'mcp'
   | 'subagentDefinitions'
   | 'mentions'
 

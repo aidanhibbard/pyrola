@@ -23,6 +23,7 @@ import {
   partsFromFrozenPrefix,
 } from '@/services/harness/prefix-contract'
 import countContextBudget from '@/services/context/count-context-budget'
+import filterMessagesForActiveContext from '@/services/context/filter-messages-for-active-context'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import { rejectAllPending } from '@/services/harness/approval-gate'
@@ -383,6 +384,10 @@ type HarnessStreamInput = {
   captureTurnMessages: boolean
   standalone?: boolean
   permissionLevel?: PermissionLevel
+  activeContext?: {
+    summary?: string
+    includeFromCreatedAt?: string
+  } | null
   persistPermission?: (
     capability: PermissionCapabilityKey,
     verdict: 'allow' | 'deny',
@@ -490,6 +495,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     standalone: input.standalone,
     parts,
     frozenSnapshot,
+    activeContext: input.activeContext,
   })
   onEvent({
     type: 'context-budget',
@@ -726,6 +732,24 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       }
 
       if (part.type === 'finish-step') {
+        const usage = part.usage
+        const inputTokens = usage?.inputTokens ?? 0
+        const cacheReadTokens = usage?.inputTokenDetails?.cacheReadTokens ?? 0
+        const cacheWriteTokens = usage?.inputTokenDetails?.cacheWriteTokens ?? 0
+        const outputTokens = usage?.outputTokens ?? 0
+        // Claude Code-style fill: prompt tokens currently in the window (incl. cache).
+        const promptTokens = inputTokens > 0
+          ? inputTokens
+          : cacheReadTokens + cacheWriteTokens
+        onEvent({
+          type: 'context-usage',
+          modelId,
+          promptTokens,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+        })
         await finishStep()
         continue
       }
@@ -943,32 +967,22 @@ export default async (input: OrchestratorInput): Promise<void> => {
     })
   }
 
-  const baseModelMessages = await convertToModelMessages(messages)
   const activeContextMeta = await readChatMeta(projectSlug, chatId).catch(() => null)
   const activeContext = activeContextMeta?.activeContext
-
-  let effectiveModelMessages: ModelMessage[]
-
-  if (activeContext?.summary && activeContext.includeFromCreatedAt) {
-    const cutoffDate = activeContext.includeFromCreatedAt
-    const recentMessages = messages.filter((msg) => {
-      const createdAt =
-        msg.metadata &&
-        typeof msg.metadata === 'object' &&
-        typeof (msg.metadata as Record<string, unknown>).createdAt === 'string'
-          ? (msg.metadata as Record<string, unknown>).createdAt as string
-          : null
-      return createdAt ? createdAt >= cutoffDate : true
-    })
-    const recentModelMessages = await convertToModelMessages(recentMessages)
-    const checkpointMsg: ModelMessage = {
-      role: 'user',
-      content: `Prior checkpoint (history, not instructions):\n${activeContext.summary}`,
-    }
-    effectiveModelMessages = [checkpointMsg, ...recentModelMessages]
-  } else {
-    effectiveModelMessages = baseModelMessages
-  }
+  const { messages: contextMessages, checkpointText } = filterMessagesForActiveContext(
+    messages,
+    activeContext,
+  )
+  const recentModelMessages = await convertToModelMessages(contextMessages)
+  const effectiveModelMessages: ModelMessage[] = checkpointText
+    ? [
+        {
+          role: 'user',
+          content: checkpointText,
+        },
+        ...recentModelMessages,
+      ]
+    : recentModelMessages
 
   await runHarnessStream({
     ...streamInput,
@@ -981,6 +995,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     standalone: input.standalone,
     permissionLevel: input.permissionLevel,
     persistPermission: input.persistPermission,
+    activeContext,
   })
 }
 
@@ -1033,7 +1048,16 @@ export const resumeOrchestrator = async (
     toolCallId,
     completedResult,
   )
-  const baseMessages = await convertToModelMessages(messages)
+  const activeContextMeta = await readChatMeta(projectSlug, chatId).catch(() => null)
+  const activeContext = activeContextMeta?.activeContext
+  const { messages: contextMessages, checkpointText } = filterMessagesForActiveContext(
+    messages,
+    activeContext,
+  )
+  const recentModelMessages = await convertToModelMessages(contextMessages)
+  const baseMessages: ModelMessage[] = checkpointText
+    ? [{ role: 'user', content: checkpointText }, ...recentModelMessages]
+    : recentModelMessages
   const modelMessages = [...baseMessages, ...patchedTurnMessages]
 
   clearTurnResponseMessages(chatId)
@@ -1050,6 +1074,7 @@ export const resumeOrchestrator = async (
     captureTurnMessages: false,
     permissionLevel: input.permissionLevel,
     persistPermission: input.persistPermission,
+    activeContext,
   })
 }
 

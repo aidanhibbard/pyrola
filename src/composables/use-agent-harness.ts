@@ -9,6 +9,7 @@ import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-setti
 import type { PermissionCapabilityKey, PermissionLevel, PermissionRecord } from '@/types/harness/permission'
 import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
+import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import runOrchestrator, {
   mapMetaStatusToChatStatus,
@@ -53,6 +54,7 @@ export default (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
   const config = usePyrolaConfig()
   const contextUsage = useContextUsage()
+  const contextBudgetSync = useChatContextBudgetSync()
   const fleetSidebar = useFleetSidebar()
 
   const status = ref<ChatStatus>('ready')
@@ -232,15 +234,27 @@ export default (options: AgentHarnessOptions) => {
       pendingApprovals.value = [...pendingApprovals.value, view]
     }
     if (event.type === 'context-budget') {
-      contextUsage.setBudget({
-        modelId: event.modelId,
-        used: event.used,
-        promptUsed: event.promptUsed,
-        limit: event.limit,
-        reservedOutput: event.reservedOutput,
-        safetyBuffer: event.safetyBuffer,
-        free: event.free,
-        buckets: event.buckets,
+      contextUsage.setBudget(
+        {
+          modelId: event.modelId,
+          used: event.used,
+          promptUsed: event.promptUsed,
+          limit: event.limit,
+          reservedOutput: event.reservedOutput,
+          safetyBuffer: event.safetyBuffer,
+          free: event.free,
+          buckets: event.buckets,
+        },
+        { clearProviderFill: true },
+      )
+    }
+    if (event.type === 'context-usage') {
+      contextUsage.setLastStepUsage({
+        promptTokens: event.promptTokens,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens,
+        cacheWriteTokens: event.cacheWriteTokens,
       })
     }
     if (event.type === 'chat-status-changed') {
@@ -390,6 +404,7 @@ export default (options: AgentHarnessOptions) => {
       mentions: args.mentions ?? [],
       effectiveSettings: config.effectiveSettings.value,
     }
+    contextBudgetSync.setDraftMentions(args.mentions ?? [])
 
     if (!args.skipUserMessage) {
       const fileParts = args.files ?? []
@@ -511,6 +526,7 @@ export default (options: AgentHarnessOptions) => {
         })
       }
     } finally {
+      contextBudgetSync.setDraftMentions([])
       abortController.value = null
     }
   }
@@ -656,6 +672,7 @@ export default (options: AgentHarnessOptions) => {
         includeFromCreatedAt: result.includeFromCreatedAt,
         summary: result.summary,
       })
+      contextUsage.clearLastStepUsage()
       toast.success('Context compacted', {
         description: 'Conversation history has been summarized.',
       })

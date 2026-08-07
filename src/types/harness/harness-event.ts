@@ -66,6 +66,15 @@ export type HarnessEvent =
   | { type: 'side-task-complete'; taskId: string; kind: SideTaskKind; result: unknown }
   | { type: 'chat-meta-changed'; projectSlug: string; chatId: string; patch: Partial<ChatMeta> }
   | { type: 'context-budget'; modelId: string; used: number; promptUsed: number; limit: number; reservedOutput: number; safetyBuffer: number; free: number; buckets: ContextBucket[] }
+  | {
+      type: 'context-usage'
+      modelId: string
+      promptTokens: number
+      inputTokens: number
+      outputTokens: number
+      cacheReadTokens: number
+      cacheWriteTokens: number
+    }
   | { type: 'terminal-output'; shellId: string; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'shell-complete'; shellId: string; exitCode: number }
   | { type: 'chat-status-changed'; projectSlug: string; chatId: string; status: 'idle' | 'running' }
