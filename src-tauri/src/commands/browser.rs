@@ -503,10 +503,15 @@ async fn capture_element_crop(
     .unwrap_or(0.0)
     .max(1.0);
 
-  let path = shots.join(format!("element-{}.png", uuid::Uuid::new_v4()));
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (app, shots, x, y, w, h);
+    return Err("element crop not supported on this platform".to_string());
+  }
 
   #[cfg(target_os = "macos")]
   {
+    let path = shots.join(format!("element-{}.png", uuid::Uuid::new_v4()));
     let webview = get_browser_webview(app)?;
     let position = webview.position().map_err(|e| e.to_string())?;
     let scale = app
@@ -529,18 +534,11 @@ async fn capture_element_crop(
     if !status.success() {
       return Err("element screencapture failed".to_string());
     }
+    if !path.exists() {
+      return Err("element crop missing".to_string());
+    }
+    Ok(path.to_string_lossy().to_string())
   }
-
-  #[cfg(not(target_os = "macos"))]
-  {
-    let _ = (app, x, y, w, h);
-    return Err("element crop not supported on this platform".to_string());
-  }
-
-  if !path.exists() {
-    return Err("element crop missing".to_string());
-  }
-  Ok(path.to_string_lossy().to_string())
 }
 
 async fn capture_screenshot(app: &AppHandle, shots: &Path) -> Result<Value, String> {

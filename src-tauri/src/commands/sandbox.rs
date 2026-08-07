@@ -2,9 +2,9 @@
 ///
 /// The profile uses parameter references substituted at runtime by sandbox-exec
 /// via `-D KEY=VALUE` flags:
-///   - `HOME`         – the user home directory
-///   - `PROJECT_ROOT` – the project root (no trailing slash)
-///   - `TMPDIR`       – the real (canonicalized) temp directory
+///   - `HOME`         - the user home directory
+///   - `PROJECT_ROOT` - the project root (no trailing slash)
+///   - `TMPDIR`       - the real (canonicalized) temp directory
 pub fn generate_seatbelt_profile(allow_network: bool) -> String {
   let network_rule = if allow_network {
     "(allow network*)\n"

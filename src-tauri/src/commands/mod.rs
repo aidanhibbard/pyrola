@@ -11,6 +11,7 @@ pub mod lsp;
 pub mod mcp;
 pub mod paths;
 pub mod registry;
+#[cfg(target_os = "macos")]
 pub mod sandbox;
 pub mod shell;
 pub mod watch;
