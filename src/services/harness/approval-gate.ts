@@ -9,6 +9,7 @@ import type {
 export type { ApprovalKind }
 
 export type PendingApproval = {
+  chatId: string
   toolCallId: string
   name: string
   kind: ApprovalKind
@@ -38,6 +39,9 @@ export const requestApproval = (
 export const getPendingApproval = (toolCallId: string): PendingApproval | undefined =>
   pending.get(toolCallId)
 
+export const listPendingApprovalsForChat = (chatId: string): PendingApproval[] =>
+  [...pending.values()].filter((entry) => entry.chatId === chatId)
+
 export const resolveApproval = (toolCallId: string, result: ApprovalResolution): void => {
   const entry = pending.get(toolCallId)
   if (!entry) {
@@ -47,10 +51,25 @@ export const resolveApproval = (toolCallId: string, result: ApprovalResolution):
   entry.resolve(result)
 }
 
+export const rejectPendingForChat = (chatId: string): void => {
+  for (const [toolCallId, entry] of pending.entries()) {
+    if (entry.chatId !== chatId) {
+      continue
+    }
+    pending.delete(toolCallId)
+    entry.resolve({ approved: false, scope: 'once' })
+  }
+}
+
+/** @deprecated Prefer rejectPendingForChat. Kept for tests that clear everything. */
 export const rejectAllPending = (): void => {
   for (const entry of pending.values()) {
     entry.resolve({ approved: false, scope: 'once' })
   }
+  pending.clear()
+}
+
+export const resetApprovalGateForTests = (): void => {
   pending.clear()
 }
 

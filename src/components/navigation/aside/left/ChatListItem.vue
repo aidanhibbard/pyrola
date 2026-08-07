@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { GitFork, Pencil, Pin, PinOff, Trash2 } from '@lucide/vue'
+import { CircleAlert, CircleCheck, GitFork, LoaderCircle, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
 import type { FleetSidebarChat } from '@/types/fleet/fleet-sidebar-chat'
 import {
   AlertDialog,
@@ -32,6 +32,8 @@ import {
 } from '@/components/shadcn/ui/dialog'
 import { Input } from '@/components/shadcn/ui/input'
 import { SidebarMenuSubButton } from '@/components/shadcn/ui/sidebar'
+import { dropAgentHarness } from '@/composables/use-agent-harness'
+import useChatStore from '@/composables/use-chat-store'
 import useFleetSidebar, { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import {
@@ -50,6 +52,7 @@ const props = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const fleetSidebar = useFleetSidebar()
+const chatStore = useChatStore()
 
 const renameOpen = ref(false)
 const deleteOpen = ref(false)
@@ -64,6 +67,25 @@ const isPinned = computed(() =>
     (item) => item.chatId === props.chat.id && item.projectSlug === props.projectSlug,
   ),
 )
+
+const statusLabel = computed((): string | null => {
+  if (props.chat.attention === 'needs_approval') {
+    return 'Needs approval'
+  }
+  if (props.chat.attention === 'needs_input') {
+    return 'Needs input'
+  }
+  if (props.chat.attention === 'completed') {
+    return 'Done'
+  }
+  if (props.chat.attention === 'error') {
+    return 'Error'
+  }
+  if (props.chat.status === 'running') {
+    return 'Running'
+  }
+  return null
+})
 
 const openChat = async (): Promise<void> => {
   try {
@@ -149,6 +171,8 @@ const handleDelete = async (): Promise<void> => {
 
   deleting.value = true
   try {
+    dropAgentHarness(props.projectSlug, props.chat.id)
+    chatStore.dropSession(props.projectSlug, props.chat.id)
     await killShellsForChat(props.chat.id)
     await deleteChat(props.projectSlug, props.chat.id)
     await refreshFleetSidebar()
@@ -186,12 +210,38 @@ watch(
       <SidebarMenuSubButton
         as="button"
         type="button"
-        class="h-8 w-full min-w-0 px-2"
+        class="h-8 w-full min-w-0 gap-2 px-2"
+        :title="statusLabel ?? props.chat.title"
         @click="openChat"
       >
         <span class="block min-w-0 flex-1 truncate text-left text-sm">
           {{ chat.title }}
         </span>
+        <LoaderCircle
+          v-if="chat.status === 'running' && !chat.attention"
+          class="size-3.5 shrink-0 animate-spin text-muted-foreground"
+          aria-label="Running"
+        />
+        <ShieldAlert
+          v-else-if="chat.attention === 'needs_approval'"
+          class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-label="Needs approval"
+        />
+        <MessageCircleQuestion
+          v-else-if="chat.attention === 'needs_input'"
+          class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-label="Needs input"
+        />
+        <CircleCheck
+          v-else-if="chat.attention === 'completed'"
+          class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-label="Done"
+        />
+        <CircleAlert
+          v-else-if="chat.attention === 'error'"
+          class="size-3.5 shrink-0 text-destructive"
+          aria-label="Error"
+        />
       </SidebarMenuSubButton>
     </ContextMenuTrigger>
     <ContextMenuContent class="w-48">

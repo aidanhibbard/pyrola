@@ -99,7 +99,7 @@ vi.mock('@/services/harness/agent-shell-registry', () => ({
   tailShellOutput,
   waitForShellExit,
   killShellsForChat: vi.fn<() => Promise<void>>(),
-  setAgentShellEventEmitter: vi.fn<(handler: unknown) => void>(),
+  setAgentShellEventEmitter: vi.fn<(chatId: string, handler: unknown) => void>(),
 }))
 
 const openStudio = vi.fn<(projectId: string, slug: string, path: string, label?: string) => void>()

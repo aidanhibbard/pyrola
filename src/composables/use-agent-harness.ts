@@ -1,6 +1,7 @@
 import { toast } from 'vue-sonner'
 import { ref, shallowRef } from 'vue'
-import type { ChatStatus } from 'ai'
+import type { ChatStatus, FileUIPart } from 'ai'
+import type { ChatAttention } from '@/types/chat/chat-attention'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
@@ -15,7 +16,11 @@ import runOrchestrator, {
   mapMetaStatusToChatStatus,
   resumeOrchestrator,
 } from '@/services/harness/orchestrator'
-import { resolveApproval, type ApprovalResolution } from '@/services/harness/approval-gate'
+import {
+  listPendingApprovalsForChat,
+  resolveApproval,
+  type ApprovalResolution,
+} from '@/services/harness/approval-gate'
 import { type PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
@@ -23,7 +28,7 @@ import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import createModel from '@/services/providers/create-model'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
-import { browserReadArtifact, createChat } from '@/services/pyrola/pyrola-tauri'
+import { browserReadArtifact, createChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import {
   abort as abortSubagentsForChat,
   abortOne,
@@ -50,8 +55,29 @@ export type { SubagentEntry } from '@/types/harness/subagent-entry'
 export type { ApprovalResolution } from '@/services/harness/approval-gate'
 export type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 
-export default (options: AgentHarnessOptions) => {
+type AgentHarness = ReturnType<typeof createAgentHarness>
+
+const harnessCache = new Map<string, AgentHarness>()
+
+const makeHarnessKey = (projectSlug: string, chatId: string): string =>
+  `${projectSlug}::${chatId}`
+
+export const dropAgentHarness = (projectSlug: string, chatId: string): void => {
+  const key = makeHarnessKey(projectSlug, chatId)
+  const existing = harnessCache.get(key)
+  harnessCache.delete(key)
+  if (existing) {
+    existing.stop().catch(() => undefined)
+  }
+}
+
+export const resetAgentHarnessCacheForTests = (): void => {
+  harnessCache.clear()
+}
+
+const createAgentHarness = (options: AgentHarnessOptions) => {
   const chatStore = useChatStore()
+  const session = chatStore.forChat(options.projectSlug, options.chatId)
   const config = usePyrolaConfig()
   const contextUsage = useContextUsage()
   const contextBudgetSync = useChatContextBudgetSync()
@@ -72,6 +98,48 @@ export default (options: AgentHarnessOptions) => {
     effectiveSettings: PyrolaSettings
   } | null>(null)
   const resumingSubagents = new Set<string>()
+
+  const refreshSidebar = (): void => {
+    fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
+      toast.error('Failed to refresh sidebar', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+    })
+  }
+
+  const setChatAttention = (attention: ChatAttention): void => {
+    updateChatMeta(options.projectSlug, options.chatId, { attention })
+      .then(() => {
+        session.patchMeta({ attention })
+        refreshSidebar()
+      })
+      .catch((err) => {
+        toast.error('Failed to update chat attention', {
+          description: err instanceof Error ? err.message : 'Unknown error',
+        })
+      })
+  }
+
+  const maybeClearAttentionWhenGatesEmpty = (): void => {
+    if (pendingApprovals.value.length > 0) {
+      return
+    }
+    if (session.pendingQuestion.value) {
+      return
+    }
+    setChatAttention(null)
+  }
+
+  const applyTurnEndAttention = (outcome: 'success' | 'error'): void => {
+    const active = chatStore.isSessionActive(options.projectSlug, options.chatId)
+    if (outcome === 'success') {
+      setChatAttention(active ? null : 'completed')
+      return
+    }
+    if (!active) {
+      setChatAttention('error')
+    }
+  }
 
   const persistPermission = async (
     capability: PermissionCapabilityKey,
@@ -99,20 +167,34 @@ export default (options: AgentHarnessOptions) => {
     pendingApprovals.value = pendingApprovals.value.filter(
       (item) => item.toolCallId !== toolCallId,
     )
+    maybeClearAttentionWhenGatesEmpty()
   }
 
   const setPermissionLevel = (level: PermissionLevel | null): void => {
     sessionPermissionLevel.value = level
   }
 
+  const restorePendingApprovals = (): void => {
+    pendingApprovals.value = listPendingApprovalsForChat(options.chatId).map((entry) => ({
+      toolCallId: entry.toolCallId,
+      name: entry.name,
+      kind: entry.kind,
+      title: entry.title,
+      detail: entry.detail,
+      unsandboxed: entry.unsandboxed,
+      allowedScopes: entry.allowedScopes,
+      diff: entry.diff,
+    }))
+  }
+
   const handleEvent = (event: HarnessEvent): void => {
     liveEvents.value = [...liveEvents.value, event]
     if (event.type === 'text-delta') {
-      chatStore.appendLocalTextDelta(event.delta, event.messageId, event.stepId)
+      session.appendLocalTextDelta(event.delta, event.messageId, event.stepId)
       status.value = 'streaming'
     }
     if (event.type === 'reasoning-delta') {
-      chatStore.appendLocalReasoningDelta(event.delta, event.messageId, event.stepId)
+      session.appendLocalReasoningDelta(event.delta, event.messageId, event.stepId)
       status.value = 'streaming'
     }
     if (event.type === 'tool-start') {
@@ -126,7 +208,7 @@ export default (options: AgentHarnessOptions) => {
         ...toolRuns.value.filter((item) => item.toolCallId !== event.toolCallId),
         run,
       ]
-      chatStore.upsertLocalToolRun(run)
+      session.upsertLocalToolRun(run)
     }
     if (event.type === 'tool-result') {
       const existing = toolRuns.value.find(
@@ -144,10 +226,10 @@ export default (options: AgentHarnessOptions) => {
       toolRuns.value = toolRuns.value.map((item) =>
         item.toolCallId === event.toolCallId ? run : item,
       )
-      chatStore.upsertLocalToolRun(run)
+      session.upsertLocalToolRun(run)
     }
     if (event.type === 'todo-update') {
-      chatStore.appendLocalTodoUpdate(event.todos)
+      session.appendLocalTodoUpdate(event.todos)
     }
     if (event.type === 'subagent-start') {
       const entry: SubagentEntry = {
@@ -161,7 +243,7 @@ export default (options: AgentHarnessOptions) => {
         ...subagents.value.filter((item) => item.subagentId !== event.subagentId),
         entry,
       ]
-      chatStore.upsertLocalSubagentStart({
+      session.upsertLocalSubagentStart({
         subagentId: event.subagentId,
         toolCallId: event.toolCallId,
         name: event.name,
@@ -181,11 +263,11 @@ export default (options: AgentHarnessOptions) => {
             ? { ...item, events: [...item.events, event.event] }
             : item,
         )
-        chatStore.appendLocalSubagentToolEvent(targetId, event.event)
+        session.appendLocalSubagentToolEvent(targetId, event.event)
       }
     }
     if (event.type === 'pending-subagent') {
-      chatStore.setLocalSubagentPrompt(event.subagentId, event.prompt)
+      session.setLocalSubagentPrompt(event.subagentId, event.prompt)
     }
     if (event.type === 'subagent-result') {
       subagents.value = subagents.value.map((item) =>
@@ -193,7 +275,7 @@ export default (options: AgentHarnessOptions) => {
           ? { ...item, status: 'done', summary: event.summary }
           : item,
       )
-      chatStore.completeLocalSubagent(event.subagentId, event.summary)
+      session.completeLocalSubagent(event.subagentId, event.summary)
       if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
         resumingSubagents.add(event.subagentId)
         resumeAfterSubagent(event.subagentId, event.summary)
@@ -208,17 +290,18 @@ export default (options: AgentHarnessOptions) => {
       }
     }
     if (event.type === 'question-request') {
-      chatStore.setPendingQuestion({
+      session.setPendingQuestion({
         toolCallId: event.toolCallId,
         question: event.question,
         options: event.options,
       })
+      setChatAttention('needs_input')
     }
     if (event.type === 'step-start') {
-      chatStore.startAgentStep(event.stepId)
+      session.startAgentStep(event.stepId)
     }
     if (event.type === 'step-finish') {
-      chatStore.finishAgentStep()
+      session.finishAgentStep()
     }
     if (event.type === 'tool-pending-approval') {
       const view: PendingApprovalView = {
@@ -232,6 +315,7 @@ export default (options: AgentHarnessOptions) => {
         diff: event.diff,
       }
       pendingApprovals.value = [...pendingApprovals.value, view]
+      setChatAttention('needs_approval')
     }
     if (event.type === 'context-budget') {
       contextUsage.setBudget(
@@ -259,28 +343,27 @@ export default (options: AgentHarnessOptions) => {
     }
     if (event.type === 'chat-status-changed') {
       status.value = mapMetaStatusToChatStatus(event.status, false)
+      session.patchMeta({ status: event.status })
+      refreshSidebar()
     }
     if (event.type === 'chat-meta-changed') {
       if (
         event.projectSlug === options.projectSlug &&
         event.chatId === options.chatId
       ) {
-        chatStore.patchMeta(event.patch)
+        session.patchMeta(event.patch)
       }
-      fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
-        toast.error('Failed to refresh sidebar', {
-          description: err instanceof Error ? err.message : 'Unknown error',
-        })
-      })
+      refreshSidebar()
     }
     if (event.type === 'turn-aborted') {
       status.value = 'ready'
-      chatStore.clearPendingQuestion()
+      session.clearPendingQuestion()
     }
   }
 
   const submitAnswer = (toolCallId: string, answer: string): void => {
-    chatStore.submitAnswer(toolCallId, answer)
+    session.submitAnswer(toolCallId, answer)
+    maybeClearAttentionWhenGatesEmpty()
   }
 
   const resumeAfterSubagent = async (
@@ -312,7 +395,7 @@ export default (options: AgentHarnessOptions) => {
     status.value = 'submitted'
 
     const turnId = crypto.randomUUID()
-    chatStore.startAgentTurn(turnId)
+    session.startAgentTurn(turnId)
 
     const controller = new AbortController()
     abortController.value = controller
@@ -327,7 +410,7 @@ export default (options: AgentHarnessOptions) => {
         modelId: parsedModel.modelId,
         providerId: parsedModel.providerId,
         settings: cfg.effectiveSettings,
-        messages: chatStore.messages.value,
+        messages: session.messages.value,
         mentions: cfg.mentions,
         signal: controller.signal,
         onEvent: handleEvent,
@@ -343,15 +426,20 @@ export default (options: AgentHarnessOptions) => {
         persistPermission,
       })
       status.value = 'ready'
-      chatStore.finishAgentTurn()
+      session.finishAgentTurn()
+      applyTurnEndAttention('success')
       await fleetSidebar.refreshSlug(options.projectSlug)
     } catch (err) {
+      const aborted = controller.signal.aborted
       error.value = err instanceof Error ? err.message : 'Unknown error'
       status.value = 'error'
-      chatStore.finishAgentTurn()
-      toast.error('Agent resume failed', {
-        description: error.value,
-      })
+      session.finishAgentTurn()
+      if (!aborted) {
+        applyTurnEndAttention('error')
+        toast.error('Agent resume failed', {
+          description: error.value,
+        })
+      }
     } finally {
       abortController.value = null
     }
@@ -362,7 +450,7 @@ export default (options: AgentHarnessOptions) => {
     mode: PyrolaChatMode
     model: string
     mentions?: ContextMention[]
-    files?: import('ai').FileUIPart[]
+    files?: FileUIPart[]
     skipUserMessage?: boolean
     skipUserPersist?: boolean
   }): Promise<void> => {
@@ -458,7 +546,7 @@ export default (options: AgentHarnessOptions) => {
         }
       }
 
-      chatStore.appendLocalMessage({
+      session.appendLocalMessage({
         id: crypto.randomUUID(),
         role: 'user',
         parts,
@@ -470,7 +558,7 @@ export default (options: AgentHarnessOptions) => {
     }
 
     const turnId = crypto.randomUUID()
-    chatStore.startAgentTurn(turnId)
+    session.startAgentTurn(turnId)
 
     const controller = new AbortController()
     abortController.value = controller
@@ -485,7 +573,7 @@ export default (options: AgentHarnessOptions) => {
         modelId: parsedModel.modelId,
         providerId: parsedModel.providerId,
         settings: config.effectiveSettings.value,
-        messages: chatStore.messages.value,
+        messages: session.messages.value,
         userText: args.text,
         mentions: args.mentions ?? [],
         signal: controller.signal,
@@ -497,7 +585,8 @@ export default (options: AgentHarnessOptions) => {
         persistPermission,
       })
       status.value = 'ready'
-      chatStore.finishAgentTurn()
+      session.finishAgentTurn()
+      applyTurnEndAttention('success')
       await fleetSidebar.refreshSlug(options.projectSlug)
     } catch (err) {
       const aborted = controller.signal.aborted
@@ -507,7 +596,7 @@ export default (options: AgentHarnessOptions) => {
       const message = err instanceof Error ? err.message : 'Unknown error'
       error.value = message
       status.value = 'error'
-      chatStore.setAgentTurnError({
+      session.setAgentTurnError({
         kind: timedOut ? 'timeout' : aborted ? 'aborted' : 'error',
         message: timedOut
           ? 'The model took too long to respond.'
@@ -517,8 +606,9 @@ export default (options: AgentHarnessOptions) => {
               ? 'The model returned an empty response. Check your API key and model ID in Settings.'
               : message,
       })
-      chatStore.finishAgentTurn()
+      session.finishAgentTurn()
       if (!aborted) {
+        applyTurnEndAttention('error')
         toast.error('Agent run failed', {
           description: error.value.includes('No output generated')
             ? 'The model returned an empty response. Check your Gateway API key and model ID in Settings.'
@@ -547,7 +637,7 @@ export default (options: AgentHarnessOptions) => {
     }
 
     try {
-      await chatStore.truncateBeforeMessage(
+      await session.truncateBeforeMessage(
         options.projectSlug,
         options.chatId,
         messageId,
@@ -573,7 +663,7 @@ export default (options: AgentHarnessOptions) => {
       return
     }
 
-    const lastUser = chatStore.getLastUserMessage()
+    const lastUser = session.getLastUserMessage()
     if (!lastUser) {
       return
     }
@@ -588,7 +678,7 @@ export default (options: AgentHarnessOptions) => {
     }
 
     try {
-      await chatStore.truncateAfterLastUserMessage(
+      await session.truncateAfterLastUserMessage(
         options.projectSlug,
         options.chatId,
       )
@@ -613,16 +703,16 @@ export default (options: AgentHarnessOptions) => {
   const stop = async (): Promise<void> => {
     abortController.value?.abort()
     abortSubagentsForChat(options.chatId)
-    chatStore.setAgentTurnError({
+    session.setAgentTurnError({
       kind: 'aborted',
       message: 'The run was stopped.',
     })
     status.value = 'ready'
     try {
       await killShellsForChat(options.chatId)
-    } catch (error) {
+    } catch (stopError) {
       toast.error('Failed to stop terminals', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: stopError instanceof Error ? stopError.message : 'Unknown error',
       })
     }
   }
@@ -643,7 +733,7 @@ export default (options: AgentHarnessOptions) => {
       return
     }
 
-    const meta = chatStore.meta.value
+    const meta = session.meta.value
     if (!meta) {
       toast.error('Chat is not ready yet')
       return
@@ -661,13 +751,13 @@ export default (options: AgentHarnessOptions) => {
         chatId: options.chatId,
         projectRoot,
         settings: config.effectiveSettings.value,
-        messages: chatStore.messages.value,
+        messages: session.messages.value,
         focus,
         frozenSystem: undefined,
         chatModel: meta.model,
       })
-      chatStore.appendLocalCompaction(result.summary, focus ?? null)
-      chatStore.patchMetaActiveContext({
+      session.appendLocalCompaction(result.summary, focus ?? null)
+      session.patchMetaActiveContext({
         checkpointLineId: result.checkpointLineId,
         includeFromCreatedAt: result.includeFromCreatedAt,
         summary: result.summary,
@@ -691,7 +781,7 @@ export default (options: AgentHarnessOptions) => {
       return
     }
 
-    const meta = chatStore.meta.value
+    const meta = session.meta.value
     if (!meta) {
       toast.error('Chat is not ready yet')
       return
@@ -707,12 +797,12 @@ export default (options: AgentHarnessOptions) => {
           chatId: options.chatId,
           projectRoot,
           settings: config.effectiveSettings.value,
-          messages: chatStore.messages.value,
+          messages: session.messages.value,
           chatModel: meta.model,
         })
         summary = compactResult.summary
-        chatStore.appendLocalCompaction(compactResult.summary, null)
-        chatStore.patchMetaActiveContext({
+        session.appendLocalCompaction(compactResult.summary, null)
+        session.patchMetaActiveContext({
           checkpointLineId: compactResult.checkpointLineId,
           includeFromCreatedAt: compactResult.includeFromCreatedAt,
           summary: compactResult.summary,
@@ -784,5 +874,17 @@ export default (options: AgentHarnessOptions) => {
     submitAnswer,
     compactChat,
     createHandoff,
+    restorePendingApprovals,
   }
+}
+
+export default (options: AgentHarnessOptions): AgentHarness => {
+  const key = makeHarnessKey(options.projectSlug, options.chatId)
+  const existing = harnessCache.get(key)
+  if (existing) {
+    return existing
+  }
+  const harness = createAgentHarness(options)
+  harnessCache.set(key, harness)
+  return harness
 }

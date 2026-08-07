@@ -26,8 +26,8 @@ import countContextBudget from '@/services/context/count-context-budget'
 import filterMessagesForActiveContext from '@/services/context/filter-messages-for-active-context'
 import buildTools from '@/services/harness/build-tools'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
-import { rejectAllPending } from '@/services/harness/approval-gate'
-import { rejectAllPendingQuestions } from '@/services/harness/question-gate'
+import { rejectPendingForChat } from '@/services/harness/approval-gate'
+import { rejectPendingQuestionsForChat } from '@/services/harness/question-gate'
 import runSideTask from '@/services/harness/run-side-task'
 import enrichToolError from '@/services/harness/enrich-tool-error'
 import deriveToolArtifact from '@/services/harness/derive-tool-artifact'
@@ -416,7 +416,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 
   fleetCounter.increment()
 
-  setAgentShellEventEmitter(onEvent)
+  setAgentShellEventEmitter(chatId, onEvent)
 
   onEvent({
     type: 'chat-status-changed',
@@ -424,7 +424,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     chatId,
     status: 'running',
   })
-  await updateChatMeta(projectSlug, chatId, { status: 'running' })
+  await updateChatMeta(projectSlug, chatId, { status: 'running', attention: null })
 
   const [existingMeta, model] = await Promise.all([
     readChatMeta(projectSlug, chatId).catch(() => null),
@@ -694,8 +694,8 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       stopWhen: isLoopFinished(),
       abortSignal: signal,
       onAbort: async () => {
-        rejectAllPending()
-        rejectAllPendingQuestions()
+        rejectPendingForChat(chatId)
+        rejectPendingQuestionsForChat(chatId)
         await killShellsForChat(chatId)
         abortSubagentsForChat(chatId)
         await browserUnlockAll(chatId).catch(() => undefined)
@@ -878,9 +878,9 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     }
   } finally {
     fleetCounter.decrement()
-    rejectAllPending()
-    rejectAllPendingQuestions()
-    setAgentShellEventEmitter(null)
+    rejectPendingForChat(chatId)
+    rejectPendingQuestionsForChat(chatId)
+    setAgentShellEventEmitter(chatId, null)
     await browserUnlockAll(chatId).catch(() => undefined)
     onEvent({
       type: 'chat-status-changed',

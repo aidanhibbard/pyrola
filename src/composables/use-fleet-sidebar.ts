@@ -19,6 +19,7 @@ export type FleetSidebarActivityItem =
         id: string
         title: string
         status?: ChatMeta['status']
+        attention?: ChatMeta['attention']
         projectSlug: string
       }
       updatedAt: string
@@ -51,6 +52,7 @@ export default () => {
         id: chat.id,
         title: chat.title,
         status: chat.status,
+        attention: chat.attention ?? null,
       })),
     })),
   )
@@ -76,6 +78,7 @@ export default () => {
           id: chat.id,
           title: chat.title,
           status: chat.status,
+          attention: chat.attention ?? null,
           projectSlug: HOME_CHAT_SLUG,
         },
         updatedAt: chat.updatedAt,

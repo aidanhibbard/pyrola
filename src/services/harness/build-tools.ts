@@ -103,6 +103,7 @@ export type HarnessToolContext = {
 }
 
 const toPermCtx = (ctx: HarnessToolContext): PermissionGateContext => ({
+  chatId: ctx.chatId,
   settings: ctx.settings,
   permissionLevel: ctx.permissionLevel,
   sessionAllows: ctx.sessionAllows,
@@ -717,7 +718,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         question,
         options,
       })
-      const answer = await requestQuestion(toolCallId, question, options)
+      const answer = await requestQuestion(ctx.chatId, toolCallId, question, options)
       if (ctx.signal?.aborted) {
         throw new Error('Question aborted')
       }

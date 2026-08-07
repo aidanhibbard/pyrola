@@ -24,6 +24,7 @@ export type PendingApprovalView = {
 }
 
 export type PermissionGateContext = {
+  chatId: string
   settings: PyrolaSettings
   permissionLevel: PermissionLevel
   sessionAllows: Set<string>
@@ -80,6 +81,7 @@ export const gateToolPermission = async (args: {
   })
 
   const result = await requestApproval({
+    chatId: args.ctx.chatId,
     toolCallId: args.toolCallId,
     name: args.name,
     kind: args.kind,

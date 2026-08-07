@@ -28,6 +28,10 @@ export const activeContextSchema = z.object({
   summary: z.string().optional(),
 })
 
+export const chatAttentionSchema = z
+  .enum(['needs_approval', 'needs_input', 'completed', 'error'])
+  .nullable()
+
 export const chatMetaSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -36,6 +40,7 @@ export const chatMetaSchema = z.object({
   mode: chatModeSchema,
   model: z.string(),
   status: z.enum(['idle', 'running']),
+  attention: chatAttentionSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   forkedFrom: z.string().nullable(),

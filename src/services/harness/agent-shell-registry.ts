@@ -22,15 +22,21 @@ const shells = new Map<string, AgentShellRecord>()
 const chatShells = new Map<string, Set<string>>()
 const exitWaiters = new Map<string, Array<(exitCode: number) => void>>()
 const shellUnlisteners = new Map<string, Array<() => void>>()
+const eventEmitters = new Map<string, EventEmitter>()
 
-let eventEmitter: EventEmitter | null = null
-
-export const setAgentShellEventEmitter = (emitter: EventEmitter | null): void => {
-  eventEmitter = emitter
+export const setAgentShellEventEmitter = (
+  chatId: string,
+  emitter: EventEmitter | null,
+): void => {
+  if (emitter) {
+    eventEmitters.set(chatId, emitter)
+    return
+  }
+  eventEmitters.delete(chatId)
 }
 
-const emitHarnessEvent = (event: HarnessEvent): void => {
-  eventEmitter?.(event)
+const emitHarnessEvent = (chatId: string, event: HarnessEvent): void => {
+  eventEmitters.get(chatId)?.(event)
 }
 
 const setShellStatus = (shell: AgentShellRecord, status: AgentShellStatus, exitCode: number): void => {
@@ -50,7 +56,7 @@ const appendOutput = (shellId: string, stream: 'stdout' | 'stderr', data: string
     shell.stderr = (shell.stderr + data).slice(-MAX_BUFFER_CHARS)
   }
 
-  emitHarnessEvent({ type: 'terminal-output', shellId, stream, data })
+  emitHarnessEvent(shell.chatId, { type: 'terminal-output', shellId, stream, data })
 }
 
 const resolveExitWaiters = (shellId: string, exitCode: number): void => {
@@ -76,7 +82,7 @@ const markShellComplete = (shellId: string, exitCode: number): void => {
   }
 
   setShellStatus(shell, exitCode === 0 ? 'completed' : 'failed', exitCode)
-  emitHarnessEvent({ type: 'shell-complete', shellId, exitCode })
+  emitHarnessEvent(shell.chatId, { type: 'shell-complete', shellId, exitCode })
   resolveExitWaiters(shellId, exitCode)
   cleanupShellListeners(shellId)
 }
@@ -236,5 +242,5 @@ export const resetAgentShellRegistryForTests = (): void => {
   shells.clear()
   chatShells.clear()
   exitWaiters.clear()
-  eventEmitter = null
+  eventEmitters.clear()
 }

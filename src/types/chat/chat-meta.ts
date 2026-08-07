@@ -1,3 +1,4 @@
+import type { ChatAttention } from '@/types/chat/chat-attention'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
@@ -11,6 +12,7 @@ export type ChatMeta = {
   mode: PyrolaChatMode
   model: string
   status: ChatStatus
+  attention?: ChatAttention
   createdAt: string
   updatedAt: string
   forkedFrom: string | null

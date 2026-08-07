@@ -18,6 +18,8 @@ pub struct ChatMeta {
   pub mode: String,
   pub model: String,
   pub status: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub attention: Option<String>,
   pub created_at: String,
   pub updated_at: String,
   pub forked_from: Option<String>,
@@ -65,6 +67,7 @@ pub fn create_chat(
     mode,
     model,
     status: "idle".to_string(),
+    attention: None,
     created_at: now.clone(),
     updated_at: now,
     forked_from: None,

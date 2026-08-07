@@ -108,6 +108,7 @@ const initHarness = (root: string, name: string): void => {
   })
   harness.value = nextHarness
   nextHarness.setPermissionLevel(sessionPermissionLevel.value)
+  nextHarness.restorePendingApprovals()
 }
 
 const loadThread = async (): Promise<void> => {
@@ -120,10 +121,16 @@ const loadThread = async (): Promise<void> => {
 
   const threadKey = `${projectSlug.value}:${chatId.value}`
   if (loadedThreadKey.value === threadKey && harness.value) {
+    harness.value.restorePendingApprovals()
     return
   }
 
-  threadReady.value = false
+  const alreadyWarm = chatStore.isSessionWarm(projectSlug.value, chatId.value)
+
+  // Warm sessions keep the previous thread visible until swap completes.
+  if (!alreadyWarm) {
+    threadReady.value = false
+  }
 
   if (isStandalone.value) {
     if (!homeRoot.value) {

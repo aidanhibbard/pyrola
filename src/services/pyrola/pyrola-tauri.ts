@@ -216,6 +216,7 @@ export type ChatMetaRecord = {
   mode: string
   model: string
   status: 'idle' | 'running'
+  attention?: 'needs_approval' | 'needs_input' | 'completed' | 'error' | null
   createdAt: string
   updatedAt: string
   forkedFrom: string | null
