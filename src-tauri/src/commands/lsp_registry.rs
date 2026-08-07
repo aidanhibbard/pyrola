@@ -23,14 +23,26 @@ pub struct NpmInstallSpec {
   pub bin: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum GithubTargetStyle {
+  /// Rust host triple, e.g. aarch64-apple-darwin
+  RustTriple,
+  /// Node-style, e.g. darwin-arm64
+  NodeStyle,
+  /// Marksman release names: macos, linux-x64, linux-arm64, or plain .exe
+  Marksman,
+}
+
 #[derive(Debug, Clone)]
 pub struct GithubReleaseSpec {
   pub repo: &'static str,
   pub tag: &'static str,
-  /// Asset name template with `{target}` replaced by host triple asset id.
+  /// Asset name template with `{target}` / `{version}` placeholders.
   pub asset: &'static str,
   pub binary_name: &'static str,
   pub gzip: bool,
+  pub target_style: GithubTargetStyle,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +221,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "marksman-{target}",
       binary_name: "marksman",
       gzip: false,
+      target_style: GithubTargetStyle::Marksman,
     }),
     root_markers: &[],
     requires_trust: false,
@@ -238,6 +251,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "rust-analyzer-{target}.gz",
       binary_name: "rust-analyzer",
       gzip: true,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["Cargo.toml"],
     requires_trust: false,
@@ -256,6 +270,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "gopls_{target}",
       binary_name: "gopls",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["go.mod"],
     requires_trust: false,
@@ -364,6 +379,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "lua-language-server-{version}-{target}.tar.gz",
       binary_name: "bin/lua-language-server",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &[],
     requires_trust: false,
@@ -382,6 +398,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "clangd-{target}.zip",
       binary_name: "clangd",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["compile_commands.json", "CMakeLists.txt"],
     requires_trust: false,
@@ -400,6 +417,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "terraform-ls_{version}_{target}.zip",
       binary_name: "terraform-ls",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &[],
     requires_trust: false,
@@ -418,6 +436,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "taplo-full-{target}.gz",
       binary_name: "taplo",
       gzip: true,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &[],
     requires_trust: false,
@@ -436,6 +455,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "zls-{target}.tar.xz",
       binary_name: "zls",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["build.zig"],
     requires_trust: false,
@@ -464,6 +484,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "server.zip",
       binary_name: "bin/kotlin-language-server",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["build.gradle", "build.gradle.kts", "settings.gradle"],
     requires_trust: false,
@@ -482,6 +503,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "lemminx-{target}.zip",
       binary_name: "lemminx",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &[],
     requires_trust: false,
@@ -595,6 +617,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "clojure-lsp-native-{target}.zip",
       binary_name: "clojure-lsp",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["deps.edn", "project.clj"],
     requires_trust: false,
@@ -649,6 +672,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "nil-{target}",
       binary_name: "nil",
       gzip: false,
+      target_style: GithubTargetStyle::RustTriple,
     }),
     root_markers: &["flake.nix"],
     requires_trust: false,

@@ -9,7 +9,8 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
 use super::lsp_registry::{
-  builtin_spec_by_id, tier_a_ids, BuiltinLspSpec, GithubReleaseSpec, LspInstallKind, LspTier,
+  builtin_spec_by_id, tier_a_ids, BuiltinLspSpec, GithubReleaseSpec, GithubTargetStyle,
+  LspInstallKind, LspTier,
 };
 use super::paths::user_pyrola_dir;
 
@@ -84,6 +85,49 @@ pub fn host_asset_target() -> String {
     ("windows", "aarch64") => "aarch64-pc-windows-msvc".to_string(),
     _ => format!("{arch}-{os}"),
   }
+}
+
+fn github_target_token(style: GithubTargetStyle) -> Result<String, String> {
+  let arch = std::env::consts::ARCH;
+  let os = std::env::consts::OS;
+  match style {
+    GithubTargetStyle::RustTriple => Ok(host_asset_target()),
+    GithubTargetStyle::NodeStyle => Ok(match (os, arch) {
+      ("macos", "aarch64") => "darwin-arm64".to_string(),
+      ("macos", "x86_64") => "darwin-x64".to_string(),
+      ("linux", "aarch64") => "linux-arm64".to_string(),
+      ("linux", "x86_64") => "linux-x64".to_string(),
+      ("windows", "x86_64") => "win32-x64".to_string(),
+      ("windows", "aarch64") => "win32-arm64".to_string(),
+      _ => return Err(format!("Unsupported platform for Node-style assets: {os}/{arch}")),
+    }),
+    GithubTargetStyle::Marksman => Ok(match (os, arch) {
+      // Universal macOS binary in marksman releases.
+      ("macos", _) => "macos".to_string(),
+      ("linux", "aarch64") => "linux-arm64".to_string(),
+      ("linux", "x86_64") => "linux-x64".to_string(),
+      // Windows asset is literally marksman.exe (no target suffix).
+      ("windows", _) => "exe".to_string(),
+      _ => return Err(format!("Unsupported platform for marksman: {os}/{arch}")),
+    }),
+  }
+}
+
+fn resolve_github_asset(spec: &GithubReleaseSpec) -> Result<(String, String), String> {
+  let target = github_target_token(spec.target_style)?;
+  let mut asset = spec.asset.replace("{target}", &target);
+  asset = asset.replace("{version}", spec.tag.trim_start_matches('v'));
+
+  // Marksman Windows release is `marksman.exe`, not `marksman-exe`.
+  if spec.target_style == GithubTargetStyle::Marksman && target == "exe" {
+    asset = "marksman.exe".to_string();
+  }
+
+  let url = format!(
+    "https://github.com/{}/releases/download/{}/{}",
+    spec.repo, spec.tag, asset
+  );
+  Ok((url, asset))
 }
 
 fn node_dist_name() -> Result<String, String> {
@@ -416,31 +460,6 @@ async fn npm_install_packages(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
 
   fs::write(&marker, b"ok").map_err(|e| e.to_string())?;
   managed_bin_path(app, spec).ok_or_else(|| format!("Installed {} but bin missing", spec.id))
-}
-
-fn resolve_github_asset(spec: &GithubReleaseSpec) -> Result<(String, String), String> {
-  let target = host_asset_target();
-  let mut asset = spec.asset.replace("{target}", &target);
-  asset = asset.replace("{version}", spec.tag.trim_start_matches('v'));
-
-  // Common alternate names
-  let alt_target = match target.as_str() {
-    "aarch64-apple-darwin" => "darwin-arm64",
-    "x86_64-apple-darwin" => "darwin-x64",
-    "x86_64-unknown-linux-gnu" => "linux-x64",
-    "aarch64-unknown-linux-gnu" => "linux-arm64",
-    "x86_64-pc-windows-msvc" => "windows-x64",
-    other => other,
-  };
-  if !asset.contains(&target) {
-    asset = spec.asset.replace("{target}", alt_target);
-  }
-
-  let url = format!(
-    "https://github.com/{}/releases/download/{}/{}",
-    spec.repo, spec.tag, asset
-  );
-  Ok((url, asset))
 }
 
 async fn github_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBuf, String> {

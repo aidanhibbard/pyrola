@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BotIcon, CheckIcon, ChevronRightIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
+import { BotIcon, CheckIcon, ChevronRightIcon, XIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Tooltip,
@@ -74,9 +75,8 @@ const handleStop = (): void => {
       class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-0.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
       @click="openSubagentChat"
     >
-      <LoaderCircleIcon
+      <NavigationAsideLeftChatRunningDots
         v-if="isRunning"
-        class="size-3.5 shrink-0 animate-spin"
       />
       <CheckIcon
         v-else
