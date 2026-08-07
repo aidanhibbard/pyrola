@@ -28,7 +28,7 @@ import enrichToolError from '@/services/harness/enrich-tool-error'
 import deriveToolArtifact from '@/services/harness/derive-tool-artifact'
 import { fileDiffListSchema } from '@/schemas/file-diff'
 import type { FileDiff } from '@/types/harness/file-diff'
-import deriveChatTitle, { isDefaultChatTitle } from '@/utils/derive-chat-title'
+import { isDefaultChatTitle } from '@/utils/derive-chat-title'
 import {
   killShellsForChat,
   setAgentShellEventEmitter,
@@ -929,26 +929,19 @@ export default async (input: OrchestratorInput): Promise<void> => {
   }
 
   if (isFirstUserMessage) {
-    // Keep the short "New Agent" placeholder while naming runs. Do not dump the
-    // prompt into the sidebar. Apply deriveChatTitle only if the title LLM is
-    // skipped or fails.
+    // Keep the short "New Agent" placeholder while naming runs. Never copy the
+    // user prompt into the sidebar title (including sync fallbacks).
     runSideTask({
       projectSlug,
       chatId,
       prompt: userText,
       settings: input.settings,
-    }).then(async (generatedTitle) => {
+      fallbackProviderId: input.providerId,
+      fallbackModelId: input.modelId,
+    }).then((generatedTitle) => {
       if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
         emitTitleChange(generatedTitle)
-        return
       }
-
-      const fallbackTitle = deriveChatTitle(userText)
-      if (!fallbackTitle) {
-        return
-      }
-      await updateChatMeta(projectSlug, chatId, { title: fallbackTitle })
-      emitTitleChange(fallbackTitle)
     })
   }
 

@@ -18,6 +18,26 @@ export type CreateModelInput = {
   modelId: string
   settings: PyrolaSettings
   apiKey?: string
+  /** Disable native thinking/reasoning for short side tasks (titles, etc.). */
+  disableThinking?: boolean
+}
+
+const disableThinkingTransform = (
+  args: Record<string, unknown>,
+): Record<string, unknown> => {
+  const existing =
+    args.chat_template_kwargs &&
+    typeof args.chat_template_kwargs === 'object' &&
+    !Array.isArray(args.chat_template_kwargs)
+      ? (args.chat_template_kwargs as Record<string, unknown>)
+      : {}
+  return {
+    ...args,
+    chat_template_kwargs: {
+      ...existing,
+      enable_thinking: false,
+    },
+  }
 }
 
 const resolveApiKey = async (
@@ -86,6 +106,9 @@ export default async (input: CreateModelInput): Promise<LanguageModel> => {
               'image/*': [/^https?:\/\/.*$/],
             }),
           }
+        : {}),
+      ...(input.disableThinking
+        ? { transformRequestBody: disableThinkingTransform }
         : {}),
       fetch,
     })(modelId)
