@@ -29,7 +29,6 @@ Pyrola is **usable for tinkering**, not something I would trust as a daily drive
 | **Security** | Permissions / approval gates exist and are **half-baked**. Do not treat this as a hardened sandbox. The agent can run shell and write files; policy is best-effort, not a guarantee. |
 | **Editor** | Monaco workbench with multi-file tabs, save, dirty state. Fine for light editing. No real LSP integration yet. |
 | **Terminal** | Present and usable for agent + human shells. |
-| **Web view** | Embedded browser exists and has agent tools wired up. **Still broken in places / kind of a TODO.** Do not expect Cursor-browser reliability. |
 | **Sub-agents** | Spawnable; historically constrained (e.g. read-only drill-down). Useful for parallel investigation, not a finished multi-agent product. |
 
 If you clone this expecting Cursor/Claude Code polish, you will be disappointed. If you want to see how one person wires an agent IDE together under LLM-assisted development, you are in the right place.
@@ -56,10 +55,6 @@ Integrated terminal for the active project; agents can also run shell tools agai
 
 ![Terminal](media/terminal.png)
 
-### Web view
-
-**Coming soon.** Embedded browser exists and has agent tools sketched, but it is still broken in places / kind of a TODO. No screenshot until that surface is worth showing.
-
 ---
 
 ## What it is trying to be
@@ -68,7 +63,7 @@ A **local agent IDE**:
 
 - **BYOK providers**: AI SDK catalog + custom OpenAI-compatible endpoints (see [Providers](#providers)). Keys in settings / OS keychain, not a hosted chat product.
 - **Fleet** of projects: register dirs, switch active project, keep chats per project under `~/.pyrola/`.
-- **Workbench** tabs: Editor, Terminal, Browser, Changes (git informational), plus Plan / Studio flows in chat modes.
+- **Workbench** tabs: Editor, Terminal, Changes (git informational), plus Plan / Studio flows in chat modes.
 - **MCP**: connect stdio / bearer-style servers and call tools from the harness (`call_mcp_tool`). Full OAuth is not there yet.
 - **Plans & Studio**: plan docs and studio artifacts for structured agent output (templates exist; polish varies).
 
@@ -81,7 +76,7 @@ Stack sketch: Vue 3 + Vite + Tailwind/shadcn-vue on the front, Rust/Tauri 2 for 
 The interesting part of the repo is `src/services/harness/`.
 
 - **Orchestrator** runs a tool loop with mode allowlists (Ask is narrower than Agent).
-- **Tools** cover files (read/write/edit/patch), git, terminal, MCP, plans/studio, ask-user gates, browser actions, and more. See `src/services/harness/tool-catalog.ts`.
+- **Tools** cover files (read/write/edit/patch), git, terminal, MCP, plans/studio, ask-user gates, and more. See `src/services/harness/tool-catalog.ts`.
 - **Sub-agents** can be spawned for parallel work; registry + abort/wait plumbing lives alongside the main chat.
 - **Permissions** live in settings and gate some capabilities. Again: **half-baked security**. Useful as a learning surface for policy UX, not a claim that untrusted prompts are safe.
 

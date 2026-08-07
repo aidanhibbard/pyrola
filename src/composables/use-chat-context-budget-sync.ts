@@ -43,6 +43,9 @@ const mcpStatusKey = (states: Record<string, { status: string; tools: unknown[] 
     .sort()
     .map((id) => {
       const state = states[id]
+      if (!state) {
+        return `${id}:missing:0`
+      }
       return `${id}:${state.status}:${state.tools.length}`
     })
     .join('|')

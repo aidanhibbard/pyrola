@@ -21,7 +21,6 @@ const tabTypeLabels: Record<Exclude<WorkbenchTabType, 'plan' | 'studio'>, string
   editor: 'Editor',
   terminal: 'Terminal',
   changes: 'Changes',
-  browser: 'Browser',
 }
 
 const tabLabel = computed(() => tabTypeLabels[workbench.duplicateDialogTabType.value])

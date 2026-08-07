@@ -52,10 +52,14 @@ pub fn generate_seatbelt_profile(allow_network: bool) -> String {
 (allow file-read* (subpath "/usr/local"))
 (allow file-read* (subpath "/nix"))
 
-; HOME: allow read/write for tool caches (.npm, .cargo, etc.)
-; More-specific deny rules below take precedence over this broader allow.
+; HOME: read allowed; write only for common tool cache dirs.
+; More-specific deny rules below take precedence over broader allows.
 (allow file-read*  (subpath (param "HOME")))
-(allow file-write* (subpath (param "HOME")))
+(allow file-write* (subpath (string-append (param "HOME") "/.npm")))
+(allow file-write* (subpath (string-append (param "HOME") "/.cache")))
+(allow file-write* (subpath (string-append (param "HOME") "/.cargo")))
+(allow file-write* (subpath (string-append (param "HOME") "/.local")))
+(allow file-write* (subpath (string-append (param "HOME") "/Library/Caches")))
 
 ; Deny sensitive credential directories inside HOME
 (deny file-read*  (subpath (string-append (param "HOME") "/.ssh")))

@@ -45,7 +45,6 @@ import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/t
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { FileUIPart } from 'ai'
-import ChatPromptAttachmentSync from '@/components/chat/ChatPromptAttachmentSync.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -376,7 +375,6 @@ watch(
         <ChatPromptEditSync />
         <ChatPromptMentionSync />
         <ChatPromptSkillSync />
-        <ChatPromptAttachmentSync />
         <PromptInputTextarea
           class="max-h-28 min-h-10 resize-none py-2.5"
           placeholder="Plan, build, / for skills, @ for context"

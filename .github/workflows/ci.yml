@@ -20,6 +20,17 @@ jobs:
       - run: npm ci
       - run: npm run ci
 
+  rust-audit:
+    name: Rust audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit Rust dependencies
+        run: cargo audit --file src-tauri/Cargo.lock
+
   tauri-build:
     name: Tauri build
     runs-on: ubuntu-24.04

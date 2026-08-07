@@ -28,7 +28,7 @@ import parseModelRef from '@/utils/parse-model-ref'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import createModel from '@/services/providers/create-model'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
-import { browserReadArtifact, createChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
+import { createChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import {
   abort as abortSubagentsForChat,
   abortOne,
@@ -528,18 +528,13 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
           continue
         }
 
-        let url = file.url
+        const url = file.url
         if (url?.startsWith('file://')) {
-          try {
-            const artifact = await browserReadArtifact(url.replace('file://', ''))
-            url = `data:${artifact.mimeType};base64,${artifact.base64}`
-          } catch {
-            parts.push({
-              type: 'text',
-              text: `[Attachment unavailable: ${file.filename || url}]`,
-            })
-            continue
-          }
+          parts.push({
+            type: 'text',
+            text: `[Attachment unavailable: ${file.filename || url}]`,
+          })
+          continue
         }
 
         if (url) {

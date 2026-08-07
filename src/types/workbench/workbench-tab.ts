@@ -2,7 +2,6 @@ export type WorkbenchTabType =
   | 'changes'
   | 'editor'
   | 'terminal'
-  | 'browser'
   | 'studio'
   | 'plan'
 
@@ -28,17 +27,12 @@ export type StudioPayload = {
 
 export type ChangesPayload = Record<string, never>
 
-export type BrowserPayload = {
-  url: string
-}
-
 export type WorkbenchTabPayload =
   | EditorPayload
   | TerminalPayload
   | PlanPayload
   | StudioPayload
   | ChangesPayload
-  | BrowserPayload
 
 export type WorkbenchTab = {
   id: string

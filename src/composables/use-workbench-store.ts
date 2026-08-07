@@ -1,7 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type {
-  BrowserPayload,
   ChangesPayload,
   EditorPayload,
   PlanPayload,
@@ -15,7 +14,7 @@ import type { PyrolaDuplicateTabBehavior } from '@/types/pyrola/pyrola-settings'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
-import { getUserHomeDir, shellKillPty, shellWritePty, browserSetVisible, browserStop } from '@/services/pyrola/pyrola-tauri'
+import { getUserHomeDir, shellKillPty, shellWritePty } from '@/services/pyrola/pyrola-tauri'
 import { HOME_WORKSPACE_ID, isHomeChatSlug } from '@/constants/home-chat'
 import workbenchTabLabel from '@/utils/workbench-tab-label'
 
@@ -407,47 +406,6 @@ const openChanges = async (projectId: string): Promise<void> => {
   focusTab(tab.id)
 }
 
-const openBrowser = async (projectId: string, url: string): Promise<void> => {
-  // One app-global Browser workbench tab — not URL-keyed "browser tabs".
-  const existing = findTab((tab) => tab.type === 'browser')
-  if (existing) {
-    ;(existing.payload as BrowserPayload).url = url
-    focusTab(existing.id)
-    return
-  }
-
-  const tab: WorkbenchTab = {
-    id: createId(),
-    type: 'browser',
-    projectId,
-    label: 'Browser',
-    payload: { url } satisfies BrowserPayload,
-  }
-  tabs.value.push(tab)
-  focusTab(tab.id)
-}
-
-const updateBrowserTabLabel = (title: string, url?: string): void => {
-  const tab = findTab((item) => item.type === 'browser')
-  if (!tab) {
-    return
-  }
-  const trimmed = title.trim()
-  if (trimmed) {
-    tab.label = trimmed.slice(0, 48)
-    return
-  }
-  if (url) {
-    try {
-      tab.label = new URL(url).hostname || 'Browser'
-      return
-    } catch {
-      // fall through
-    }
-  }
-  tab.label = 'Browser'
-}
-
 const closeTab = async (id: string): Promise<void> => {
   const tab = tabs.value.find((item) => item.id === id)
   if (!tab) {
@@ -465,15 +423,6 @@ const closeTab = async (id: string): Promise<void> => {
         })
       }
       terminalSessions.delete(id)
-    }
-  }
-
-  if (tab.type === 'browser') {
-    try {
-      await browserSetVisible(false)
-      await browserStop()
-    } catch {
-      // ignore — webview may already be gone
     }
   }
 
@@ -590,8 +539,6 @@ export default () => ({
   openPlan,
   openStudio,
   openChanges,
-  openBrowser,
-  updateBrowserTabLabel,
   closeTab,
   closeOthers,
   closeAll,

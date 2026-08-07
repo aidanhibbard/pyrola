@@ -113,26 +113,4 @@ describe('pyrola-tauri IPC adapters', () => {
       replacements: [{ oldString: 'old', newString: 'new' }],
     })
   })
-
-  it('passes shell_run_command args', async () => {
-    invoke.mockResolvedValueOnce({
-      stdout: 'ok',
-      stderr: '',
-      exitCode: 0,
-      timedOut: false,
-    })
-
-    const { shellRunCommand } = await import('@/services/pyrola/pyrola-tauri')
-    await shellRunCommand({
-      projectRoot: '/project',
-      command: 'echo ok',
-      timeoutMs: 5000,
-    })
-
-    expect(invoke).toHaveBeenCalledWith('shell_run_command', {
-      projectRoot: '/project',
-      command: 'echo ok',
-      timeoutMs: 5000,
-    })
-  })
 })

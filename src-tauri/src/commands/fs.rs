@@ -172,6 +172,38 @@ fn ensure_under_root(root: &Path, target: &Path) -> Result<PathBuf, String> {
   Err("Path escapes project root".to_string())
 }
 
+fn is_sensitive_relative_path(path: &str) -> bool {
+  let normalized = path.replace('\\', "/");
+  let lower = normalized.to_ascii_lowercase();
+
+  for segment in lower.split('/') {
+    if segment.is_empty() || segment == "." {
+      continue;
+    }
+    if segment == ".env" || segment.starts_with(".env.") {
+      return true;
+    }
+    if segment == ".ssh" || segment == ".aws" || segment == ".gnupg" {
+      return true;
+    }
+    if segment.ends_with(".pem") || segment.ends_with(".key") {
+      return true;
+    }
+    if segment.contains("credential") || segment.contains("secret") {
+      return true;
+    }
+  }
+
+  false
+}
+
+fn reject_sensitive_path(user_path: &str) -> Result<(), String> {
+  if is_sensitive_relative_path(user_path) {
+    return Err("Sensitive path blocked".to_string());
+  }
+  Ok(())
+}
+
 fn relative_path(root: &Path, absolute: &Path) -> String {
   absolute
     .strip_prefix(root)
@@ -457,10 +489,12 @@ fn preview_patch(project_root: &str, patch: &str) -> Result<Vec<FileDiff>, Strin
   for operation in operations {
     match operation {
       PatchOperation::Add { path, content } => {
+        reject_sensitive_path(&path)?;
         let _ = resolve_workspace_path(project_root, &path)?;
         diffs.push(build_file_diff(path, "create", None, Some(content)));
       }
       PatchOperation::Update { path, content } => {
+        reject_sensitive_path(&path)?;
         let absolute = resolve_workspace_path(project_root, &path)?;
         let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
         let new_content = apply_update_patch(&old_content, &content)?;
@@ -472,6 +506,7 @@ fn preview_patch(project_root: &str, patch: &str) -> Result<Vec<FileDiff>, Strin
         ));
       }
       PatchOperation::Delete { path } => {
+        reject_sensitive_path(&path)?;
         let absolute = resolve_workspace_path(project_root, &path)?;
         let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
         diffs.push(build_file_diff(
@@ -495,6 +530,7 @@ fn apply_patch_operations(project_root: &str, patch: &str) -> Result<Vec<FileDif
   for operation in operations {
     match operation {
       PatchOperation::Add { path, content } => {
+        reject_sensitive_path(&path)?;
         let absolute = resolve_workspace_path(project_root, &path)?;
         if let Some(parent) = absolute.parent() {
           fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -508,6 +544,7 @@ fn apply_patch_operations(project_root: &str, patch: &str) -> Result<Vec<FileDif
         ));
       }
       PatchOperation::Update { path, content } => {
+        reject_sensitive_path(&path)?;
         let absolute = resolve_workspace_path(project_root, &path)?;
         let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
         let new_content = apply_update_patch(&old_content, &content)?;
@@ -520,6 +557,7 @@ fn apply_patch_operations(project_root: &str, patch: &str) -> Result<Vec<FileDif
         ));
       }
       PatchOperation::Delete { path } => {
+        reject_sensitive_path(&path)?;
         let absolute = resolve_workspace_path(project_root, &path)?;
         let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
         fs::remove_file(&absolute).map_err(|error| error.to_string())?;
@@ -740,6 +778,7 @@ pub fn fs_stat(project_root: String, path: String) -> Result<FsStatResult, Strin
 
 #[tauri::command]
 pub fn fs_write_file(project_root: String, path: String, content: String) -> Result<FileDiff, String> {
+  reject_sensitive_path(&path)?;
   let root = canonical_project_root(&project_root)?;
   let absolute = resolve_workspace_path(&project_root, &path)?;
   let old_content = if absolute.exists() {
@@ -773,6 +812,7 @@ pub fn fs_edit_file(
   if replacements.is_empty() {
     return Err("At least one replacement is required".to_string());
   }
+  reject_sensitive_path(&path)?;
   let root = canonical_project_root(&project_root)?;
   let absolute = resolve_workspace_path(&project_root, &path)?;
   let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
@@ -842,6 +882,7 @@ pub fn fs_delete(
   path: String,
   recursive: Option<bool>,
 ) -> Result<(), String> {
+  reject_sensitive_path(&path)?;
   let absolute = resolve_workspace_path(&project_root, &path)?;
   if !absolute.exists() {
     return Err("Path does not exist".to_string());
@@ -919,6 +960,7 @@ pub fn fs_stage_preview(
   let root = canonical_project_root(&project_root)?;
   match request {
     FsStagePreviewRequest::Write { path, content } => {
+      reject_sensitive_path(&path)?;
       let absolute = resolve_workspace_path(&project_root, &path)?;
       let old_content = if absolute.exists() {
         Some(fs::read_to_string(&absolute).map_err(|error| error.to_string())?)
@@ -937,6 +979,7 @@ pub fn fs_stage_preview(
       if replacements.is_empty() {
         return Err("At least one replacement is required".to_string());
       }
+      reject_sensitive_path(&path)?;
       let absolute = resolve_workspace_path(&project_root, &path)?;
       let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
       let new_content = apply_replacements(&old_content, &replacements)?;
@@ -949,6 +992,7 @@ pub fn fs_stage_preview(
     }
     FsStagePreviewRequest::ApplyPatch { patch } => preview_patch(&project_root, &patch),
     FsStagePreviewRequest::Delete { path } => {
+      reject_sensitive_path(&path)?;
       let absolute = resolve_workspace_path(&project_root, &path)?;
       let old_content = fs::read_to_string(&absolute).map_err(|error| error.to_string())?;
       Ok(vec![build_file_diff(
@@ -1011,5 +1055,19 @@ mod tests {
     assert_eq!(hunks.len(), 1);
     assert!(hunks[0].lines.iter().all(|line| line.kind == "remove"));
     assert_eq!(hunks[0].lines.len(), 2);
+  }
+
+  #[test]
+  fn sensitive_paths_are_blocked() {
+    assert!(is_sensitive_relative_path(".env"));
+    assert!(is_sensitive_relative_path(".env.local"));
+    assert!(is_sensitive_relative_path("config/.env"));
+    assert!(is_sensitive_relative_path(".ssh/id_rsa"));
+    assert!(is_sensitive_relative_path("certs/server.pem"));
+    assert!(is_sensitive_relative_path("keys/api.key"));
+    assert!(is_sensitive_relative_path("aws/credentials"));
+    assert!(is_sensitive_relative_path("my-secret-token"));
+    assert!(!is_sensitive_relative_path("src/main.rs"));
+    assert!(!is_sensitive_relative_path("README.md"));
   }
 }

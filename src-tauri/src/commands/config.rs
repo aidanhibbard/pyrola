@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use tauri::AppHandle;
 
@@ -22,6 +22,71 @@ fn write_json(path: &PathBuf, value: serde_json::Value) -> Result<(), String> {
   }
   let content = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
   fs::write(path, content).map_err(|e| e.to_string())
+}
+
+fn path_has_pyrola_ancestor(path: &Path) -> bool {
+  path.ancestors().any(|ancestor| {
+    ancestor
+      .file_name()
+      .and_then(|name| name.to_str())
+      .is_some_and(|name| name == ".pyrola")
+  })
+}
+
+/// Resolve `path` for allow-checks: canonicalize when it exists, otherwise
+/// canonicalize the nearest existing ancestor and re-join the remaining suffix.
+fn resolve_json_path_for_allow_check(path: &Path) -> Result<PathBuf, String> {
+  for component in path.components() {
+    if matches!(component, Component::ParentDir) {
+      return Err("Path traversal is not allowed".to_string());
+    }
+  }
+
+  if path.exists() {
+    return path
+      .canonicalize()
+      .map_err(|error| format!("Failed to resolve path: {error}"));
+  }
+
+  let mut suffix = Vec::new();
+  let mut probe = path.to_path_buf();
+  loop {
+    if probe.exists() {
+      let mut resolved = probe
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve path: {error}"))?;
+      for part in suffix.iter().rev() {
+        resolved.push(part);
+      }
+      return Ok(resolved);
+    }
+    match probe.file_name() {
+      Some(name) => {
+        suffix.push(name.to_owned());
+        if !probe.pop() {
+          break;
+        }
+      }
+      None => break,
+    }
+  }
+
+  Err("Path cannot be resolved".to_string())
+}
+
+fn ensure_json_path_allowed(app: &AppHandle, path: &Path) -> Result<PathBuf, String> {
+  let user_dir = user_pyrola_dir(app)?;
+  let user_canon = user_dir
+    .canonicalize()
+    .unwrap_or_else(|_| user_dir.clone());
+
+  let resolved = resolve_json_path_for_allow_check(path)?;
+
+  if resolved.starts_with(&user_canon) || path_has_pyrola_ancestor(&resolved) {
+    return Ok(resolved);
+  }
+
+  Err("Path is outside allowed .pyrola directories".to_string())
 }
 
 #[tauri::command]
@@ -59,13 +124,19 @@ pub fn write_mcp_config(
 }
 
 #[tauri::command]
-pub fn read_json_file(path: String) -> Result<serde_json::Value, String> {
-  read_json(&PathBuf::from(path))
+pub fn read_json_file(app: AppHandle, path: String) -> Result<serde_json::Value, String> {
+  let allowed = ensure_json_path_allowed(&app, Path::new(&path))?;
+  read_json(&allowed)
 }
 
 #[tauri::command]
-pub fn write_json_file(path: String, value: serde_json::Value) -> Result<(), String> {
-  write_json(&PathBuf::from(path), value)
+pub fn write_json_file(
+  app: AppHandle,
+  path: String,
+  value: serde_json::Value,
+) -> Result<(), String> {
+  let allowed = ensure_json_path_allowed(&app, Path::new(&path))?;
+  write_json(&allowed, value)
 }
 
 #[tauri::command]

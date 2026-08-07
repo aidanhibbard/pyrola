@@ -17,11 +17,19 @@ const metaFor = (id: string) => ({
 })
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
-  createChat: vi.fn(),
-  listChats: vi.fn(),
-  readChatMeta: vi.fn(async (_slug: string, chatId: string) => metaFor(chatId)),
-  readChatMessages: vi.fn().mockResolvedValue([]),
-  updateChatMeta: vi.fn(async (_slug: string, chatId: string, patch: Record<string, unknown>) => ({
+  createChat: vi.fn<() => Promise<unknown>>(),
+  listChats: vi.fn<() => Promise<unknown>>(),
+  readChatMeta: vi.fn<
+    (_slug: string, chatId: string) => Promise<ReturnType<typeof metaFor>>
+  >(async (_slug, chatId) => metaFor(chatId)),
+  readChatMessages: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+  updateChatMeta: vi.fn<
+    (
+      _slug: string,
+      chatId: string,
+      patch: Record<string, unknown>,
+    ) => Promise<ReturnType<typeof metaFor> & Record<string, unknown>>
+  >(async (_slug, chatId, patch) => ({
     ...metaFor(chatId),
     ...patch,
   })),

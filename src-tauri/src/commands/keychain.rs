@@ -1,8 +1,17 @@
 use keyring::Entry;
 
 const SERVICE: &str = "pyrola";
+const KEY_PREFIX: &str = "pyrola:";
+
+fn require_pyrola_key(key: &str) -> Result<(), String> {
+  if !key.starts_with(KEY_PREFIX) {
+    return Err("Keychain key must start with 'pyrola:'".to_string());
+  }
+  Ok(())
+}
 
 fn entry(key: &str) -> Result<Entry, String> {
+  require_pyrola_key(key)?;
   Entry::new(SERVICE, key).map_err(|e| e.to_string())
 }
 

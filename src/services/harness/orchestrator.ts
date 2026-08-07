@@ -53,7 +53,6 @@ import { toast } from 'vue-sonner'
 import truncateToolResult from '@/utils/truncate-tool-result'
 import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
-import { browserUnlockAll } from '@/services/pyrola/pyrola-tauri'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -698,7 +697,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
         rejectPendingQuestionsForChat(chatId)
         await killShellsForChat(chatId)
         abortSubagentsForChat(chatId)
-        await browserUnlockAll(chatId).catch(() => undefined)
         if (trailingText || assistantReasoning) {
           await persistLine(projectSlug, chatId, {
             id: assistantId,
@@ -881,7 +879,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     rejectPendingForChat(chatId)
     rejectPendingQuestionsForChat(chatId)
     setAgentShellEventEmitter(chatId, null)
-    await browserUnlockAll(chatId).catch(() => undefined)
     onEvent({
       type: 'chat-status-changed',
       projectSlug,

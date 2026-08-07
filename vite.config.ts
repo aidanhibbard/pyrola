@@ -7,10 +7,14 @@ import tailwindcss from '@tailwindcss/vite'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 // https://vite.dev/config/
+// Object form (not a callback) so vitest mergeConfig can load this file.
+const enableVueDevTools =
+  process.env.NODE_ENV !== 'production' && process.env.VITEST !== 'true'
+
 export default defineConfig({
   plugins: [
     vue(),
-    vueDevTools(),
+    ...(enableVueDevTools ? [vueDevTools()] : []),
     tailwindcss(),
     viteStaticCopy({
       targets: [
@@ -37,7 +41,7 @@ export default defineConfig({
   // https://v2.tauri.app/start/create-project/#manual-setup-tauri-cli
   server: {
     watch: {
-      // Project `.pyrola/` is runtime config (mcp.json, settings) — writing it
+      // Project `.pyrola/` is runtime config (mcp.json, settings); writing it
       // must not trigger a Vite full reload / app reboot.
       ignored: ['**/src-tauri/**', '**/.pyrola/**'],
     },

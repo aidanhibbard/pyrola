@@ -21,7 +21,6 @@ import useCommandPalette from '@/composables/use-command-palette'
 import usePyrolaLiveSync from '@/composables/use-pyrola-live-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import { useEmbeddedBrowserLayerBootstrap } from '@/composables/use-embedded-browser-layer'
 import { RouterView } from 'vue-router'
 
 type CollapsiblePanelApi = {
@@ -36,7 +35,6 @@ const RIGHT_SIDEBAR_MIN_SIZE = 20
 useFleetRegistry()
 useAppearance()
 usePyrolaLiveSync()
-useEmbeddedBrowserLayerBootstrap()
 
 const { rightSidebarOpen, setRightSidebarOpen } = useWorkbenchStore()
 const commandPalette = useCommandPalette()

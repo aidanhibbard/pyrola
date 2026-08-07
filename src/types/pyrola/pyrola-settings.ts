@@ -54,9 +54,6 @@ export type PyrolaSettings = {
   'agent.mcp.trust'?: McpTrustRecord[]
   'agent.sandbox.enabled'?: boolean
   'agent.sandbox.network'?: 'deny' | 'allow'
-  'agent.browser.enabled'?: boolean
-  'agent.browser.allowedDomains'?: string[]
-  'agent.browser.deniedDomains'?: string[]
   'fleet.maxConcurrentAgents'?: number
   'fleet.trayBackground'?: boolean
   'general.machineLabel'?: string

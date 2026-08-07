@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -8,6 +9,7 @@ use serde::Deserialize;
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::oneshot;
+use url::Url;
 use uuid::Uuid;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,8 +94,65 @@ fn build_client(request_timeout: Option<Duration>) -> Result<reqwest::Client, St
   builder.build().map_err(|e| e.to_string())
 }
 
+fn is_blocked_proxy_host(host: &str) -> bool {
+  let trimmed = host.trim().trim_matches(|c| c == '[' || c == ']');
+  if trimmed.is_empty() {
+    return true;
+  }
+
+  let lower = trimmed.to_ascii_lowercase();
+  if lower == "0.0.0.0"
+    || lower == "169.254.169.254"
+    || lower == "metadata.google.internal"
+  {
+    return true;
+  }
+
+  if let Ok(ip) = trimmed.parse::<IpAddr>() {
+    match ip {
+      IpAddr::V4(v4) => {
+        if v4.octets() == [0, 0, 0, 0] || v4.octets() == [169, 254, 169, 254] {
+          return true;
+        }
+      }
+      IpAddr::V6(v6) => {
+        // Link-local fe80::/10
+        let segments = v6.segments();
+        if segments[0] & 0xffc0 == 0xfe80 {
+          return true;
+        }
+      }
+    }
+  } else if lower.starts_with("fe80:") {
+    return true;
+  }
+
+  false
+}
+
+fn validate_proxy_url(raw: &str) -> Result<(), String> {
+  let parsed = Url::parse(raw).map_err(|error| format!("Invalid URL: {error}"))?;
+  let scheme = parsed.scheme();
+  if scheme != "http" && scheme != "https" {
+    return Err(format!("URL scheme '{scheme}' is not allowed"));
+  }
+
+  let host = parsed
+    .host_str()
+    .ok_or_else(|| "URL host is required".to_string())?;
+  if host.trim().is_empty() {
+    return Err("URL host is required".to_string());
+  }
+  if is_blocked_proxy_host(host) {
+    return Err("URL host is not allowed".to_string());
+  }
+
+  Ok(())
+}
+
 #[tauri::command]
 pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyResponse, String> {
+  validate_proxy_url(&request.url)?;
   let client = build_client(Some(BUFFERED_REQUEST_TIMEOUT))?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
   let headers = build_headers(request.headers)?;
@@ -154,6 +213,7 @@ async fn run_proxy_stream(
   on_event: Channel<HttpProxyStreamEvent>,
   cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
+  validate_proxy_url(&request.url)?;
   // No overall request timeout: streams can run for a long time once connected.
   let client = build_client(None)?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;

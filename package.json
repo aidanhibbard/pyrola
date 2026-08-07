@@ -14,7 +14,9 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
-    "ci": "run-s lint type-check build",
+    "audit:deps": "npm audit --audit-level=high",
+    "audit:rust": "cargo audit --file src-tauri/Cargo.lock",
+    "ci": "run-s lint type-check audit:deps build",
     "tauri": "tauri",
     "vp:dev": "vitepress dev docs",
     "vp:build": "vitepress build docs",
@@ -52,7 +54,7 @@
     "clsx": "^2.1.1",
     "embla-carousel-vue": "^8.6.0",
     "media-chrome": "^4.19.2",
-    "mermaid": "^11.16.0",
+    "mermaid": "^11.16.1",
     "monaco-editor": "^0.55.1",
     "motion-v": "^2.3.0",
     "nanoid": "^6.0.0",
@@ -123,6 +125,7 @@
     "@vue/runtime-vapor": "beta",
     "@vue/server-renderer": "beta",
     "@vue/shared": "beta",
-    "@vue/compat": "beta"
+    "@vue/compat": "beta",
+    "dompurify": "3.4.13"
   }
 }

@@ -14,7 +14,7 @@ See the [master plan](../.pyrola/plans/pyrola-master-plan-2026-07-15-215200/PLAN
 | 2 | Chats — streaming harness + persistence | Completed |
 | 3 | MCP runtime — connect, tools, `call_mcp_tool` | Completed |
 | 4 | Right sidebar — Plans + Studio workbench tabs | Completed |
-| 5 | IDE — Monaco, terminal, diffs, Changes, browser | Completed |
+| 5 | IDE — Monaco, terminal, diffs, Changes | Completed |
 | 6 | Fleet, pinned chats, context usage, polish | Completed |
 
 ## What's done
@@ -46,7 +46,7 @@ See the [master plan](../.pyrola/plans/pyrola-master-plan-2026-07-15-215200/PLAN
 ### Editor & workbench
 
 - Writable Monaco with multi-file sub-tabs, Cmd+S save, dirty tracking ([ide-shell](../.pyrola/plans/ide-shell-2026-07-15-215200/PLAN.md))
-- Workbench tabs: Editor, Terminal, Browser, Changes (Plan/Studio are chat modes only)
+- Workbench tabs: Editor, Terminal, Changes (Plan/Studio are chat modes only)
 - File tree context menu; markdown Edit/Split/Preview
 - Duplicate-tab dialog with never-ask-again setting
 - Informational git Changes tab ([git-informational](../.pyrola/plans/git-informational-2026-07-15-221700/PLAN.md))

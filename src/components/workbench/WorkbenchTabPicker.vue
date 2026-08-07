@@ -4,7 +4,6 @@ import { toast } from 'vue-sonner'
 import {
   FileCode,
   GitBranch,
-  Globe,
   Terminal,
 } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
@@ -39,7 +38,6 @@ const open = ref(false)
 const items = [
   { id: 'editor', label: 'Editor', icon: FileCode, requiresProject: false },
   { id: 'terminal', label: 'Terminal', icon: Terminal, requiresProject: false },
-  { id: 'browser', label: 'Browser', icon: Globe, requiresProject: false },
   { id: 'changes', label: 'Changes', icon: GitBranch, requiresProject: true },
 ] as const
 
@@ -61,9 +59,6 @@ const handleOpen = async (type: (typeof items)[number]['id']): Promise<void> => 
         break
       case 'terminal':
         await workbench.openTerminal(projectId)
-        break
-      case 'browser':
-        await workbench.openBrowser(projectId, 'https://')
         break
       case 'changes':
         if (!activeProjectId.value) {

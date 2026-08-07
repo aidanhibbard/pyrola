@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
@@ -8,10 +9,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 use super::fs::resolve_workspace_path;
+use super::paths::user_pyrola_dir;
 
 #[cfg(target_os = "macos")]
 use super::sandbox::generate_seatbelt_profile;
@@ -40,8 +41,32 @@ lazy_static::lazy_static! {
 }
 
 #[tauri::command]
-pub fn reveal_in_folder(path: String) -> Result<(), String> {
-  open::that_detached(path).map_err(|e| e.to_string())
+pub fn reveal_in_folder(app: AppHandle, path: String) -> Result<(), String> {
+  let canonical = PathBuf::from(&path)
+    .canonicalize()
+    .map_err(|error| format!("Path does not exist or cannot be resolved: {error}"))?;
+
+  let home = std::env::var("HOME")
+    .or_else(|_| std::env::var("USERPROFILE"))
+    .ok()
+    .map(PathBuf::from)
+    .and_then(|home| home.canonicalize().ok().or(Some(home)));
+
+  let user_pyrola = user_pyrola_dir(&app)?;
+  let user_pyrola_canon = user_pyrola
+    .canonicalize()
+    .unwrap_or_else(|_| user_pyrola.clone());
+
+  let under_home = home
+    .as_ref()
+    .is_some_and(|home_path| canonical.starts_with(home_path));
+  let under_pyrola = canonical.starts_with(&user_pyrola_canon);
+
+  if !under_home && !under_pyrola {
+    return Err("Path is outside allowed directories".to_string());
+  }
+
+  open::that_detached(canonical).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -157,50 +182,6 @@ pub fn shell_kill_pty(session_id: String) -> Result<(), String> {
     let _ = guard.child.kill();
   }
   Ok(())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShellRunResult {
-  pub stdout: String,
-  pub stderr: String,
-  pub exit_code: i32,
-  pub timed_out: bool,
-}
-
-#[tauri::command]
-pub async fn shell_run_command(
-  project_root: String,
-  command: String,
-  timeout_ms: Option<u64>,
-) -> Result<ShellRunResult, String> {
-  let limit = Duration::from_millis(timeout_ms.unwrap_or(30_000));
-
-  let child = Command::new("sh")
-    .arg("-c")
-    .arg(&command)
-    .current_dir(&project_root)
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .kill_on_drop(true)
-    .spawn()
-    .map_err(|e| e.to_string())?;
-
-  match timeout(limit, child.wait_with_output()).await {
-    Ok(Ok(output)) => Ok(ShellRunResult {
-      stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-      stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-      exit_code: output.status.code().unwrap_or(-1),
-      timed_out: false,
-    }),
-    Ok(Err(error)) => Err(error.to_string()),
-    Err(_) => Ok(ShellRunResult {
-      stdout: String::new(),
-      stderr: format!("Command timed out after {}ms", limit.as_millis()),
-      exit_code: -1,
-      timed_out: true,
-    }),
-  }
 }
 
 #[cfg(unix)]

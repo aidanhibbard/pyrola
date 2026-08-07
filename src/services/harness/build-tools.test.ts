@@ -49,17 +49,7 @@ vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   lspEnsureServer: vi.fn<() => Promise<unknown>>(),
   lspRequest: vi.fn<() => Promise<unknown>>(),
   mcpCallTool: vi.fn<() => Promise<unknown>>(),
-  shellRunCommand: vi.fn<() => Promise<unknown>>(),
   httpProxyRequest: vi.fn<() => Promise<unknown>>(),
-  browserStart: vi.fn<() => Promise<{ running: boolean }>>(),
-  browserStop: vi.fn<() => Promise<void>>(),
-  browserStatus: vi.fn<() => Promise<{ running: boolean }>>().mockResolvedValue({ running: false }),
-  browserSetPolicy: vi.fn<() => Promise<void>>(),
-  browserRequest: vi.fn<() => Promise<unknown>>(),
-  browserLock: vi.fn<() => Promise<{ ok: boolean }>>(),
-  browserUnlock: vi.fn<() => Promise<void>>(),
-  browserUnlockAll: vi.fn<() => Promise<number>>(),
-  browserReadArtifact: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('@/services/git/git-repo-info', () => ({

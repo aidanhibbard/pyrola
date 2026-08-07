@@ -8,8 +8,6 @@ export default (type: WorkbenchTabType): string => {
       return 'Terminal'
     case 'changes':
       return 'Changes'
-    case 'browser':
-      return 'Browser'
     case 'studio':
       return 'Studio'
     case 'plan':

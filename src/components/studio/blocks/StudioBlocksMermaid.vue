@@ -9,6 +9,13 @@ const props = defineProps<{
 const container = ref<HTMLElement | null>(null)
 const rendered = ref('')
 
+const sanitizeMermaidSvg = (svg: string): string => {
+  return svg
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<script\b[^>]*\/>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+}
+
 const renderDiagram = async (): Promise<void> => {
   const source = props.code?.trim() ?? ''
   if (!source || !container.value) {
@@ -19,7 +26,7 @@ const renderDiagram = async (): Promise<void> => {
   const id = `studio-mermaid-${Math.random().toString(36).slice(2)}`
   try {
     const { svg } = await mermaid.render(id, source)
-    rendered.value = svg
+    rendered.value = sanitizeMermaidSvg(svg)
   } catch {
     rendered.value = ''
   }

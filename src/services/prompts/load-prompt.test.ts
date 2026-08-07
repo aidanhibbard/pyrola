@@ -11,7 +11,8 @@ describe('load-prompt', () => {
 
     expect(rendered).toMatchInlineSnapshot(`
       "You are Pyrola, an AI coding agent in agent mode.
-      Project: pyrola (/tmp/pyrola)"
+      Project: pyrola (/tmp/pyrola)
+      No emojis. An emoji costs ~4 tokens; use plain text."
     `)
   })
 

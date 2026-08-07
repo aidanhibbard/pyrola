@@ -23,12 +23,6 @@ const labelFor = (capability: PermissionCapabilityKey): string => {
   if (capability === 'git.commit') return 'Git: commit'
   if (capability === 'git.checkout') return 'Git: checkout'
   if (capability === 'git.branch_create') return 'Git: create branch'
-  if (capability === 'browser.interact') return 'Browser: interact'
-  if (capability === 'browser.cdp') return 'Browser: CDP'
-  if (capability === 'browser.share') return 'Browser: share'
-  if (capability.startsWith('browser.navigate:')) {
-    return `Browser navigate: ${capability.slice('browser.navigate:'.length)}`
-  }
   if (capability.startsWith('fs.write:')) return `Write: ${capability.slice('fs.write:'.length)}`
   if (capability.startsWith('fs.delete:')) return `Delete: ${capability.slice('fs.delete:'.length)}`
   if (capability.startsWith('mcp:')) return `MCP: ${capability.slice('mcp:'.length)}`

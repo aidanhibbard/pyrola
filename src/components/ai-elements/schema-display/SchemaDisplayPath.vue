@@ -8,15 +8,35 @@ interface Props extends /* @vue-ignore */ HTMLAttributes {
   class?: HTMLAttributes['class']
 }
 
+type PathSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'param'; value: string }
+
 const props = defineProps<Props>()
 
 const { path } = useSchemaDisplayContext('SchemaDisplayPath')
 
-// Highlight path parameters
-const highlightedPath = computed(() => path.replace(
-  /\{([^}]+)\}/g,
-  '<span class="text-blue-600 dark:text-blue-400">{$1}</span>',
-))
+const pathSegments = computed((): PathSegment[] => {
+  const segments: PathSegment[] = []
+  const paramPattern = /\{([^}]+)\}/g
+  let lastIndex = 0
+  let match = paramPattern.exec(path)
+
+  while (match !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ kind: 'text', value: path.slice(lastIndex, match.index) })
+    }
+    segments.push({ kind: 'param', value: match[0] })
+    lastIndex = match.index + match[0].length
+    match = paramPattern.exec(path)
+  }
+
+  if (lastIndex < path.length) {
+    segments.push({ kind: 'text', value: path.slice(lastIndex) })
+  }
+
+  return segments
+})
 </script>
 
 <template>
@@ -25,7 +45,16 @@ const highlightedPath = computed(() => path.replace(
     v-bind="$attrs"
   >
     <slot>
-      <span v-html="highlightedPath" />
+      <template
+        v-for="(segment, index) in pathSegments"
+        :key="`${segment.kind}-${index}`"
+      >
+        <span
+          v-if="segment.kind === 'param'"
+          class="text-blue-600 dark:text-blue-400"
+        >{{ segment.value }}</span>
+        <template v-else>{{ segment.value }}</template>
+      </template>
     </slot>
   </span>
 </template>

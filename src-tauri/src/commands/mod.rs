@@ -1,4 +1,3 @@
-pub mod browser;
 pub mod chat;
 pub mod config;
 pub mod fs;
@@ -40,11 +39,6 @@ pub use mcp::{
   mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,
   mcp_status, mcp_stop,
 };
-pub use browser::{
-  browser_eval, browser_lock, browser_read_artifact, browser_request, browser_set_bounds,
-  browser_set_policy, browser_set_visible, browser_start, browser_status, browser_stop,
-  browser_unlock, browser_unlock_all,
-};
 pub use paths::{
   get_default_workspace_root, get_pyrola_dir, get_user_pyrola_dir, has_project_pyrola,
   list_project_files, list_pyrola_files,
@@ -55,7 +49,7 @@ pub use registry::{
   resolve_launch_path,
 };
 pub use shell::{
-  reveal_in_folder, shell_kill_pty, shell_kill_tracked, shell_resize_pty, shell_run_command,
-  shell_spawn_pty, shell_spawn_tracked, shell_write_pty,
+  reveal_in_folder, shell_kill_pty, shell_kill_tracked, shell_resize_pty, shell_spawn_pty,
+  shell_spawn_tracked, shell_write_pty,
 };
 pub use watch::{watch_pyrola_paths, WatchState};

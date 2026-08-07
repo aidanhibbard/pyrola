@@ -78,7 +78,6 @@ import {
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
 import fleetCounter from '@/services/harness/fleet-counter'
-import buildBrowserTools from '@/services/harness/build-browser-tools'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import withToolExamples from '@/services/harness/with-tool-examples'
 
@@ -167,8 +166,6 @@ const SUBAGENT_READ_ONLY_TOOLS = [
   'lsp',
   'diagnostics',
   'load_skill',
-  'call_mcp_tool',
-  'get_mcp_tools',
 ] as const
 
 const isSandboxSpawnError = (message: string): boolean =>
@@ -264,7 +261,6 @@ const readTerminalOutput = async (
 }
 
 const buildHarnessTools = (ctx: HarnessToolContext) => ({
-  ...buildBrowserTools(ctx),
   read_file: tool({
     description:
       'Read a file from the workspace. For image files (.png, .jpg, .jpeg, .gif, .webp, .svg), returns image metadata and optional base64 instead of plain text.',
@@ -1174,8 +1170,8 @@ const buildTools = (ctx: HarnessToolContext) => ({
           mode: 'blocking',
         },
         {
-          agentName: 'scan-browser',
-          prompt: 'List browser tool permission gates.',
+          agentName: 'scan-permissions',
+          prompt: 'List shell and MCP permission gates.',
           mode: 'background',
         },
       ],
