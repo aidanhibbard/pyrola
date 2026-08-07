@@ -20,6 +20,7 @@ import {
   parseLspCompletionItems,
   parseLspDiagnostics,
   parseLspHoverContents,
+  parseLspLocations,
   workspacePathToFileUri,
 } from '@/utils/monaco-lsp'
 import {
@@ -52,10 +53,15 @@ const emit = defineEmits<{
 const LSP_LANGUAGES = [
   'typescript',
   'javascript',
+  'vue',
   'rust',
   'python',
   'go',
   'json',
+  'yaml',
+  'markdown',
+  'html',
+  'css',
 ] as const
 
 const workbench = useWorkbenchStore()
@@ -96,7 +102,7 @@ const formatError = (error: unknown): string => {
 
 const detectLanguage = (path: string): string => {
   if (path.endsWith('.vue')) {
-    return 'html'
+    return 'vue'
   }
   if (path.endsWith('.ts') || path.endsWith('.tsx')) {
     return 'typescript'
@@ -107,16 +113,19 @@ const detectLanguage = (path: string): string => {
   if (path.endsWith('.rs')) {
     return 'rust'
   }
-  if (path.endsWith('.json')) {
+  if (path.endsWith('.json') || path.endsWith('.jsonc')) {
     return 'json'
+  }
+  if (path.endsWith('.yaml') || path.endsWith('.yml')) {
+    return 'yaml'
   }
   if (path.endsWith('.md') || path.endsWith('.markdown')) {
     return 'markdown'
   }
-  if (path.endsWith('.css')) {
+  if (path.endsWith('.css') || path.endsWith('.scss') || path.endsWith('.less')) {
     return 'css'
   }
-  if (path.endsWith('.html')) {
+  if (path.endsWith('.html') || path.endsWith('.htm')) {
     return 'html'
   }
   if (path.endsWith('.py') || path.endsWith('.pyi')) {
@@ -380,6 +389,10 @@ const resolvePathForModel = (model: monaco.editor.ITextModel): string | null =>
   pathByModel.get(model) ?? null
 
 const registerLspProviders = (): void => {
+  if (!monaco.languages.getLanguages().some((language) => language.id === 'vue')) {
+    monaco.languages.register({ id: 'vue' })
+  }
+
   for (const language of LSP_LANGUAGES) {
     if (registeredLspLanguages.has(language)) {
       continue
@@ -423,6 +436,50 @@ const registerLspProviders = (): void => {
               ),
               contents: contents.map((value) => ({ value })),
             }
+          } catch {
+            return null
+          }
+        },
+      }),
+    )
+
+    lspProviderDisposables.push(
+      monaco.languages.registerDefinitionProvider(language, {
+        provideDefinition: async (model, position) => {
+          if (!lspActive.value) {
+            return null
+          }
+
+          const path = resolvePathForModel(model)
+          const serverId = path ? getLspServerId(path) : null
+          if (!path || !serverId) {
+            return null
+          }
+
+          try {
+            await syncDocumentToLsp(path, model.getValue())
+            const result = await lspRequest(serverId, 'goToDefinition', {
+              path,
+              position: {
+                line: position.lineNumber - 1,
+                character: position.column - 1,
+              },
+            })
+
+            const locations = parseLspLocations(result)
+            if (locations.length === 0) {
+              return null
+            }
+
+            return locations.map((location) => ({
+              uri: monaco.Uri.parse(location.uri),
+              range: new monaco.Range(
+                location.range.start.line + 1,
+                location.range.start.character + 1,
+                location.range.end.line + 1,
+                location.range.end.character + 1,
+              ),
+            }))
           } catch {
             return null
           }

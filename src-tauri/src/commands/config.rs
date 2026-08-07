@@ -201,6 +201,10 @@ pub(crate) fn read_lsp_scope_configs(
   Ok((personal, project))
 }
 
+pub(crate) fn read_settings_for_lsp(app: &AppHandle) -> Result<serde_json::Value, String> {
+  read_settings_internal(app, "personal", None)
+}
+
 pub(crate) fn lsp_enabled_in_settings(
   app: &AppHandle,
   project_root: Option<&str>,
@@ -227,6 +231,47 @@ pub(crate) fn lsp_enabled_in_settings(
   }
 
   enabled
+}
+
+/// Returns true when the workspace root is trusted for project-local LSP execution.
+pub(crate) fn workspace_is_trusted(app: &AppHandle, project_root: Option<&str>) -> bool {
+  let Some(root) = project_root else {
+    return false;
+  };
+  let Ok(canonical) = std::fs::canonicalize(root) else {
+    return false;
+  };
+  let canonical_str = canonical.to_string_lossy().to_string();
+
+  let Ok(personal) = read_settings_internal(app, "personal", None) else {
+    return false;
+  };
+
+  if let Some(records) = personal.get("workspace.trust").and_then(|v| v.as_array()) {
+    for record in records {
+      let path = record
+        .get("rootPath")
+        .or_else(|| record.get("root_path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+      let trusted = record
+        .get("trusted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+      if !trusted || path.is_empty() {
+        continue;
+      }
+      if let Ok(record_canon) = std::fs::canonicalize(path) {
+        if record_canon == canonical {
+          return true;
+        }
+      } else if path == root || path == canonical_str {
+        return true;
+      }
+    }
+  }
+
+  false
 }
 
 fn read_settings_internal(

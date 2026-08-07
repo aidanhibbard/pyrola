@@ -1026,40 +1026,94 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   }),
   lsp: tool({
     description:
-      'LSP query (goToDefinition, hover, findReferences, symbols, diagnostics)',
+      'LSP query for precise code intelligence. Prefer this over grep for definitions, references, types, and symbols. Methods: goToDefinition, findReferences, hover, symbols, workspaceSymbol, diagnostics.',
     inputSchema: z.object({
-      method: z.string(),
+      method: z.enum([
+        'goToDefinition',
+        'findReferences',
+        'hover',
+        'symbols',
+        'workspaceSymbol',
+        'diagnostics',
+      ]),
       path: z.string(),
       extension: z.string().optional(),
       params: z.record(z.unknown()).optional(),
     }),
     execute: async ({ method, path, extension, params }) => {
       const ext = extension ?? path.split('.').pop() ?? ''
-      const server = await lspEnsureServer(ext).catch(() => null)
-      if (!server?.running) {
-        return { method, path, result: null, error: server?.error ?? 'LSP unavailable' }
+      const server = await lspEnsureServer(ext).catch((error: unknown) => ({
+        id: '',
+        running: false,
+        error: error instanceof Error ? error.message : 'LSP ensure failed',
+        installState: 'error',
+      }))
+      if (server.installState === 'installing') {
+        return {
+          method,
+          path,
+          result: null,
+          error: 'installing',
+          installState: 'installing',
+        }
       }
-      const result = await lspRequest(server.id, method, {
-        path,
-        ...params,
-      }).catch(() => null)
-      if (LSP_DIAGNOSTICS_METHODS.has(method)) {
-        return { method, path, diagnostics: parseLspDiagnosticItems(result), result }
+      if (!server.running) {
+        return {
+          method,
+          path,
+          result: null,
+          error: server.error ?? 'LSP unavailable',
+          installState: server.installState ?? null,
+        }
       }
-      return { method, path, result }
+      try {
+        const result = await lspRequest(server.id, method, {
+          path,
+          ...params,
+        })
+        if (LSP_DIAGNOSTICS_METHODS.has(method)) {
+          return { method, path, diagnostics: parseLspDiagnosticItems(result), result }
+        }
+        return { method, path, result }
+      } catch (error) {
+        return {
+          method,
+          path,
+          result: null,
+          error: error instanceof Error ? error.message : 'LSP request failed',
+        }
+      }
     },
   }),
   diagnostics: tool({
-    description: 'Read linter and diagnostic errors for a file',
+    description: 'Read linter and diagnostic errors for a file via LSP',
     inputSchema: z.object({
       path: z.string(),
       extension: z.string().optional(),
     }),
     execute: async ({ path, extension }) => {
       const ext = extension ?? path.split('.').pop() ?? ''
-      const server = await lspEnsureServer(ext).catch(() => null)
-      if (!server?.running) {
-        return { path, diagnostics: [], error: server?.error ?? 'LSP unavailable' }
+      const server = await lspEnsureServer(ext).catch((error: unknown) => ({
+        id: '',
+        running: false,
+        error: error instanceof Error ? error.message : 'LSP ensure failed',
+        installState: 'error' as string | null,
+      }))
+      if (server.installState === 'installing') {
+        return {
+          path,
+          diagnostics: [],
+          error: 'installing',
+          installState: 'installing',
+        }
+      }
+      if (!server.running) {
+        return {
+          path,
+          diagnostics: [],
+          error: server.error ?? 'LSP unavailable',
+          installState: server.installState ?? null,
+        }
       }
 
       const result = await lspRequest(server.id, 'diagnostics', { path }).catch(

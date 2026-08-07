@@ -27,7 +27,7 @@ Pyrola is **usable for tinkering**, not something I would trust as a daily drive
 | **Chats** | Streaming threads, modes, tool runs, persistence. The core loop works. |
 | **Harness** | Local `streamText` orchestrator with tool loop, mode allowlists, MCP, sub-agents. Real, but still evolving. |
 | **Security** | Permissions / approval gates exist and are **half-baked**. Do not treat this as a hardened sandbox. The agent can run shell and write files; policy is best-effort, not a guarantee. |
-| **Editor** | Monaco workbench with multi-file tabs, save, dirty state. Fine for light editing. No real LSP integration yet. |
+| **Editor** | Monaco workbench with multi-file tabs, save, dirty state, and managed LSP (TypeScript, Vue, and a wider auto-download corpus). |
 | **Terminal** | Present and usable for agent + human shells. |
 | **Sub-agents** | Spawnable; historically constrained (e.g. read-only drill-down). Useful for parallel investigation, not a finished multi-agent product. |
 

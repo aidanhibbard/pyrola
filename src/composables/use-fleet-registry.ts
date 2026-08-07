@@ -4,6 +4,8 @@ import type { FleetProject } from '@/types/fleet/fleet-project'
 import {
   getActiveProjectId,
   hasProjectPyrola,
+  isTauri,
+  lspPrefetchDefaults,
   registryListProjects,
   registryRemoveProject,
   registrySetActiveProject,
@@ -57,6 +59,15 @@ export default () => {
     await registrySetActiveProject(projectId)
     activeProjectId.value = projectId
     await refreshHasPyrola()
+    if (projectId && isTauri()) {
+      try {
+        await lspPrefetchDefaults()
+      } catch (error) {
+        toast.error('Failed to prepare language support', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
   }
 
   const removeProject = async (projectId: string): Promise<void> => {

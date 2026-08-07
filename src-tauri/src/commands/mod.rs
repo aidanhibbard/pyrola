@@ -7,6 +7,8 @@ pub mod grep;
 pub mod http;
 pub mod keychain;
 pub mod lsp;
+pub mod lsp_install;
+pub mod lsp_registry;
 pub mod mcp;
 pub mod paths;
 pub mod registry;
@@ -35,6 +37,7 @@ pub use grep::workspace_grep;
 pub use http::{http_proxy_request, http_proxy_stream, http_proxy_stream_cancel};
 pub use keychain::{delete_secret, get_secret, set_secret};
 pub use lsp::{lsp_ensure_server, lsp_request, lsp_status, lsp_stop_server};
+pub use lsp_install::{lsp_install_server, lsp_prefetch_defaults};
 pub use mcp::{
   mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,
   mcp_status, mcp_stop,

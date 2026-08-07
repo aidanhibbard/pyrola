@@ -59,6 +59,8 @@ export type PyrolaSettings = {
   'fleet.trayBackground'?: boolean
   'general.machineLabel'?: string
   'lsp.enabled'?: boolean
+  'lsp.autoDownload'?: boolean
+  'workspace.trust'?: Array<{ rootPath: string; trusted: boolean }>
   'chat.autoTitle'?: boolean
   'workbench.duplicateTabBehavior'?: PyrolaDuplicateTabBehavior
   'models.default'?: string

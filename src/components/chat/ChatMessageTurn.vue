@@ -97,9 +97,9 @@ const handleConfirmOpenChange = (open: boolean): void => {
       <AiElementsMessageMessageContent
         :class="[
           'max-w-full break-words whitespace-pre-wrap',
-          isEditing ? 'ring-1 ring-primary/40' : '',
+          isEditing ? 'ring-1 ring-inset ring-primary/40' : '',
           editable && !isEditing
-            ? 'cursor-pointer hover:ring-1 hover:ring-border/60'
+            ? 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-border/60'
             : '',
         ]"
         @click="handleEditClick"

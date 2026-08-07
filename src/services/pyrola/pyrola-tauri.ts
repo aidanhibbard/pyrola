@@ -544,8 +544,16 @@ export const shellSpawnTracked = (args: {
 export const shellKillTracked = (shellId: string): Promise<number> =>
   call('shell_kill_tracked', { shellId })
 
-export const lspStatus = (): Promise<Array<{ id: string; running: boolean; error?: string | null }>> =>
-  call('lsp_status')
+export type LspServerStatus = {
+  id: string
+  running: boolean
+  error?: string | null
+  source?: string | null
+  installState?: string | null
+  tier?: string | null
+}
+
+export const lspStatus = (): Promise<LspServerStatus[]> => call('lsp_status')
 
 export const lspRequest = (
   serverId: string,
@@ -556,8 +564,13 @@ export const lspRequest = (
 export const lspEnsureServer = (
   extension: string,
   projectRoot?: string | null,
-): Promise<{ id: string; running: boolean; error?: string | null }> =>
+): Promise<LspServerStatus> =>
   call('lsp_ensure_server', { extension, projectRoot: projectRoot ?? null })
 
 export const lspStopServer = (serverId: string): Promise<void> =>
   call('lsp_stop_server', { serverId })
+
+export const lspPrefetchDefaults = (): Promise<void> => call('lsp_prefetch_defaults')
+
+export const lspInstallServer = (serverId: string): Promise<void> =>
+  call('lsp_install_server', { serverId })

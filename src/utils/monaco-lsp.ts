@@ -314,16 +314,50 @@ export const parseLspCompletionItems = (
   result: unknown,
   monacoApi: typeof monaco,
 ): monaco.languages.CompletionItem[] => {
-  if (!isRecord(result)) {
-    return []
-  }
-
-  const items = Array.isArray(result) ? result : result.items
-  if (!Array.isArray(items)) {
-    return []
-  }
+  const items = Array.isArray(result)
+    ? result
+    : isRecord(result) && Array.isArray(result.items)
+      ? result.items
+      : []
 
   return items
     .map((item) => parseCompletionItem(item, monacoApi))
     .filter((item): item is monaco.languages.CompletionItem => item !== null)
+}
+
+export type LspLocationLink = {
+  uri: string
+  range: LspRange
+}
+
+export const parseLspLocations = (result: unknown): LspLocationLink[] => {
+  const items = Array.isArray(result)
+    ? result
+    : isRecord(result) && Array.isArray(result.result)
+      ? result.result
+      : result
+        ? [result]
+        : []
+
+  const locations: LspLocationLink[] = []
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue
+    }
+    const uri =
+      typeof item.uri === 'string'
+        ? item.uri
+        : typeof item.targetUri === 'string'
+          ? item.targetUri
+          : null
+    const range =
+      readRange(item.range) ??
+      readRange(item.targetSelectionRange) ??
+      readRange(item.targetRange)
+    if (!uri || !range) {
+      continue
+    }
+    locations.push({ uri, range })
+  }
+  return locations
 }

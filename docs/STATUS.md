@@ -68,7 +68,7 @@ See the [master plan](../.pyrola/plans/pyrola-master-plan-2026-07-15-215200/PLAN
 
 ## Known limitations / out of scope (v1)
 
-- **LSP** — Editor UI integration is stubbed/phased; no language-server wiring in v1.
+- **LSP**: Managed language servers with Tier A prefetch (TypeScript, Vue, JSON, YAML, Markdown), lazy installs for Python/Rust/Go and more, Monaco hover/completion/definition, and harness `lsp` / `diagnostics` tools. Project-local bins require workspace trust.
 - **Cloud sync** — No accounts or remote chat/project sync.
 - **Sub-agents** — Read-only v1 (`spawn_subagent` does not mutate files).
 - **MCP OAuth** — Full OAuth 2.1 flow not yet implemented; stdio/Bearer servers work.

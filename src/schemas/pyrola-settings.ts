@@ -51,6 +51,15 @@ export const pyrolaSettingsSchema = z
     'fleet.trayBackground': z.boolean().optional(),
     'general.machineLabel': z.string().optional(),
     'lsp.enabled': z.boolean().optional(),
+    'lsp.autoDownload': z.boolean().optional(),
+    'workspace.trust': z
+      .array(
+        z.object({
+          rootPath: z.string(),
+          trusted: z.boolean(),
+        }),
+      )
+      .optional(),
     'chat.autoTitle': z.boolean().optional(),
     'workbench.duplicateTabBehavior': duplicateTabBehaviorSchema.optional(),
     'models.default': modelRefStringSchema.optional(),
@@ -98,6 +107,8 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'fleet.maxConcurrentAgents': 4,
   'fleet.trayBackground': false,
   'lsp.enabled': true,
+  'lsp.autoDownload': true,
+  'workspace.trust': [],
   'chat.autoTitle': true,
   'workbench.duplicateTabBehavior': 'ask',
 })

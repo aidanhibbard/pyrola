@@ -11,8 +11,9 @@ use commands::{
   get_default_workspace_root, get_secret, get_user_pyrola_dir, get_pyrola_dir, git_branch_create,
   git_checkout_branch, git_commit, git_diff, git_list_branches, git_log, git_repo_info, git_status,
   has_project_pyrola, http_proxy_request, http_proxy_stream, http_proxy_stream_cancel, list_chats,
-  list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_request,
-  lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout,
+  list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_install_server,
+  lsp_prefetch_defaults, lsp_request, lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_statuses,
+  mcp_list_tools, mcp_logout,
   mcp_refresh, mcp_start, mcp_status, mcp_stop, pin_chat, read_chat_meta, read_chat_messages,
   read_json_file, read_mcp_config, read_settings, registry_add_project, open_project_at_path,
   registry_list_projects, registry_remove_project, registry_set_active_project,
@@ -159,6 +160,8 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
       lsp_request,
       lsp_ensure_server,
       lsp_stop_server,
+      lsp_prefetch_defaults,
+      lsp_install_server,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -18,7 +18,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   git_checkout: 'Checkout a git branch or ref',
   git_branch_create: 'Create a new git branch',
   git_commit: 'Stage and commit changes',
-  lsp: 'Query language server (definitions, references, diagnostics, etc.)',
+  lsp: 'Query language server (goToDefinition, findReferences, hover, symbols, workspaceSymbol, diagnostics). Prefer over grep for symbols.',
   diagnostics: 'Read linter and diagnostic errors for a file',
   run_terminal: 'Run a shell command in the project',
   terminal_output: 'Read output from a background agent shell',

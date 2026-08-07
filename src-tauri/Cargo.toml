@@ -39,6 +39,10 @@ notify = "7.0"
 base64 = "0.22"
 url = "2"
 similar = "2"
+flate2 = "1.1.9"
+tar = "0.4.46"
+which = "8.0.5"
+sha2 = "0.10.9"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
