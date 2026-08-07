@@ -423,8 +423,8 @@ const closeRunningTools = (step: AgentStep): AgentStep => ({
     tool.status === 'running'
       ? {
           ...tool,
-          status: 'error' as const,
-          result: tool.result ?? { error: 'Tool did not complete' },
+          status: 'done' as const,
+          result: tool.result ?? { stopped: true },
         }
       : tool,
   ),

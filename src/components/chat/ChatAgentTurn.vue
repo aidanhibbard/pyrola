@@ -86,9 +86,6 @@ const errorTitle = computed(() => {
   if (kind === 'timeout') {
     return 'Timed out'
   }
-  if (kind === 'aborted') {
-    return 'Stopped'
-  }
   return 'Something went wrong'
 })
 </script>
@@ -193,7 +190,7 @@ const errorTitle = computed(() => {
     </AiElementsMessageMessage>
 
     <Alert
-      v-if="turn.error"
+      v-if="turn.error && turn.error.kind !== 'aborted'"
       variant="destructive"
       class="max-w-xl"
     >
@@ -201,7 +198,6 @@ const errorTitle = computed(() => {
       <AlertDescription class="flex flex-col gap-3">
         <span>{{ turn.error.message }}</span>
         <Button
-          v-if="turn.error.kind !== 'aborted'"
           type="button"
           variant="outline"
           size="sm"

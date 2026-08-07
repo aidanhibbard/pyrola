@@ -358,6 +358,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     if (event.type === 'turn-aborted') {
       status.value = 'ready'
       session.clearPendingQuestion()
+      session.finishAgentTurn()
     }
   }
 
@@ -431,15 +432,20 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       await fleetSidebar.refreshSlug(options.projectSlug)
     } catch (err) {
       const aborted = controller.signal.aborted
+      if (aborted) {
+        status.value = 'ready'
+        session.finishAgentTurn()
+        await fleetSidebar.refreshSlug(options.projectSlug)
+        return
+      }
       error.value = err instanceof Error ? err.message : 'Unknown error'
       status.value = 'error'
       session.finishAgentTurn()
-      if (!aborted) {
-        applyTurnEndAttention('error')
-        toast.error('Agent resume failed', {
-          description: error.value,
-        })
-      }
+      applyTurnEndAttention('error')
+      toast.error('Agent resume failed', {
+        description: error.value,
+      })
+      await fleetSidebar.refreshSlug(options.projectSlug)
     } finally {
       abortController.value = null
     }
@@ -594,27 +600,30 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         err instanceof Error &&
         (err.name === 'TimeoutError' || /timeout/i.test(err.message))
       const message = err instanceof Error ? err.message : 'Unknown error'
+      if (aborted) {
+        status.value = 'ready'
+        session.finishAgentTurn()
+        await fleetSidebar.refreshSlug(options.projectSlug)
+        return
+      }
       error.value = message
       status.value = 'error'
       session.setAgentTurnError({
-        kind: timedOut ? 'timeout' : aborted ? 'aborted' : 'error',
+        kind: timedOut ? 'timeout' : 'error',
         message: timedOut
           ? 'The model took too long to respond.'
-          : aborted
-            ? 'The run was stopped.'
-            : message.includes('No output generated')
-              ? 'The model returned an empty response. Check your API key and model ID in Settings.'
-              : message,
+          : message.includes('No output generated')
+            ? 'The model returned an empty response. Check your API key and model ID in Settings.'
+            : message,
       })
       session.finishAgentTurn()
-      if (!aborted) {
-        applyTurnEndAttention('error')
-        toast.error('Agent run failed', {
-          description: error.value.includes('No output generated')
-            ? 'The model returned an empty response. Check your Gateway API key and model ID in Settings.'
-            : error.value,
-        })
-      }
+      applyTurnEndAttention('error')
+      toast.error('Agent run failed', {
+        description: error.value.includes('No output generated')
+          ? 'The model returned an empty response. Check your Gateway API key and model ID in Settings.'
+          : error.value,
+      })
+      await fleetSidebar.refreshSlug(options.projectSlug)
     } finally {
       contextBudgetSync.setDraftMentions([])
       abortController.value = null
@@ -703,11 +712,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   const stop = async (): Promise<void> => {
     abortController.value?.abort()
     abortSubagentsForChat(options.chatId)
-    session.setAgentTurnError({
-      kind: 'aborted',
-      message: 'The run was stopped.',
-    })
     status.value = 'ready'
+    session.finishAgentTurn()
     try {
       await killShellsForChat(options.chatId)
     } catch (stopError) {

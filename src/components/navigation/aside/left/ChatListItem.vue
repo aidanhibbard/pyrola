@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { CircleAlert, CircleCheck, GitFork, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
+import { CircleAlert, GitFork, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
 import type { FleetSidebarChat } from '@/types/fleet/fleet-sidebar-chat'
 import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import {
@@ -69,21 +69,40 @@ const isPinned = computed(() =>
   ),
 )
 
+const liveMeta = computed(() => {
+  const meta = chatStore.meta.value
+  if (!meta) {
+    return null
+  }
+  if (meta.id !== props.chat.id || meta.projectSlug !== props.projectSlug) {
+    return null
+  }
+  return meta
+})
+
+const displayStatus = computed(
+  () => liveMeta.value?.status ?? props.chat.status,
+)
+
+const displayAttention = computed(
+  () => liveMeta.value?.attention ?? props.chat.attention ?? null,
+)
+
 const statusLabel = computed((): string | null => {
-  if (props.chat.attention === 'needs_approval') {
+  if (displayStatus.value === 'running') {
+    return 'Running'
+  }
+  if (displayAttention.value === 'needs_approval') {
     return 'Needs approval'
   }
-  if (props.chat.attention === 'needs_input') {
+  if (displayAttention.value === 'needs_input') {
     return 'Needs input'
   }
-  if (props.chat.attention === 'completed') {
+  if (displayAttention.value === 'completed') {
     return 'Done'
   }
-  if (props.chat.attention === 'error') {
+  if (displayAttention.value === 'error') {
     return 'Error'
-  }
-  if (props.chat.status === 'running') {
-    return 'Running'
   }
   return null
 })
@@ -211,7 +230,7 @@ watch(
       <SidebarMenuSubButton
         as="button"
         type="button"
-        class="h-8 w-full min-w-0 gap-2 px-2"
+        class="h-8 w-full min-w-0 gap-2 overflow-visible px-2"
         :title="statusLabel ?? props.chat.title"
         @click="openChat"
       >
@@ -219,25 +238,25 @@ watch(
           {{ chat.title }}
         </span>
         <NavigationAsideLeftChatRunningDots
-          v-if="chat.status === 'running' && !chat.attention"
+          v-if="displayStatus === 'running'"
         />
         <ShieldAlert
-          v-else-if="chat.attention === 'needs_approval'"
+          v-else-if="displayAttention === 'needs_approval'"
           class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
           aria-label="Needs approval"
         />
         <MessageCircleQuestion
-          v-else-if="chat.attention === 'needs_input'"
+          v-else-if="displayAttention === 'needs_input'"
           class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
           aria-label="Needs input"
         />
-        <CircleCheck
-          v-else-if="chat.attention === 'completed'"
-          class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+        <span
+          v-else-if="displayAttention === 'completed'"
+          class="size-1.5 shrink-0 rounded-full bg-[#D4C1EC]"
           aria-label="Done"
         />
         <CircleAlert
-          v-else-if="chat.attention === 'error'"
+          v-else-if="displayAttention === 'error'"
           class="size-3.5 shrink-0 text-destructive"
           aria-label="Error"
         />
