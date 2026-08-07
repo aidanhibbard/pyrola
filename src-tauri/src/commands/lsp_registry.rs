@@ -55,7 +55,6 @@ pub struct BuiltinLspSpec {
   pub install: LspInstallKind,
   pub npm: Option<NpmInstallSpec>,
   pub github: Option<GithubReleaseSpec>,
-  #[allow(dead_code)]
   pub root_markers: &'static [&'static str],
   pub requires_trust: bool,
 }
@@ -93,6 +92,70 @@ pub fn language_id_for_extension(extension: &str) -> String {
     "ts" | "tsx" => "typescript".to_string(),
     "js" | "jsx" | "mjs" | "cjs" | "mts" | "cts" => "javascript".to_string(),
     other => other.to_string(),
+  }
+}
+
+fn marker_name_matches(pattern: &str, file_name: &str) -> bool {
+  if !pattern.contains('*') {
+    return pattern == file_name;
+  }
+  let parts: Vec<&str> = pattern.split('*').collect();
+  if parts.len() == 2 {
+    let (prefix, suffix) = (parts[0], parts[1]);
+    return file_name.starts_with(prefix)
+      && file_name.ends_with(suffix)
+      && file_name.len() >= prefix.len() + suffix.len();
+  }
+  false
+}
+
+/// Lower is better. Used to break ties when multiple servers claim the same extension.
+///
+/// Specialized project markers (e.g. `deno.json`) outrank generic ones (`package.json`)
+/// so Deno projects do not get the TypeScript server and vice versa.
+pub fn root_marker_score(workspace_root: Option<&std::path::Path>, spec: &BuiltinLspSpec) -> i32 {
+  let Some(root) = workspace_root else {
+    return if spec.root_markers.is_empty() { 100 } else { 500 };
+  };
+  if spec.root_markers.is_empty() {
+    return 100;
+  }
+  let mut best: Option<i32> = None;
+  for marker in spec.root_markers {
+    let matched = if marker.contains('*') {
+      std::fs::read_dir(root)
+        .ok()
+        .map(|entries| {
+          entries.flatten().any(|entry| {
+            entry
+              .file_name()
+              .to_str()
+              .map(|name| marker_name_matches(marker, name))
+              .unwrap_or(false)
+          })
+        })
+        .unwrap_or(false)
+    } else {
+      root.join(marker).exists()
+    };
+    if !matched {
+      continue;
+    }
+    let specificity = match *marker {
+      "package.json" => 50,
+      _ => 0,
+    };
+    best = Some(best.map_or(specificity, |current| current.min(specificity)));
+  }
+  best.unwrap_or(1000)
+}
+
+pub fn tier_rank(tier: LspTier) -> i32 {
+  match tier {
+    LspTier::A => 0,
+    LspTier::B => 1,
+    LspTier::C => 2,
+    LspTier::D => 3,
   }
 }
 
@@ -756,4 +819,51 @@ pub fn builtin_server_map() -> HashMap<String, (Vec<String>, Vec<String>, serde_
     map.insert(spec.id.to_string(), (command, extensions, initialization));
   }
   map
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::fs;
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  fn temp_dir(label: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .map(|d| d.as_nanos())
+      .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("pyrola-lsp-registry-{label}-{nanos}"));
+    fs::create_dir_all(&dir).unwrap();
+    dir
+  }
+
+  #[test]
+  fn root_marker_score_prefers_deno_json_over_package_json() {
+    let dir = temp_dir("deno");
+    fs::write(dir.join("package.json"), "{}").unwrap();
+    fs::write(dir.join("deno.json"), "{}").unwrap();
+
+    let typescript = builtin_spec_by_id("typescript").unwrap();
+    let deno = builtin_spec_by_id("deno").unwrap();
+
+    assert!(root_marker_score(Some(&dir), deno) < root_marker_score(Some(&dir), typescript));
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn root_marker_score_prefers_typescript_without_deno_json() {
+    let dir = temp_dir("node");
+    fs::write(dir.join("package.json"), "{}").unwrap();
+
+    let typescript = builtin_spec_by_id("typescript").unwrap();
+    let deno = builtin_spec_by_id("deno").unwrap();
+
+    assert!(root_marker_score(Some(&dir), typescript) < root_marker_score(Some(&dir), deno));
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn tier_rank_orders_a_before_c() {
+    assert!(tier_rank(LspTier::A) < tier_rank(LspTier::C));
+  }
 }

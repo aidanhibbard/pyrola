@@ -256,6 +256,7 @@ watch(
             :subagents-by-tool-call-id="subagentsByToolCallId"
             :subagents-by-id="subagentsById"
             @retry="emit('retry')"
+            @stop-subagent="emit('stopSubagent', $event)"
           />
         </MessageScrollerItem>
         <ChatQuestionCard

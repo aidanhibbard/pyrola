@@ -18,7 +18,7 @@ use super::lsp_install::{
 };
 use super::lsp_registry::{
   allowlisted_lsp_basenames, builtin_server_map, builtin_spec_by_id, language_id_for_extension,
-  LspTier,
+  root_marker_score, tier_rank, LspInstallKind, LspTier,
 };
 use super::registry::{get_active_project, registry_list_projects};
 
@@ -57,6 +57,7 @@ struct LspProcess {
   stdin: ChildStdin,
   workspace_root: String,
   open_documents: HashMap<String, i32>,
+  diagnostics_by_uri: HashMap<String, serde_json::Value>,
   pending: Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>,
   next_id: Mutex<u64>,
 }
@@ -251,14 +252,71 @@ fn extension_matches(entry: &LspServerEntry, extension: &str) -> bool {
   })
 }
 
+fn server_binary_available(app: &AppHandle, server_id: &str, entry: &LspServerEntry) -> bool {
+  if let Some(spec) = builtin_spec_by_id(server_id) {
+    if managed_bin_path(app, spec).is_some() {
+      return true;
+    }
+  }
+  let Some(program) = entry.command.first() else {
+    return false;
+  };
+  if is_absolute_program(program) {
+    return Path::new(program).is_file();
+  }
+  which::which(program).is_ok()
+}
+
 fn find_server_for_extension(
+  app: &AppHandle,
   servers: &HashMap<String, LspServerEntry>,
   extension: &str,
+  workspace_root: Option<&str>,
 ) -> Option<(String, LspServerEntry)> {
-  servers
+  let root_path = workspace_root.map(Path::new);
+  let mut candidates: Vec<(String, LspServerEntry)> = servers
     .iter()
-    .find(|(_, entry)| extension_matches(entry, extension))
+    .filter(|(_, entry)| extension_matches(entry, extension))
     .map(|(id, entry)| (id.clone(), entry.clone()))
+    .collect();
+
+  if candidates.is_empty() {
+    return None;
+  }
+
+  candidates.sort_by(|(id_a, entry_a), (id_b, entry_b)| {
+    let spec_a = builtin_spec_by_id(id_a);
+    let spec_b = builtin_spec_by_id(id_b);
+
+    let marker_a = spec_a
+      .map(|spec| root_marker_score(root_path, spec))
+      .unwrap_or(100);
+    let marker_b = spec_b
+      .map(|spec| root_marker_score(root_path, spec))
+      .unwrap_or(100);
+
+    let tier_a = spec_a.map(|spec| tier_rank(spec.tier)).unwrap_or(99);
+    let tier_b = spec_b.map(|spec| tier_rank(spec.tier)).unwrap_or(99);
+
+    let available_a = if server_binary_available(app, id_a, entry_a) {
+      0
+    } else {
+      1
+    };
+    let available_b = if server_binary_available(app, id_b, entry_b) {
+      0
+    } else {
+      1
+    };
+
+    marker_a
+      .cmp(&marker_b)
+      .then(tier_a.cmp(&tier_b))
+      .then(available_a.cmp(&available_b))
+      .then(id_a.cmp(id_b))
+  });
+
+  candidates.into_iter().next()
 }
 
 fn active_project_root(app: &AppHandle) -> Option<String> {
@@ -429,7 +487,16 @@ fn resolve_lsp_command(
   }
 
   Err(format!(
-    "LSP server '{server_id}' is not installed yet. Enable lsp.autoDownload or install the binary."
+    "LSP server '{server_id}' is not installed yet. {}",
+    match builtin_spec_by_id(server_id).map(|spec| spec.install) {
+      Some(LspInstallKind::ToolchainPath) => {
+        format!("Install `{program}` on PATH, or configure lsp.servers.{server_id}.command.")
+      }
+      Some(LspInstallKind::None) => {
+        "This server is project-local. Trust the workspace and install it there.".to_string()
+      }
+      _ => "Enable lsp.autoDownload or install the binary.".to_string(),
+    }
   ))
 }
 
@@ -640,9 +707,13 @@ async fn json_rpc_request(
     let message = error
       .get("message")
       .and_then(|value| value.as_str())
-      .unwrap_or("LSP request failed")
-      .to_string();
-    return Err(message);
+      .unwrap_or("LSP request failed");
+    let code = error
+      .get("code")
+      .and_then(|value| value.as_i64())
+      .map(|code| format!(" (code {code})"))
+      .unwrap_or_default();
+    return Err(format!("{message}{code}"));
   }
 
   Ok(response.get("result").cloned().unwrap_or(serde_json::Value::Null))
@@ -719,6 +790,12 @@ fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String, app: AppHand
               .get("diagnostics")
               .cloned()
               .unwrap_or_else(|| serde_json::json!([]));
+            {
+              let mut guard = process.lock().await;
+              guard
+                .diagnostics_by_uri
+                .insert(uri.clone(), diagnostics.clone());
+            }
             let payload = LspDiagnosticsEvent {
               uri,
               diagnostics,
@@ -908,6 +985,7 @@ async fn close_document(process: &Mutex<LspProcess>, uri: &str) -> Result<(), St
 
   let mut guard = process.lock().await;
   guard.open_documents.remove(uri);
+  guard.diagnostics_by_uri.remove(uri);
   Ok(())
 }
 
@@ -949,6 +1027,7 @@ async fn start_server(
     stdin,
     workspace_root: workspace_root.clone(),
     open_documents: HashMap::new(),
+    diagnostics_by_uri: HashMap::new(),
     pending: Mutex::new(HashMap::new()),
     next_id: Mutex::new(0),
   }));
@@ -1089,15 +1168,19 @@ async fn ensure_running_server(
   project_root: Option<String>,
 ) -> Result<LspServerStatus, String> {
   let servers = load_effective_servers(app).await?;
-  let (server_id, entry) = find_server_for_extension(&servers, extension)
-    .ok_or_else(|| format!("No LSP server configured for extension: {extension}"))?;
+
+  let workspace_root = project_root
+    .or_else(|| active_project_root(app))
+    .or_else(|| Some(super::paths::get_default_workspace_root()))
+    .ok_or_else(|| "No active workspace for LSP".to_string())?;
+
+  let (server_id, entry) =
+    find_server_for_extension(app, &servers, extension, Some(workspace_root.as_str()))
+      .ok_or_else(|| format!("No LSP server configured for extension: {extension}"))?;
 
   if let Some(spec) = builtin_spec_by_id(&server_id) {
     if spec.requires_trust {
-      let root = project_root
-        .clone()
-        .or_else(|| active_project_root(app));
-      if !workspace_is_trusted(app, root.as_deref()) {
+      if !workspace_is_trusted(app, Some(workspace_root.as_str())) {
         return Ok(LspServerStatus {
           id: server_id,
           running: false,
@@ -1109,11 +1192,6 @@ async fn ensure_running_server(
       }
     }
   }
-
-  let workspace_root = project_root
-    .or_else(|| active_project_root(app))
-    .or_else(|| Some(super::paths::get_default_workspace_root()))
-    .ok_or_else(|| "No active workspace for LSP".to_string())?;
 
   let tier = builtin_spec_by_id(&server_id).map(|s| match s.tier {
     LspTier::A => "A".to_string(),
@@ -1337,6 +1415,55 @@ pub async fn lsp_request(
   if lsp_method_is_notification(&method) {
     send_notification(&process, &method, lsp_params).await?;
     return Ok(serde_json::Value::Null);
+  }
+
+  if method == "textDocument/diagnostic" {
+    let uri = lsp_params
+      .get("textDocument")
+      .and_then(|text_document| text_document.get("uri"))
+      .and_then(|value| value.as_str())
+      .map(str::to_string);
+
+    if let Some(uri) = uri.as_ref() {
+      for _ in 0..12 {
+        {
+          let guard = process.lock().await;
+          if let Some(items) = guard.diagnostics_by_uri.get(uri) {
+            return Ok(serde_json::json!({
+              "kind": "full",
+              "items": items,
+            }));
+          }
+        }
+        sleep(Duration::from_millis(50)).await;
+      }
+    }
+
+    match json_rpc_request(&process, &method, lsp_params).await {
+      Ok(result) => return Ok(result),
+      Err(pull_error) => {
+        if let Some(uri) = uri.as_ref() {
+          let guard = process.lock().await;
+          if let Some(items) = guard.diagnostics_by_uri.get(uri) {
+            return Ok(serde_json::json!({
+              "kind": "full",
+              "items": items,
+            }));
+          }
+        }
+        let lower = pull_error.to_ascii_lowercase();
+        if lower.contains("unhandled method")
+          || lower.contains("method not found")
+          || lower.contains("code -32601")
+        {
+          return Ok(serde_json::json!({
+            "kind": "full",
+            "items": [],
+          }));
+        }
+        return Err(pull_error);
+      }
+    }
   }
 
   json_rpc_request(&process, &method, lsp_params).await

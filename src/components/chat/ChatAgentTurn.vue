@@ -34,6 +34,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   retry: []
+  stopSubagent: [subagentId: string]
 }>()
 
 const isStreaming = computed(
@@ -144,6 +145,7 @@ const errorTitle = computed(() => {
         <ChatSubAgentTurn
           v-if="segment.type === 'subagent'"
           :subagent="resolveSubagent(segment.run)"
+          @stop-subagent="emit('stopSubagent', $event)"
         />
         <ChatToolRun
           v-else-if="segment.tools.length === 1"
