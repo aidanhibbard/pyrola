@@ -166,6 +166,7 @@ export type McpToolInfo = {
   name: string
   description?: string | null
   inputSchema?: Record<string, unknown> | null
+  meta?: Record<string, unknown> | null
 }
 
 export type McpServerState = {

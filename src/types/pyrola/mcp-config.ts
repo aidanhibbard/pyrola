@@ -34,4 +34,5 @@ export type McpToolDescriptor = {
   name: string
   description?: string
   inputSchema?: Record<string, unknown>
+  meta?: Record<string, unknown>
 }

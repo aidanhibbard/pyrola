@@ -6,6 +6,7 @@ import {
 } from '@/services/harness/gate-tool-permission'
 import { browserNavigateCapability } from '@/services/harness/permission-policy'
 import { toModelOutputWithImageParts } from '@/services/harness/tool-result-image-parts'
+import withToolExamples from '@/services/harness/with-tool-examples'
 import {
   browserLock,
   browserRequest,
@@ -100,10 +101,13 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_navigate: tool({
-      description: `Open or navigate a tab in the shared browser. ${perceptionNote(vision)}`,
+      description: withToolExamples(
+        `Open or navigate a tab in the shared browser. ${perceptionNote(vision)}`,
+        [{ url: 'https://example.com' }],
+      ),
       inputSchema: z.object({
-        url: z.string(),
-        tabId: z.string().optional(),
+        url: z.string().describe('Absolute URL to open'),
+        tabId: z.string().optional().describe('Existing tab id; omit to open a new tab'),
       }),
       execute: async ({ url, tabId }, { toolCallId }) => {
         const host = hostFromUrl(url)
@@ -125,11 +129,16 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_lock: tool({
-      description:
+      description: withToolExamples(
         'Lock or unlock a browser tab for this chat. Required before interact tools. Fail-fast if another chat holds the lock.',
+        [
+          { action: 'lock', tabId: 'tab_1' },
+          { action: 'unlock', tabId: 'tab_1' },
+        ],
+      ),
       inputSchema: z.object({
-        action: z.enum(['lock', 'unlock']),
-        tabId: z.string(),
+        action: z.enum(['lock', 'unlock']).describe('Acquire or release the chat lock'),
+        tabId: z.string().describe('Tab id from browser_tabs or navigate'),
       }),
       execute: async ({ action, tabId }) => {
         await ensureBrowser(ctx)
@@ -142,9 +151,12 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_snapshot: tool({
-      description: `Accessibility snapshot with opaque refs for the tab. ${perceptionNote(vision)}`,
+      description: withToolExamples(
+        `Accessibility snapshot with opaque refs for the tab. ${perceptionNote(vision)}`,
+        [{ tabId: 'tab_1' }],
+      ),
       inputSchema: z.object({
-        tabId: z.string(),
+        tabId: z.string().describe('Tab to snapshot'),
       }),
       execute: async ({ tabId }) => req(ctx, 'snapshot', { tabId }),
     }),
@@ -188,10 +200,12 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_click: tool({
-      description: 'Click an element by snapshot ref. Requires tab lock.',
+      description: withToolExamples('Click an element by snapshot ref. Requires tab lock.', [
+        { tabId: 'tab_1', ref: 'e12' },
+      ]),
       inputSchema: z.object({
-        tabId: z.string(),
-        ref: z.string(),
+        tabId: z.string().describe('Locked tab id'),
+        ref: z.string().describe('Opaque ref from browser_snapshot'),
       }),
       execute: async ({ tabId, ref }, { toolCallId }) => {
         const allowed = await gateToolPermission({
@@ -234,11 +248,13 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_type: tool({
-      description: 'Type text into an element by ref. Requires tab lock.',
+      description: withToolExamples('Type text into an element by ref. Requires tab lock.', [
+        { tabId: 'tab_1', ref: 'e8', text: 'hello@example.com' },
+      ]),
       inputSchema: z.object({
-        tabId: z.string(),
-        ref: z.string(),
-        text: z.string(),
+        tabId: z.string().describe('Locked tab id'),
+        ref: z.string().describe('Opaque ref from browser_snapshot'),
+        text: z.string().describe('Text to type'),
       }),
       execute: async ({ tabId, ref, text }, { toolCallId }) => {
         const allowed = await gateToolPermission({
@@ -258,11 +274,13 @@ export default (ctx: BrowserToolContext) => {
     }),
 
     browser_fill: tool({
-      description: 'Fill an input by ref (replace value). Requires tab lock.',
+      description: withToolExamples('Fill an input by ref (replace value). Requires tab lock.', [
+        { tabId: 'tab_1', ref: 'e8', value: 'hello@example.com' },
+      ]),
       inputSchema: z.object({
-        tabId: z.string(),
-        ref: z.string(),
-        value: z.string(),
+        tabId: z.string().describe('Locked tab id'),
+        ref: z.string().describe('Opaque ref from browser_snapshot'),
+        value: z.string().describe('Replacement input value'),
       }),
       execute: async ({ tabId, ref, value }, { toolCallId }) => {
         const allowed = await gateToolPermission({

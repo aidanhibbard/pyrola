@@ -80,6 +80,7 @@ import {
 import fleetCounter from '@/services/harness/fleet-counter'
 import buildBrowserTools from '@/services/harness/build-browser-tools'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
+import withToolExamples from '@/services/harness/with-tool-examples'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -268,10 +269,10 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     description:
       'Read a file from the workspace. For image files (.png, .jpg, .jpeg, .gif, .webp, .svg), returns image metadata and optional base64 instead of plain text.',
     inputSchema: z.object({
-      path: z.string(),
-      offset: z.number().optional(),
-      limit: z.number().optional(),
-      include_base64: z.boolean().optional(),
+      path: z.string().describe('Workspace-relative file path'),
+      offset: z.number().optional().describe('1-based start line'),
+      limit: z.number().optional().describe('Max lines to return'),
+      include_base64: z.boolean().optional().describe('Include base64 for images'),
     }),
     execute: async ({ path, offset, limit, include_base64 }) => {
       const result = await fsReadFile({
@@ -298,7 +299,9 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   }),
   list_dir: tool({
     description: 'List a directory',
-    inputSchema: z.object({ path: z.string().default('.') }),
+    inputSchema: z.object({
+      path: z.string().default('.').describe('Workspace-relative directory path'),
+    }),
     execute: async ({ path }) => fsListDir(ctx.projectRoot, path),
   }),
   grep: tool({
@@ -489,8 +492,16 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   write_file: tool({
-    description: 'Write a file (requires approval)',
-    inputSchema: z.object({ path: z.string(), content: z.string() }),
+    description: withToolExamples('Create or overwrite a file (requires approval). Prefer edit_file for small changes.', [
+      {
+        path: 'src/utils/format-date.ts',
+        content: "export default (value: Date): string => value.toISOString()\n",
+      },
+    ]),
+    inputSchema: z.object({
+      path: z.string().describe('Workspace-relative file path'),
+      content: z.string().describe('Full file contents to write'),
+    }),
     execute: async ({ path, content }, { toolCallId }) => {
       const diffs = mapDiffs(
         await fsStagePreviewWrite({ projectRoot: ctx.projectRoot, path, content }),
@@ -514,11 +525,20 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   edit_file: tool({
-    description: 'Edit a file with exact string replacement',
+    description: withToolExamples(
+      'Edit a file with exact string replacement. old_string must match the file uniquely.',
+      [
+        {
+          path: 'src/services/harness/tool-catalog.ts',
+          old_string: "edit_file: 'Edit a file with search/replace',",
+          new_string: "edit_file: 'Edit a file with exact string replacement',",
+        },
+      ],
+    ),
     inputSchema: z.object({
-      path: z.string(),
-      old_string: z.string(),
-      new_string: z.string(),
+      path: z.string().describe('Workspace-relative file path'),
+      old_string: z.string().describe('Exact text to find (must be unique in the file)'),
+      new_string: z.string().describe('Replacement text'),
     }),
     execute: async ({ path, old_string, new_string }, { toolCallId }) => {
       const replacements = [{ oldString: old_string, newString: new_string }]
@@ -552,9 +572,18 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   apply_patch: tool({
-    description:
+    description: withToolExamples(
       'Apply an OpenCode-style patch (NOT git diff). Use headers like *** Update File: path/to/file.ts with +/- hunks.',
-    inputSchema: z.object({ patch: z.string() }),
+      [
+        {
+          patch:
+            '*** Update File: src/utils/hello.ts\n@@\n-export const hello = () => "hi"\n+export const hello = () => "hello"\n',
+        },
+      ],
+    ),
+    inputSchema: z.object({
+      patch: z.string().describe('OpenCode-style multi-file patch text'),
+    }),
     execute: async ({ patch }, { toolCallId }) => {
       const diffs = mapDiffs(
         await fsStagePreviewApplyPatch({ projectRoot: ctx.projectRoot, patch }),
@@ -579,11 +608,28 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   call_mcp_tool: tool({
-    description: 'Call an MCP tool on a running server',
+    description: withToolExamples(
+      'Call an MCP tool on a running trusted server. Use get_mcp_tools first for inputSchema and inputExamples.',
+      [
+        {
+          serverId: 'nuxt-docs',
+          tool: 'get-page',
+          args: { path: '/getting-started/installation' },
+        },
+        {
+          serverId: 'shadcn',
+          tool: 'search_items_in_registries',
+          args: { registries: ['@shadcn'], query: 'button' },
+        },
+      ],
+    ),
     inputSchema: z.object({
-      serverId: z.string(),
-      tool: z.string(),
-      args: z.record(z.unknown()).default({}),
+      serverId: z.string().describe('MCP server id from config / get_mcp_tools'),
+      tool: z.string().describe('Tool name from that server'),
+      args: z
+        .record(z.unknown())
+        .default({})
+        .describe('Arguments matching the tool inputSchema'),
     }),
     execute: async ({ serverId, tool: toolName, args }, { toolCallId }) => {
       if (!isMcpTrusted(ctx.settings, serverId, sessionTrusts)) {
@@ -608,7 +654,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   }),
   get_mcp_tools: tool({
     description:
-      'List configured MCP servers and their available tools. Call this before call_mcp_tool when unsure what MCP capabilities exist.',
+      'List configured MCP servers and their tools (name, description, inputSchema, inputExamples). Call before call_mcp_tool when unsure. No arguments.',
     inputSchema: z.object({}),
     execute: async () => {
       const personal = migrateMcpConfig(await readMcpConfig('personal', null))
@@ -625,10 +671,21 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
               scope: server.scope,
               status: state.status,
               error: state.error ?? null,
-              tools: state.tools.map((item) => ({
-                name: item.name,
-                description: item.description ?? '',
-              })),
+              tools: state.tools.map((item) => {
+                const meta = item.meta ?? null
+                const inputExamples =
+                  meta &&
+                  typeof meta === 'object' &&
+                  'inputExamples' in meta
+                    ? meta.inputExamples
+                    : null
+                return {
+                  name: item.name,
+                  description: item.description ?? '',
+                  inputSchema: item.inputSchema ?? null,
+                  inputExamples: inputExamples ?? null,
+                }
+              }),
             }
           } catch (error) {
             return {
@@ -685,11 +742,19 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   create_plan: tool({
-    description: 'Create a plan file',
+    description: withToolExamples('Create a plan file under .pyrola/plans/.', [
+      {
+        title: 'Add harness tool examples',
+        body: '## Goal\nSurface usage examples on high-friction tools.\n',
+        todos: [
+          { id: 'helper', content: 'Add with-tool-examples helper', status: 'pending' },
+        ],
+      },
+    ]),
     inputSchema: z.object({
-      title: z.string(),
-      body: z.string(),
-      todos: z.array(planTodoItemSchema).optional(),
+      title: z.string().describe('Plan title'),
+      body: z.string().describe('Markdown plan body'),
+      todos: z.array(planTodoItemSchema).optional().describe('Initial todo items'),
     }),
     execute: async ({ title, body, todos }) => {
       const planTodos = todos ?? []
@@ -704,14 +769,32 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   update_plan_todo: tool({
-    description: 'Update plan todos',
+    description: withToolExamples('Replace the todos array in an existing plan file.', [
+      {
+        planPath: '.pyrola/plans/harness-tool-examples-2026-08-06-221900/PLAN.md',
+        todos: [
+          {
+            id: 'helper',
+            content: 'Add with-tool-examples helper',
+            status: 'completed',
+          },
+          {
+            id: 'builtin-examples',
+            content: 'Add examples to high-friction tools',
+            status: 'in_progress',
+          },
+        ],
+      },
+    ]),
     inputSchema: z.object({
-      planPath: z.string(),
+      planPath: z.string().describe('Path to PLAN.md'),
       todos: z.array(
         z.object({
-          id: z.string(),
-          content: z.string(),
-          status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+          id: z.string().describe('Stable todo id'),
+          content: z.string().describe('Todo text'),
+          status: z
+            .enum(['pending', 'in_progress', 'completed', 'cancelled'])
+            .describe('Todo status'),
         }),
       ),
     }),
@@ -733,12 +816,26 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   write_studio_artifact: tool({
-    description:
-      'Publish a Comark studio artifact to .pyrola/studio/<slug>/index.md. Load skill studio first. Optional data sidecar writes data.json.',
+    description: withToolExamples(
+      'Publish a Comark studio artifact to .pyrola/studio/<slug>/index.md. Load skill studio first. Optional data sidecar writes data.json. Never use HTML.',
+      [
+        {
+          slug: 'launch-brief',
+          content:
+            '---\ntitle: Launch brief\n---\n\n# Launch brief\n\nShort prose artifact.\n',
+        },
+        {
+          slug: 'metrics-dashboard',
+          content:
+            '---\ntitle: Metrics\n---\n\n# Metrics\n\n```table\n| Metric | Value |\n| --- | --- |\n| Users | 1200 |\n```\n',
+          data: { users: 1200 },
+        },
+      ],
+    ),
     inputSchema: z.object({
-      slug: z.string(),
-      content: z.string(),
-      data: z.record(z.unknown()).optional(),
+      slug: z.string().describe('URL-safe studio slug'),
+      content: z.string().describe('Comark markdown with optional frontmatter'),
+      data: z.record(z.unknown()).optional().describe('Optional data.json sidecar object'),
     }),
     execute: async ({ slug, content, data: sidecar }) => {
       const slugError = validateStudioSlug(slug)
@@ -793,13 +890,28 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   run_terminal: tool({
-    description:
-      'Run a shell command on the user machine (project cwd). Use for system reports, profiling, benchmarks, process/memory inspection, dev servers, and local agent monitoring — not only repo tasks. Default is blocking until exit. For long-running sampling (memory over a minute, log tailing, npm run dev), set is_background to true and poll with terminal_output. Append | cat for pagers. Do not use for file edits.',
+    description: withToolExamples(
+      'Run a shell command on the user machine (project cwd). Use for system reports, profiling, benchmarks, process/memory inspection, dev servers, and local agent monitoring, not only repo tasks. Default is blocking until exit. For long-running sampling (memory over a minute, log tailing, npm run dev), set is_background to true and poll with terminal_output. Append | cat for pagers. Do not use for file edits.',
+      [
+        {
+          command: 'git status --short',
+          description: 'Working tree status',
+        },
+        {
+          command: 'npm run dev',
+          is_background: true,
+          description: 'Start Vite dev server',
+        },
+      ],
+    ),
     inputSchema: z.object({
-      command: z.string(),
-      is_background: z.boolean().optional(),
-      timeout_ms: z.number().optional(),
-      description: z.string().optional(),
+      command: z.string().describe('Shell command to run in the project cwd'),
+      is_background: z
+        .boolean()
+        .optional()
+        .describe('If true, return shell_id and poll with terminal_output'),
+      timeout_ms: z.number().optional().describe('Optional max wait for blocking runs'),
+      description: z.string().optional().describe('Short label for the UI'),
     }),
     execute: async ({ command, is_background, timeout_ms, description }, { toolCallId }) => {
       const allowed = await gateToolPermission({
@@ -862,12 +974,17 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   terminal_output: tool({
-    description:
+    description: withToolExamples(
       'Read stdout/stderr from a background agent shell by shell_id. Use block true to wait until the shell exits.',
+      [
+        { shell_id: 'shell_abc123', tail: 80 },
+        { shell_id: 'shell_abc123', block: true },
+      ],
+    ),
     inputSchema: z.object({
-      shell_id: z.string(),
-      block: z.boolean().optional(),
-      tail: z.number().optional(),
+      shell_id: z.string().describe('Id returned by run_terminal when is_background is true'),
+      block: z.boolean().optional().describe('Wait until the shell exits'),
+      tail: z.number().optional().describe('Max trailing lines to return'),
     }),
     execute: async ({ shell_id, block, tail }) => readTerminalOutput(shell_id, block, tail),
   }),
@@ -1048,12 +1165,28 @@ const runSubagentGenerate = async (args: {
 const buildTools = (ctx: HarnessToolContext) => ({
   ...buildHarnessTools(ctx),
   spawn_subagent: tool({
-    description:
-      'Spawn a subagent. Default mode is blocking — waits until complete. Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes.',
+    description: withToolExamples(
+      'Spawn a subagent. Default mode is blocking (waits until complete). Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes.',
+      [
+        {
+          agentName: 'explore-auth',
+          prompt: 'Find where MCP trust is granted and summarize the flow.',
+          mode: 'blocking',
+        },
+        {
+          agentName: 'scan-browser',
+          prompt: 'List browser tool permission gates.',
+          mode: 'background',
+        },
+      ],
+    ),
     inputSchema: z.object({
-      agentName: z.string(),
-      prompt: z.string(),
-      mode: z.enum(['blocking', 'background']).default('blocking'),
+      agentName: z.string().describe('Short name shown in the UI'),
+      prompt: z.string().describe('Task instructions for the subagent'),
+      mode: z
+        .enum(['blocking', 'background'])
+        .default('blocking')
+        .describe('blocking waits; background returns while it runs'),
     }),
     execute: async (
       { agentName, prompt, mode },

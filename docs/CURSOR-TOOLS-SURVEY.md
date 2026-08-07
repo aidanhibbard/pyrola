@@ -148,7 +148,7 @@ Browser is **app-global** (not project-scoped). The workbench Browser tab embeds
 
 | Cursor capability | Description | Pyrola status | Pyrola equivalent |
 |-------------------|-------------|---------------|-------------------|
-| `GetMcpTools` | Discover servers and tool schemas | **Exists** | `get_mcp_tools` — merges personal + project config, calls `mcp_status` |
+| `GetMcpTools` | Discover servers, tool schemas, and inputExamples | **Exists** | `get_mcp_tools` merges personal + project config, calls `mcp_status`, returns `inputSchema` and `_meta.inputExamples` when present |
 | `CallMcpTool` | Invoke an MCP tool | **Exists** | `call_mcp_tool` → `mcp_call_tool` |
 | `FetchMcpResource` | Read an MCP resource by URI | **Gap — future** | No resource fetch harness tool or Tauri command |
 | MCP Resources (list/read/subscribe) | Full resource surface | **Gap — future** | MCP runtime is tools-focused |

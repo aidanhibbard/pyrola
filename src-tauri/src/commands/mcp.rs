@@ -12,6 +12,7 @@ pub struct McpToolInfo {
   pub name: String,
   pub description: Option<String>,
   pub input_schema: Option<serde_json::Value>,
+  pub meta: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -206,6 +207,7 @@ async fn list_tools_internal(process: &Mutex<McpProcess>) -> Result<Vec<McpToolI
             .and_then(|d| d.as_str())
             .map(|s| s.to_string()),
           input_schema: tool.get("inputSchema").cloned(),
+          meta: tool.get("_meta").cloned(),
         })
       })
       .collect(),
