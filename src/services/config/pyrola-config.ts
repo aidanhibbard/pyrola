@@ -6,10 +6,12 @@ import {
   validatePyrolaSettings,
 } from '@/schemas/pyrola-settings'
 import {
+  isPersonalOnlyProjectKey,
   mergeSettings,
   parseSettingsRecord,
   removeSectionOverrides,
   removeSettingsKeys,
+  stripPersonalOnlyProjectOverrides,
 } from '@/services/config/merge-settings'
 import {
   readSettings,
@@ -38,6 +40,9 @@ export const parseProjectOverrides = (record: Record<string, unknown>): PyrolaSe
   const settings: PyrolaSettings = { version: 1 }
 
   for (const key of overrideKeys) {
+    if (isPersonalOnlyProjectKey(key)) {
+      continue
+    }
     const value = parsed.data[key as keyof typeof parsed.data]
     if (value !== undefined) {
       ;(settings as Record<string, unknown>)[key] = value
@@ -53,8 +58,15 @@ export const loadPersonalSettings = async (): Promise<PyrolaSettings> => {
 }
 
 export const loadProjectSettings = async (rootPath: string): Promise<PyrolaSettings> => {
-  const raw = await readSettings('project', rootPath)
-  return parseProjectOverrides(raw as Record<string, unknown>)
+  const raw = (await readSettings('project', rootPath)) as Record<string, unknown>
+  const hadPersonalOnlyKeys = Object.keys(raw).some(
+    (key) => key !== 'version' && isPersonalOnlyProjectKey(key),
+  )
+  const stripped = parseProjectOverrides(raw)
+  if (hadPersonalOnlyKeys) {
+    await saveSettings('project', stripped, rootPath)
+  }
+  return stripped
 }
 
 export const loadEffectiveSettings = async (
@@ -73,7 +85,9 @@ export const saveSettings = async (
   settings: PyrolaSettings,
   rootPath?: string | null,
 ): Promise<void> => {
-  const validated = validatePyrolaSettings(settings)
+  const toSave =
+    scope === 'project' ? stripPersonalOnlyProjectOverrides(settings) : settings
+  const validated = validatePyrolaSettings(toSave)
   if (!validated.success) {
     throw new Error(`Invalid settings: ${validated.error}`)
   }
@@ -88,7 +102,7 @@ export const resetSettingsKeys = async (
 ): Promise<PyrolaSettings> => {
   const next = removeSettingsKeys(settings, keys)
   await saveSettings(scope, next, rootPath)
-  return next
+  return scope === 'project' ? stripPersonalOnlyProjectOverrides(next) : next
 }
 
 export const resetSettingsSection = async (
@@ -99,7 +113,7 @@ export const resetSettingsSection = async (
 ): Promise<PyrolaSettings> => {
   const next = removeSectionOverrides(settings, sectionPrefix)
   await saveSettings(scope, next, rootPath)
-  return next
+  return scope === 'project' ? stripPersonalOnlyProjectOverrides(next) : next
 }
 
 export const isProjectOverride = (project: PyrolaSettings, key: string): boolean =>

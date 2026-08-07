@@ -75,6 +75,29 @@ export const removeSettingsKeys = (
   return next
 }
 
+export const PERSONAL_ONLY_PROJECT_KEY_PREFIXES = ['providers.', 'models.'] as const
+
+export const isPersonalOnlyProjectKey = (key: string): boolean =>
+  PERSONAL_ONLY_PROJECT_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))
+
+export const stripPersonalOnlyProjectOverrides = (
+  settings: PyrolaSettings,
+): PyrolaSettings => {
+  const next: PyrolaSettings = { version: 1 }
+
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === 'version') {
+      continue
+    }
+    if (isPersonalOnlyProjectKey(key)) {
+      continue
+    }
+    ;(next as Record<string, unknown>)[key] = value
+  }
+
+  return next
+}
+
 export const removeSectionOverrides = (
   settings: PyrolaSettings,
   sectionPrefix: string,

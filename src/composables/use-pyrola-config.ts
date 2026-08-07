@@ -2,6 +2,7 @@ import { computed, onMounted, ref, shallowRef } from 'vue'
 import { toast } from 'vue-sonner'
 import type { PyrolaSettings, PyrolaTheme, PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import { defaultPyrolaSettings } from '@/schemas/pyrola-settings'
+import { stripPersonalOnlyProjectOverrides } from '@/services/config/merge-settings'
 import {
   isProjectOverride,
   loadEffectiveSettings,
@@ -57,8 +58,9 @@ export default () => {
       if (!activeRootPath.value) {
         return
       }
-      projectSettings.value = current
-      await saveSettings('project', current, activeRootPath.value)
+      const stripped = stripPersonalOnlyProjectOverrides(current)
+      projectSettings.value = stripped
+      await saveSettings('project', stripped, activeRootPath.value)
     }
 
     effectiveSettings.value = await loadEffectiveSettings(activeRootPath.value)

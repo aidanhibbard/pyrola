@@ -30,8 +30,6 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
 
 export const PROJECT_SECTIONS: SettingsSectionId[] = [
   'mcp',
-  'providers',
-  'models',
   'lsp',
   'plans',
   'studio',

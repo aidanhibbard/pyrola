@@ -11,7 +11,6 @@ import {
   lspEnsureServer,
   lspRequest,
 } from '@/services/pyrola/pyrola-tauri'
-import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import {
   fileExtension,
@@ -25,7 +24,6 @@ import {
 } from '@/utils/monaco-lsp'
 import {
   applyMonacoTheme,
-  MONACO_EDITOR_FONT_SIZE_DEFAULT,
   observeMonacoTheme,
   resolveMonacoEditorOptions,
 } from '@/utils/monaco-theme'
@@ -61,7 +59,6 @@ const LSP_LANGUAGES = [
 ] as const
 
 const workbench = useWorkbenchStore()
-const config = usePyrolaConfig()
 const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
 
@@ -78,10 +75,6 @@ const dirtyByPath = new Map<string, boolean>()
 const registeredLspLanguages = new Set<string>()
 
 const lspActive = computed(() => props.lspEnabled !== false && isTauri())
-
-const editorFontSize = computed(
-  () => config.effectiveSettings.value['appearance.fontSize'] ?? MONACO_EDITOR_FONT_SIZE_DEFAULT,
-)
 
 const lineNumbersOption = computed((): 'on' | 'off' =>
   props.lineNumbers !== false ? 'on' : 'off',
@@ -176,7 +169,7 @@ const initializeEditor = (): boolean => {
     })
 
     editor = monaco.editor.create(containerRef.value, {
-      ...resolveMonacoEditorOptions(editorFontSize.value),
+      ...resolveMonacoEditorOptions(),
       automaticLayout: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
@@ -215,7 +208,6 @@ const tryInitializeEditor = (): void => {
 
 const syncEditorViewOptions = (): void => {
   editor?.updateOptions({
-    fontSize: editorFontSize.value,
     lineNumbers: lineNumbersOption.value,
     wordWrap: wordWrapOption.value,
   })
@@ -642,7 +634,7 @@ watch(
   { deep: true },
 )
 
-watch([editorFontSize, lineNumbersOption, wordWrapOption], () => {
+watch([lineNumbersOption, wordWrapOption], () => {
   syncEditorViewOptions()
 })
 

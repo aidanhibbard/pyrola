@@ -24,7 +24,6 @@ export const pyrolaSettingsSchema = z
   .object({
     version: z.literal(1),
     'appearance.theme': themeSchema.optional(),
-    'appearance.fontSize': z.number().int().min(10).max(20).optional(),
     'agent.defaultMode': chatModeSchema.optional(),
     'agent.autoApproveGlobs': z.array(z.string()).optional(),
     'agent.permissionLevel': z.enum(['ask', 'allowlist', 'bypass']).optional(),
@@ -90,7 +89,6 @@ export const validatePyrolaSettings = (
 export const defaultPyrolaSettings = (): PyrolaSettings => ({
   version: 1,
   'appearance.theme': 'system',
-  'appearance.fontSize': 13,
   'agent.defaultMode': 'agent',
   'agent.autoApproveGlobs': [],
   'agent.permissionLevel': 'ask',

@@ -47,7 +47,6 @@ export type PyrolaCustomProvider = {
 export type PyrolaSettings = {
   version: 1
   'appearance.theme'?: PyrolaTheme
-  'appearance.fontSize'?: number
   'agent.defaultMode'?: PyrolaChatMode
   'agent.autoApproveGlobs'?: string[]
   'agent.permissionLevel'?: PermissionLevel
