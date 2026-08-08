@@ -118,22 +118,22 @@ const handleStop = (): void => {
           {{ activityLabel }}
         </AiElementsShimmerShimmer>
       </span>
+      <Tooltip v-if="isRunning">
+        <TooltipTrigger as-child>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            class="size-6 shrink-0 text-muted-foreground"
+            aria-label="Stop sub-agent"
+            @click.stop="handleStop"
+          >
+            <SquareIcon class="size-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Stop sub-agent</TooltipContent>
+      </Tooltip>
       <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
     </button>
-    <Tooltip v-if="isRunning">
-      <TooltipTrigger as-child>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          class="size-6 shrink-0 text-muted-foreground"
-          aria-label="Stop sub-agent"
-          @click="handleStop"
-        >
-          <SquareIcon class="size-3" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Stop sub-agent</TooltipContent>
-    </Tooltip>
   </div>
 </template>

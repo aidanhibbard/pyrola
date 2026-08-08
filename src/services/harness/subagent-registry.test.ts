@@ -113,6 +113,52 @@ describe('subagent-registry', () => {
     expect(hasPendingBackgroundResume('chat-1')).toBe(false)
   })
 
+  it('enforces maxConcurrent against running subagents', async () => {
+    const { register, countRunningSubagents } = await import(
+      '@/services/harness/subagent-registry'
+    )
+
+    register(
+      'chat-1',
+      'sub-1',
+      new AbortController(),
+      { toolCallId: 'tc-1', agentName: 'one' },
+      { maxConcurrent: 2 },
+    )
+    register(
+      'chat-1',
+      'sub-2',
+      new AbortController(),
+      { toolCallId: 'tc-2', agentName: 'two' },
+      { maxConcurrent: 2 },
+    )
+    expect(countRunningSubagents()).toBe(2)
+    expect(() =>
+      register(
+        'chat-1',
+        'sub-3',
+        new AbortController(),
+        { toolCallId: 'tc-3', agentName: 'three' },
+        { maxConcurrent: 2 },
+      ),
+    ).toThrow(/Fleet limit reached \(2 concurrent agents\)/)
+  })
+
+  it('can register without marking pending resume', async () => {
+    const { register, hasPendingBackgroundResume } = await import(
+      '@/services/harness/subagent-registry'
+    )
+
+    register(
+      'chat-1',
+      'sub-1',
+      new AbortController(),
+      { toolCallId: 'tc-1', agentName: 'blocking' },
+      { pendingResume: false },
+    )
+    expect(hasPendingBackgroundResume('chat-1')).toBe(false)
+  })
+
   it('lists only completed and failed results as deliverable', async () => {
     const {
       register,

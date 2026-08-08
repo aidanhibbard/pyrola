@@ -81,7 +81,6 @@ import {
   register as registerSubagent,
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
-import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import withToolExamples from '@/services/harness/with-tool-examples'
 import {
@@ -1365,12 +1364,6 @@ const buildTools = (ctx: HarnessToolContext) => ({
       }
 
       const fleetLimit = ctx.settings['fleet.maxConcurrentAgents'] ?? 4
-      if (fleetCounter.get() >= fleetLimit) {
-        throw new Error(
-          `Fleet limit reached (${fleetLimit} concurrent agents). Stop a running agent before spawning another.`,
-        )
-      }
-
       const subagentId = crypto.randomUUID()
       const lockedSubagentModel = getPlanExecutionSession(
         ctx.projectSlug,
@@ -1383,6 +1376,22 @@ const buildTools = (ctx: HarnessToolContext) => ({
         throw new Error('No sub-agent model configured')
       }
       const blocking = mode === 'blocking'
+      const controller = new AbortController()
+      linkAbortSignal(ctx.signal, controller)
+
+      registerSubagent(
+        ctx.chatId,
+        subagentId,
+        controller,
+        {
+          toolCallId,
+          agentName,
+        },
+        {
+          maxConcurrent: fleetLimit,
+          pendingResume: !blocking,
+        },
+      )
 
       ctx.onHarnessEvent?.({
         type: 'subagent-start',
@@ -1395,14 +1404,6 @@ const buildTools = (ctx: HarnessToolContext) => ({
       })
 
       if (!blocking) {
-        const controller = new AbortController()
-        linkAbortSignal(ctx.signal, controller)
-
-        registerSubagent(ctx.chatId, subagentId, controller, {
-          toolCallId,
-          agentName,
-        })
-
         ctx.onHarnessEvent?.({
           type: 'pending-subagent',
           toolCallId,
@@ -1460,9 +1461,10 @@ const buildTools = (ctx: HarnessToolContext) => ({
           agentName,
           prompt,
           toolCallId,
-          signal: ctx.signal ?? new AbortController().signal,
+          signal: controller.signal,
         })
 
+        resolveSubagent(subagentId, { subagentId, name: agentName, summary })
         emitSubagentResult(ctx, {
           subagentId,
           summary,
