@@ -14,7 +14,7 @@ use super::config::{lsp_enabled_in_settings, read_lsp_scope_configs, workspace_i
 use super::fs::{canonical_project_root, resolve_workspace_path};
 use super::lsp_install::{
   ensure_portable_node, ensure_server_installed, find_node_bin, install_source_label,
-  managed_bin_path, managed_typescript_lib, managed_vue_plugin_path,
+  managed_bin_path, managed_typescript_lib, managed_vue_plugin_path, managed_vue_typescript_lib,
 };
 use super::lsp_registry::{
   allowlisted_lsp_basenames, builtin_server_map, builtin_spec_by_id, language_id_for_extension,
@@ -510,6 +510,10 @@ fn typescript_tsdk_path(app: &AppHandle, workspace_root: &str, trusted: bool) ->
   if let Some(managed) = managed_typescript_lib(app) {
     return managed.to_string_lossy().replace('\\', "/");
   }
+  // Vue managed install also ships typescript after we added it as a dependency.
+  if let Some(vue_ts) = managed_vue_typescript_lib(app) {
+    return vue_ts.to_string_lossy().replace('\\', "/");
+  }
   Path::new(workspace_root)
     .join("node_modules/typescript/lib")
     .to_string_lossy()
@@ -559,6 +563,26 @@ fn build_initialization_options(
     }
   }
 
+  // @vue/language-server@2.x requires initializationOptions.typescript.tsdk
+  // (see options.typescript.tsdk in its initialize handler).
+  if server_id == "vue" {
+    let tsdk = typescript_tsdk_path(app, workspace_root, trusted);
+    if let Some(obj) = base.as_object_mut() {
+      let typescript = obj
+        .entry("typescript")
+        .or_insert_with(|| serde_json::json!({}));
+      if let Some(ts_obj) = typescript.as_object_mut() {
+        ts_obj.insert("tsdk".to_string(), serde_json::json!(tsdk));
+      } else {
+        *typescript = serde_json::json!({ "tsdk": tsdk });
+      }
+    } else {
+      base = serde_json::json!({
+        "typescript": { "tsdk": tsdk }
+      });
+    }
+  }
+
   base
 }
 
@@ -595,6 +619,9 @@ fn workspace_configuration_response(
         .unwrap_or_default();
       match section {
         "typescript" | "javascript" => typescript_config.clone(),
+        "vue" => serde_json::json!({
+          "complete": { "codelenses": true }
+        }),
         _ => serde_json::json!({}),
       }
     })

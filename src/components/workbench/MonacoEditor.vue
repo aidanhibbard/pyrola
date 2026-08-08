@@ -23,8 +23,11 @@ import {
   parseLspLocations,
   workspacePathToFileUri,
 } from '@/utils/monaco-lsp'
+import { detectMonacoLanguage } from '@/utils/monaco-language'
+import { ensureMonacoLanguage, ensureMonacoShiki } from '@/utils/monaco-shiki'
 import {
   applyMonacoTheme,
+  ensureMonacoBaseThemes,
   observeMonacoTheme,
   resolveMonacoEditorOptions,
 } from '@/utils/monaco-theme'
@@ -50,35 +53,22 @@ const emit = defineEmits<{
   saved: [payload: { path: string; content: string }]
 }>()
 
-const LSP_LANGUAGES = [
-  'typescript',
-  'javascript',
-  'vue',
-  'rust',
-  'python',
-  'go',
-  'json',
-  'yaml',
-  'markdown',
-  'html',
-  'css',
-] as const
-
 const workbench = useWorkbenchStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
 
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
+let editorInitializing = false
 let resizeObserver: ResizeObserver | null = null
 let contentChangeDisposable: monaco.IDisposable | null = null
 let lspProviderDisposables: monaco.IDisposable[] = []
 let unlistenDiagnostics: (() => void) | null = null
 let stopThemeObserver: (() => void) | null = null
+let lspProvidersRegistered = false
 const models = new Map<string, monaco.editor.ITextModel>()
 const pathByModel = new Map<monaco.editor.ITextModel, string>()
 const lspServerByPath = new Map<string, string>()
 const dirtyByPath = new Map<string, boolean>()
-const registeredLspLanguages = new Set<string>()
 
 const lspActive = computed(() => props.lspEnabled !== false && isTauri())
 
@@ -100,43 +90,6 @@ const formatError = (error: unknown): string => {
   return 'Unknown error'
 }
 
-const detectLanguage = (path: string): string => {
-  if (path.endsWith('.vue')) {
-    return 'vue'
-  }
-  if (path.endsWith('.ts') || path.endsWith('.tsx')) {
-    return 'typescript'
-  }
-  if (path.endsWith('.js') || path.endsWith('.jsx')) {
-    return 'javascript'
-  }
-  if (path.endsWith('.rs')) {
-    return 'rust'
-  }
-  if (path.endsWith('.json') || path.endsWith('.jsonc')) {
-    return 'json'
-  }
-  if (path.endsWith('.yaml') || path.endsWith('.yml')) {
-    return 'yaml'
-  }
-  if (path.endsWith('.md') || path.endsWith('.markdown')) {
-    return 'markdown'
-  }
-  if (path.endsWith('.css') || path.endsWith('.scss') || path.endsWith('.less')) {
-    return 'css'
-  }
-  if (path.endsWith('.html') || path.endsWith('.htm')) {
-    return 'html'
-  }
-  if (path.endsWith('.py') || path.endsWith('.pyi')) {
-    return 'python'
-  }
-  if (path.endsWith('.go')) {
-    return 'go'
-  }
-  return 'plaintext'
-}
-
 const layoutEditor = (): void => {
   editor?.layout()
 }
@@ -144,8 +97,8 @@ const layoutEditor = (): void => {
 const hasEditorDimensions = (element: HTMLElement): boolean =>
   element.clientWidth > 0 && element.clientHeight > 0
 
-const initializeEditor = (): boolean => {
-  if (!containerRef.value || editor) {
+const initializeEditor = async (): Promise<boolean> => {
+  if (!containerRef.value || editor || editorInitializing) {
     return editor !== null
   }
 
@@ -153,7 +106,9 @@ const initializeEditor = (): boolean => {
     return false
   }
 
+  editorInitializing = true
   try {
+    ensureMonacoBaseThemes(monaco)
     applyMonacoTheme(monaco)
 
     stopThemeObserver?.()
@@ -177,7 +132,9 @@ const initializeEditor = (): boolean => {
       noSyntaxValidation: true,
     })
 
-    editor = monaco.editor.create(containerRef.value, {
+    // Create the editor synchronously first so opening a file never waits on
+    // Shiki and cannot race setModel against a null editor.
+    const created = monaco.editor.create(containerRef.value, {
       ...resolveMonacoEditorOptions(),
       automaticLayout: true,
       minimap: { enabled: false },
@@ -185,8 +142,9 @@ const initializeEditor = (): boolean => {
       lineNumbers: lineNumbersOption.value,
       wordWrap: wordWrapOption.value,
     })
+    editor = created
 
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       save().catch((error) => {
         toast.error('Failed to save file', {
           description: formatError(error),
@@ -195,24 +153,41 @@ const initializeEditor = (): boolean => {
     })
 
     if (props.path) {
-      attachModel(props.path).catch((error) => {
-        toast.error('Failed to load file', {
-          description: formatError(error),
-        })
+      await attachModel(props.path)
+    }
+
+    if (editor !== created) {
+      return false
+    }
+
+    try {
+      await ensureMonacoShiki(monaco)
+      if (editor === created) {
+        applyMonacoTheme(monaco)
+      }
+    } catch (error) {
+      toast.error('Syntax highlighting unavailable', {
+        description: formatError(error),
       })
     }
 
-    return true
+    return editor === created
   } catch (error) {
     toast.error('Failed to initialize editor', {
       description: formatError(error),
     })
     return false
+  } finally {
+    editorInitializing = false
   }
 }
 
 const tryInitializeEditor = (): void => {
-  initializeEditor()
+  initializeEditor().catch((error) => {
+    toast.error('Failed to initialize editor', {
+      description: formatError(error),
+    })
+  })
 }
 
 const syncEditorViewOptions = (): void => {
@@ -370,6 +345,12 @@ const setupLspForPath = async (
     if (!server.running) {
       lspServerByPath.delete(path)
       clearLspMarkers(model)
+      if (extension === 'java' || extension === '.java') {
+        toast.error('Java language server unavailable', {
+          description:
+            'Install a JDK on PATH, or enable lsp.autoDownload so jdtls can be fetched.',
+        })
+      }
       return
     }
 
@@ -379,9 +360,20 @@ const setupLspForPath = async (
       content: model.getValue(),
     })
     await refreshDiagnostics(path, model)
-  } catch {
+  } catch (error) {
     lspServerByPath.delete(path)
     clearLspMarkers(model)
+    const message = formatError(error)
+    if (
+      extension === 'java' ||
+      extension === '.java' ||
+      message.toLowerCase().includes('jdk') ||
+      message.toLowerCase().includes('jdtls')
+    ) {
+      toast.error('Java language server failed', {
+        description: message,
+      })
+    }
   }
 }
 
@@ -389,138 +381,132 @@ const resolvePathForModel = (model: monaco.editor.ITextModel): string | null =>
   pathByModel.get(model) ?? null
 
 const registerLspProviders = (): void => {
-  if (!monaco.languages.getLanguages().some((language) => language.id === 'vue')) {
-    monaco.languages.register({ id: 'vue' })
+  if (lspProvidersRegistered) {
+    return
   }
+  lspProvidersRegistered = true
 
-  for (const language of LSP_LANGUAGES) {
-    if (registeredLspLanguages.has(language)) {
-      continue
-    }
-    registeredLspLanguages.add(language)
+  lspProviderDisposables.push(
+    monaco.languages.registerHoverProvider('*', {
+      provideHover: async (model, position) => {
+        if (!lspActive.value) {
+          return null
+        }
 
-    lspProviderDisposables.push(
-      monaco.languages.registerHoverProvider(language, {
-        provideHover: async (model, position) => {
-          if (!lspActive.value) {
+        const path = resolvePathForModel(model)
+        const serverId = path ? getLspServerId(path) : null
+        if (!path || !serverId) {
+          return null
+        }
+
+        try {
+          await syncDocumentToLsp(path, model.getValue())
+          const result = await lspRequest(serverId, 'hover', {
+            path,
+            position: {
+              line: position.lineNumber - 1,
+              character: position.column - 1,
+            },
+          })
+
+          const contents = parseLspHoverContents(result)
+          if (contents.length === 0) {
             return null
           }
 
-          const path = resolvePathForModel(model)
-          const serverId = path ? getLspServerId(path) : null
-          if (!path || !serverId) {
+          return {
+            range: new monaco.Range(
+              position.lineNumber,
+              position.column,
+              position.lineNumber,
+              position.column,
+            ),
+            contents: contents.map((value) => ({ value })),
+          }
+        } catch {
+          return null
+        }
+      },
+    }),
+  )
+
+  lspProviderDisposables.push(
+    monaco.languages.registerDefinitionProvider('*', {
+      provideDefinition: async (model, position) => {
+        if (!lspActive.value) {
+          return null
+        }
+
+        const path = resolvePathForModel(model)
+        const serverId = path ? getLspServerId(path) : null
+        if (!path || !serverId) {
+          return null
+        }
+
+        try {
+          await syncDocumentToLsp(path, model.getValue())
+          const result = await lspRequest(serverId, 'goToDefinition', {
+            path,
+            position: {
+              line: position.lineNumber - 1,
+              character: position.column - 1,
+            },
+          })
+
+          const locations = parseLspLocations(result)
+          if (locations.length === 0) {
             return null
           }
 
-          try {
-            await syncDocumentToLsp(path, model.getValue())
-            const result = await lspRequest(serverId, 'hover', {
-              path,
-              position: {
-                line: position.lineNumber - 1,
-                character: position.column - 1,
-              },
-            })
+          return locations.map((location) => ({
+            uri: monaco.Uri.parse(location.uri),
+            range: new monaco.Range(
+              location.range.start.line + 1,
+              location.range.start.character + 1,
+              location.range.end.line + 1,
+              location.range.end.character + 1,
+            ),
+          }))
+        } catch {
+          return null
+        }
+      },
+    }),
+  )
 
-            const contents = parseLspHoverContents(result)
-            if (contents.length === 0) {
-              return null
-            }
+  lspProviderDisposables.push(
+    monaco.languages.registerCompletionItemProvider('*', {
+      triggerCharacters: ['.', '"', "'", '/', '<', ':'],
+      provideCompletionItems: async (model, position) => {
+        if (!lspActive.value) {
+          return { suggestions: [] }
+        }
 
-            return {
-              range: new monaco.Range(
-                position.lineNumber,
-                position.column,
-                position.lineNumber,
-                position.column,
-              ),
-              contents: contents.map((value) => ({ value })),
-            }
-          } catch {
-            return null
+        const path = resolvePathForModel(model)
+        const serverId = path ? getLspServerId(path) : null
+        if (!path || !serverId) {
+          return { suggestions: [] }
+        }
+
+        try {
+          await syncDocumentToLsp(path, model.getValue())
+          const result = await lspRequest(serverId, 'textDocument/completion', {
+            path,
+            position: {
+              line: position.lineNumber - 1,
+              character: position.column - 1,
+            },
+          })
+
+          return {
+            suggestions: parseLspCompletionItems(result, monaco),
           }
-        },
-      }),
-    )
-
-    lspProviderDisposables.push(
-      monaco.languages.registerDefinitionProvider(language, {
-        provideDefinition: async (model, position) => {
-          if (!lspActive.value) {
-            return null
-          }
-
-          const path = resolvePathForModel(model)
-          const serverId = path ? getLspServerId(path) : null
-          if (!path || !serverId) {
-            return null
-          }
-
-          try {
-            await syncDocumentToLsp(path, model.getValue())
-            const result = await lspRequest(serverId, 'goToDefinition', {
-              path,
-              position: {
-                line: position.lineNumber - 1,
-                character: position.column - 1,
-              },
-            })
-
-            const locations = parseLspLocations(result)
-            if (locations.length === 0) {
-              return null
-            }
-
-            return locations.map((location) => ({
-              uri: monaco.Uri.parse(location.uri),
-              range: new monaco.Range(
-                location.range.start.line + 1,
-                location.range.start.character + 1,
-                location.range.end.line + 1,
-                location.range.end.character + 1,
-              ),
-            }))
-          } catch {
-            return null
-          }
-        },
-      }),
-    )
-
-    lspProviderDisposables.push(
-      monaco.languages.registerCompletionItemProvider(language, {
-        triggerCharacters: ['.', '"', "'", '/', '<', ':'],
-        provideCompletionItems: async (model, position) => {
-          if (!lspActive.value) {
-            return { suggestions: [] }
-          }
-
-          const path = resolvePathForModel(model)
-          const serverId = path ? getLspServerId(path) : null
-          if (!path || !serverId) {
-            return { suggestions: [] }
-          }
-
-          try {
-            await syncDocumentToLsp(path, model.getValue())
-            const result = await lspRequest(serverId, 'textDocument/completion', {
-              path,
-              position: {
-                line: position.lineNumber - 1,
-                character: position.column - 1,
-              },
-            })
-
-            return {
-              suggestions: parseLspCompletionItems(result, monaco),
-            }
-          } catch {
-            return { suggestions: [] }
-          }
-        },
-      }),
-    )
-  }
+        } catch {
+          return { suggestions: [] }
+        }
+      },
+    }),
+  )
 }
 
 const getOrCreateModel = async (path: string): Promise<monaco.editor.ITextModel> => {
@@ -535,14 +521,28 @@ const getOrCreateModel = async (path: string): Promise<monaco.editor.ITextModel>
   }
 
   const result = await fsReadFile({ projectRoot: root, path })
-  const model = monaco.editor.createModel(result.content, detectLanguage(path))
+  const languageId = detectMonacoLanguage(path)
+  if (
+    languageId !== 'plaintext' &&
+    !monaco.languages.getLanguages().some((language) => language.id === languageId)
+  ) {
+    monaco.languages.register({ id: languageId })
+  }
+  const model = monaco.editor.createModel(result.content, languageId)
   models.set(path, model)
   pathByModel.set(model, path)
+
+  // Upgrade highlighting in the background; do not block showing file contents.
+  ensureMonacoLanguage(monaco, languageId).catch(() => {
+    // Highlighting is best-effort; the model already has content.
+  })
+
   return model
 }
 
 const attachModel = async (path: string): Promise<void> => {
-  if (!editor) {
+  const activeEditor = editor
+  if (!activeEditor) {
     return
   }
 
@@ -550,7 +550,11 @@ const attachModel = async (path: string): Promise<void> => {
   contentChangeDisposable = null
 
   const model = await getOrCreateModel(path)
-  editor.setModel(model)
+  if (editor !== activeEditor) {
+    return
+  }
+
+  activeEditor.setModel(model)
 
   contentChangeDisposable = model.onDidChangeContent(() => {
     setPathDirty(path, true)
@@ -724,7 +728,7 @@ onBeforeUnmount(() => {
     disposable.dispose()
   }
   lspProviderDisposables = []
-  registeredLspLanguages.clear()
+  lspProvidersRegistered = false
 
   for (const [path, model] of models.entries()) {
     clearLspMarkers(model)

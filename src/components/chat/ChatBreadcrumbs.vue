@@ -93,9 +93,9 @@ const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value
 </script>
 
 <template>
-  <div v-if="isChatRoute" class="flex min-w-0 items-center">
-    <Breadcrumb class="min-w-0">
-      <BreadcrumbList class="flex-nowrap gap-1.5 text-xs sm:gap-1.5">
+  <div v-if="isChatRoute" class="flex min-w-0 items-center overflow-hidden">
+    <Breadcrumb class="min-w-0 max-w-full overflow-hidden">
+      <BreadcrumbList class="min-w-0 flex-nowrap gap-1.5 overflow-hidden text-xs sm:gap-1.5">
         <BreadcrumbItem class="shrink-0">
           <BreadcrumbLink as-child>
             <RouterLink
@@ -108,7 +108,9 @@ const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator class="shrink-0" />
-        <BreadcrumbItem class="min-w-0">
+        <BreadcrumbItem
+          :class="subagentTitle ? 'shrink-0' : 'min-w-0 overflow-hidden'"
+        >
           <BreadcrumbLink
             v-if="subagentTitle"
             as-child
@@ -123,7 +125,7 @@ const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value
           </BreadcrumbLink>
           <BreadcrumbPage
             v-else
-            class="block truncate text-muted-foreground"
+            class="block max-w-[14rem] truncate text-muted-foreground sm:max-w-[22rem]"
             :title="chatTitle"
           >
             {{ chatTitle }}
@@ -131,9 +133,9 @@ const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value
         </BreadcrumbItem>
         <template v-if="subagentTitle">
           <BreadcrumbSeparator class="shrink-0" />
-          <BreadcrumbItem class="min-w-0">
+          <BreadcrumbItem class="min-w-0 overflow-hidden">
             <BreadcrumbPage
-              class="block truncate text-muted-foreground"
+              class="block max-w-[14rem] truncate text-muted-foreground sm:max-w-[22rem]"
               :title="subagentTitle"
             >
               {{ subagentTitle }}

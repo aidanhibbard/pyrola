@@ -8,6 +8,7 @@ const chatSubagents = new Map<string, Set<string>>()
 const controllers = new Map<string, AbortController>()
 const completionWaiters = new Map<string, CompletionWaiter[]>()
 const turnResponseMessages = new Map<string, ModelMessage[]>()
+const pendingBackgroundResume = new Set<string>()
 
 const setSubagentStatus = (
   record: SubagentRecord,
@@ -52,6 +53,7 @@ export const register = (
   subagents.set(subagentId, record)
   controllers.set(subagentId, controller)
   trackSubagentForChat(chatId, subagentId)
+  pendingBackgroundResume.add(chatId)
   return record
 }
 
@@ -121,6 +123,26 @@ export const hasRunningSubagentsForChat = (chatId: string): boolean =>
 export const getRunningSubagentForChat = (chatId: string): SubagentRecord | null =>
   listSubagentsForChat(chatId).find((record) => record.status === 'running') ?? null
 
+export const hasPendingBackgroundResume = (chatId: string): boolean =>
+  pendingBackgroundResume.has(chatId)
+
+export const clearPendingBackgroundResume = (chatId: string): void => {
+  pendingBackgroundResume.delete(chatId)
+}
+
+export const listDeliverableBackgroundResults = (
+  chatId: string,
+): Array<{ toolCallId: string; result: SubagentResult }> =>
+  listSubagentsForChat(chatId).flatMap((record) => {
+    if (
+      (record.status !== 'completed' && record.status !== 'failed') ||
+      !record.result
+    ) {
+      return []
+    }
+    return [{ toolCallId: record.toolCallId, result: record.result }]
+  })
+
 export const setTurnResponseMessages = (chatId: string, messages: ModelMessage[]): void => {
   turnResponseMessages.set(chatId, messages)
 }
@@ -178,6 +200,7 @@ export const abort = (chatId: string): void => {
 
   chatSubagents.delete(chatId)
   turnResponseMessages.delete(chatId)
+  pendingBackgroundResume.delete(chatId)
 }
 
 export const resetSubagentRegistryForTests = (): void => {
@@ -186,4 +209,5 @@ export const resetSubagentRegistryForTests = (): void => {
   controllers.clear()
   completionWaiters.clear()
   turnResponseMessages.clear()
+  pendingBackgroundResume.clear()
 }

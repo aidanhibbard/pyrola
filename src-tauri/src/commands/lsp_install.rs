@@ -110,6 +110,21 @@ fn github_target_token(style: GithubTargetStyle) -> Result<String, String> {
       ("windows", _) => "exe".to_string(),
       _ => return Err(format!("Unsupported platform for marksman: {os}/{arch}")),
     }),
+    GithubTargetStyle::ClangdOs => Ok(match os {
+      "macos" => "mac".to_string(),
+      "linux" => "linux".to_string(),
+      "windows" => "windows".to_string(),
+      _ => return Err(format!("Unsupported platform for clangd: {os}/{arch}")),
+    }),
+    GithubTargetStyle::ZigOsArch => Ok(match (os, arch) {
+      ("macos", "aarch64") => "aarch64-macos".to_string(),
+      ("macos", "x86_64") => "x86_64-macos".to_string(),
+      ("linux", "aarch64") => "aarch64-linux".to_string(),
+      ("linux", "x86_64") => "x86_64-linux".to_string(),
+      ("windows", "x86_64") => "x86_64-windows".to_string(),
+      ("windows", "x86") => "x86-windows".to_string(),
+      _ => return Err(format!("Unsupported platform for zls: {os}/{arch}")),
+    }),
   }
 }
 
@@ -121,6 +136,11 @@ fn resolve_github_asset(spec: &GithubReleaseSpec) -> Result<(String, String), St
   // Marksman Windows release is `marksman.exe`, not `marksman-exe`.
   if spec.target_style == GithubTargetStyle::Marksman && target == "exe" {
     asset = "marksman.exe".to_string();
+  }
+
+  // zls Windows assets are zip, not tar.xz.
+  if spec.target_style == GithubTargetStyle::ZigOsArch && std::env::consts::OS == "windows" {
+    asset = asset.replace(".tar.xz", ".zip");
   }
 
   let url = format!(
@@ -242,6 +262,43 @@ fn extract_tar_gz_bytes(bytes: &[u8], dest: &Path) -> Result<(), String> {
   archive.unpack(dest).map_err(|e| e.to_string())
 }
 
+fn extract_tar_xz_bytes(bytes: &[u8], dest: &Path) -> Result<(), String> {
+  let tmp = dest.join(".download.tar.xz");
+  {
+    let mut file = File::create(&tmp).map_err(|e| e.to_string())?;
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+  }
+
+  let status = std::process::Command::new("tar")
+    .args([
+      "-xJf",
+      &tmp.to_string_lossy(),
+      "-C",
+      &dest.to_string_lossy(),
+    ])
+    .status()
+    .map_err(|e| format!("Failed to run tar for .tar.xz extract: {e}"))?;
+  let _ = fs::remove_file(&tmp);
+  if !status.success() {
+    return Err("Failed to extract .tar.xz archive (install xz/tar support)".to_string());
+  }
+  Ok(())
+}
+
+fn extract_archive_bytes(bytes: &[u8], url: &str, dest: &Path) -> Result<(), String> {
+  if url.ends_with(".tar.xz") {
+    extract_tar_xz_bytes(bytes, dest)
+  } else if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+    extract_tar_gz_bytes(bytes, dest)
+  } else if url.ends_with(".zip") {
+    extract_zip_bytes(bytes, dest)
+  } else if url.ends_with(".gz") {
+    Err("Single-file .gz requires a destination binary path".to_string())
+  } else {
+    Err(format!("Unsupported archive type for {url}"))
+  }
+}
+
 fn extract_zip_bytes(bytes: &[u8], dest: &Path) -> Result<(), String> {
   // Minimal zip extract without zip crate: write temp and use system unzip when needed.
   // Prefer writing a .zip and extracting with `tar`/`Expand-Archive` via std process.
@@ -311,6 +368,11 @@ fn version_key_for_spec(spec: &BuiltinLspSpec) -> String {
       .as_ref()
       .map(|g| format!("{}_{}", g.tag.replace('/', "_"), host_asset_target()))
       .unwrap_or_else(|| "latest".to_string()),
+    LspInstallKind::HttpArchive => spec
+      .http
+      .as_ref()
+      .map(|h| h.version_key.to_string())
+      .unwrap_or_else(|| "latest".to_string()),
     _ => "path".to_string(),
   }
 }
@@ -343,6 +405,15 @@ pub fn managed_bin_path(app: &AppHandle, spec: &BuiltinLspSpec) -> Option<PathBu
         }
       }
     }
+    LspInstallKind::HttpArchive => {
+      let http = spec.http.as_ref()?;
+      let candidate = dir.join(http.binary_name);
+      if candidate.is_file() {
+        Some(candidate)
+      } else {
+        find_file_named(&dir, Path::new(http.binary_name).file_name()?.to_str()?)
+      }
+    }
     _ => None,
   }
 }
@@ -366,7 +437,9 @@ fn find_file_named(dir: &Path, name: &str) -> Option<PathBuf> {
 #[allow(dead_code)]
 pub fn is_installed(app: &AppHandle, spec: &BuiltinLspSpec) -> bool {
   match spec.install {
-    LspInstallKind::Npm | LspInstallKind::GithubRelease => managed_bin_path(app, spec).is_some(),
+    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive => {
+      managed_bin_path(app, spec).is_some()
+    }
     LspInstallKind::ToolchainPath => which::which(spec.command.first().copied().unwrap_or("")).is_ok(),
     LspInstallKind::None => false,
   }
@@ -496,6 +569,8 @@ async fn github_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBu
 
   if github.gzip || url.ends_with(".gz") && !url.ends_with(".tar.gz") {
     write_gzip_file(&bytes, &dest)?;
+  } else if url.ends_with(".tar.xz") {
+    extract_tar_xz_bytes(&bytes, &dir)?;
   } else if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
     extract_tar_gz_bytes(&bytes, &dir)?;
   } else if url.ends_with(".zip") {
@@ -512,6 +587,60 @@ async fn github_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBu
   }
 
   managed_bin_path(app, spec).ok_or_else(|| format!("Downloaded {} but binary missing", spec.id))
+}
+
+async fn http_archive_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBuf, String> {
+  let http = spec
+    .http
+    .as_ref()
+    .ok_or_else(|| format!("Server {} has no http archive install spec", spec.id))?;
+  let key = version_key_for_spec(spec);
+  let dir = managed_server_dir(app, spec.id, &key)?;
+  if let Some(existing) = managed_bin_path(app, spec) {
+    if spec.id == "java" && which::which("java").is_err() {
+      return Err(
+        "jdtls is installed but Java (JDK) was not found on PATH. Install a JDK to use Java language support."
+          .to_string(),
+      );
+    }
+    return Ok(existing);
+  }
+
+  emit_progress(
+    app,
+    spec.id,
+    "installing",
+    Some(format!("Downloading {}", spec.id)),
+  );
+
+  let bytes = download_bytes(http.url).await.map_err(|e| {
+    format!(
+      "Failed to download {} ({e}). Falling back to PATH if available.",
+      spec.id
+    )
+  })?;
+
+  extract_archive_bytes(&bytes, http.url, &dir)?;
+
+  #[cfg(unix)]
+  if let Some(bin) = managed_bin_path(app, spec) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin, perms).map_err(|e| e.to_string())?;
+  }
+
+  let path = managed_bin_path(app, spec)
+    .ok_or_else(|| format!("Downloaded {} but binary missing", spec.id))?;
+
+  if spec.id == "java" && which::which("java").is_err() {
+    return Err(
+      "jdtls downloaded but Java (JDK) was not found on PATH. Install a JDK to use Java language support."
+        .to_string(),
+    );
+  }
+
+  Ok(path)
 }
 
 pub async fn ensure_server_installed(
@@ -549,6 +678,18 @@ pub async fn ensure_server_installed(
       Ok(path) => Ok(Some(path)),
       Err(error) => {
         // Allow PATH fallback
+        let fallback = which::which(spec.command.first().copied().unwrap_or("")).ok();
+        if fallback.is_some() {
+          emit_progress(app, server_id, "path", Some(error));
+          Ok(fallback)
+        } else {
+          Err(error)
+        }
+      }
+    },
+    LspInstallKind::HttpArchive => match http_archive_install(app, spec).await {
+      Ok(path) => Ok(Some(path)),
+      Err(error) => {
         let fallback = which::which(spec.command.first().copied().unwrap_or("")).ok();
         if fallback.is_some() {
           emit_progress(app, server_id, "path", Some(error));
@@ -617,6 +758,18 @@ pub fn managed_vue_plugin_path(app: &AppHandle) -> Option<PathBuf> {
   let plugin = dir.join("node_modules/@vue/typescript-plugin");
   if plugin.is_dir() {
     Some(plugin)
+  } else {
+    None
+  }
+}
+
+pub fn managed_vue_typescript_lib(app: &AppHandle) -> Option<PathBuf> {
+  let spec = builtin_spec_by_id("vue")?;
+  let key = version_key_for_spec(spec);
+  let dir = managed_server_dir(app, "vue", &key).ok()?;
+  let lib = dir.join("node_modules/typescript/lib");
+  if lib.is_dir() {
+    Some(lib)
   } else {
     None
   }

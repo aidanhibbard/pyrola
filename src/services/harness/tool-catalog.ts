@@ -21,7 +21,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   lsp: 'Query language server (goToDefinition, findReferences, hover, symbols, workspaceSymbol, diagnostics). Prefer over grep for symbols.',
   diagnostics: 'Read linter and diagnostic errors for a file',
   run_terminal: 'Run a shell command in the project',
-  terminal_output: 'Read output from a background agent shell',
+  terminal_output: 'Read output from a background agent shell (not subagent ids)',
   stop_terminal: 'Stop a background agent shell',
   load_skill: 'Load a project skill by name',
   ask_user: 'Ask the user a clarifying question',
@@ -30,7 +30,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   create_plan: 'Create a plan document',
   update_plan_todo: 'Update a plan todo item',
   write_studio_artifact: 'Write a studio artifact',
-  spawn_subagent: 'Spawn sub-agent',
+  spawn_subagent: 'Spawn sub-agent (background: end turn, harness resumes)',
 }
 
 export const formatToolCatalogForMode = (mode: PyrolaChatMode): string => {

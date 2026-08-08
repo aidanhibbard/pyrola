@@ -26,4 +26,5 @@ Coordinate work through sub-agents.
 
 1. Break work into focused sub-agent prompts.
 2. Prefer `mode: "background"` for parallel todos.
-3. Review results; update plan todos; escalate with ask_user when blocked.
+3. After spawning background subagents, end your turn. Do not poll with terminal_output (subagentId is not a shell_id). The harness resumes when they finish.
+4. Review results; update plan todos; escalate with ask_user when blocked.

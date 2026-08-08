@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  CheckIcon,
+  CheckCircle2Icon,
   ChevronRightIcon,
   CircleAlertIcon,
+  OctagonXIcon,
   SquareIcon,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -40,22 +41,22 @@ const displayName = computed(() => {
 
 const statusIcon = computed(() => {
   if (props.subagent.status === 'stopped') {
-    return SquareIcon
+    return OctagonXIcon
   }
   if (props.subagent.status === 'error') {
     return CircleAlertIcon
   }
-  return CheckIcon
+  return CheckCircle2Icon
 })
 
 const statusIconClass = computed(() => {
   if (props.subagent.status === 'error') {
-    return 'size-3.5 shrink-0 text-destructive'
+    return 'size-3.5 shrink-0 fill-none text-destructive'
   }
   if (props.subagent.status === 'stopped') {
-    return 'size-3 shrink-0'
+    return 'size-3.5 shrink-0 fill-none text-destructive'
   }
-  return 'size-3.5 shrink-0'
+  return 'size-3.5 shrink-0 fill-none text-emerald-500'
 })
 
 const openSubagentChat = async (): Promise<void> => {

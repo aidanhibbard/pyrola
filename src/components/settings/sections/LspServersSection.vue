@@ -29,7 +29,7 @@ let unlistenInstall: (() => void) | null = null
 
 const BUILTIN_SERVERS = [
   { id: 'typescript', tier: 'A', label: 'TypeScript / JavaScript' },
-  { id: 'vue', tier: 'A', label: 'Vue' },
+  { id: 'vue', tier: 'A', label: 'Vue / Nuxt' },
   { id: 'json', tier: 'A', label: 'JSON' },
   { id: 'yaml', tier: 'A', label: 'YAML' },
   { id: 'markdown', tier: 'A', label: 'Markdown' },
@@ -39,8 +39,22 @@ const BUILTIN_SERVERS = [
   { id: 'bash', tier: 'B', label: 'Bash' },
   { id: 'html', tier: 'B', label: 'HTML' },
   { id: 'css', tier: 'B', label: 'CSS' },
+  { id: 'tailwindcss', tier: 'B', label: 'Tailwind CSS' },
   { id: 'svelte', tier: 'B', label: 'Svelte' },
   { id: 'astro', tier: 'B', label: 'Astro' },
+  { id: 'prisma', tier: 'B', label: 'Prisma' },
+  { id: 'graphql', tier: 'B', label: 'GraphQL' },
+  { id: 'dockerfile', tier: 'B', label: 'Dockerfile' },
+  { id: 'lua', tier: 'B', label: 'Lua' },
+  { id: 'clangd', tier: 'B', label: 'C / C++ (clangd)' },
+  { id: 'terraform', tier: 'B', label: 'Terraform' },
+  { id: 'toml', tier: 'B', label: 'TOML' },
+  { id: 'zig', tier: 'B', label: 'Zig' },
+  { id: 'php', tier: 'B', label: 'PHP' },
+  { id: 'kotlin', tier: 'B', label: 'Kotlin' },
+  { id: 'xml', tier: 'B', label: 'XML' },
+  { id: 'sql', tier: 'B', label: 'SQL' },
+  { id: 'java', tier: 'B', label: 'Java (jdtls)' },
 ] as const
 
 const lspEnabled = computed(

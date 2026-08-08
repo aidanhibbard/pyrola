@@ -46,9 +46,10 @@ import {
 } from '@/services/harness/agent-shell-registry'
 import {
   abort as abortSubagentsForChat,
+  clearPendingBackgroundResume,
   clearTurnResponseMessages,
   getTurnResponseMessages,
-  hasRunningSubagentsForChat,
+  hasPendingBackgroundResume,
   setTurnResponseMessages,
 } from '@/services/harness/subagent-registry'
 import {
@@ -89,8 +90,7 @@ export type ResumeOrchestratorInput = Omit<
   OrchestratorInput,
   'userText' | 'skipUserPersist'
 > & {
-  toolCallId: string
-  completedResult: SubagentResult
+  completedResults: Array<{ toolCallId: string; result: SubagentResult }>
   skipUserPersist: true
 }
 const MAX_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
@@ -379,6 +379,15 @@ const patchSubagentToolResult = (
       }),
     }
   })
+
+const patchSubagentToolResults = (
+  messages: ModelMessage[],
+  completedResults: Array<{ toolCallId: string; result: SubagentResult }>,
+): ModelMessage[] =>
+  completedResults.reduce(
+    (next, item) => patchSubagentToolResult(next, item.toolCallId, item.result),
+    messages,
+  )
 
 type HarnessStreamInput = {
   projectSlug: string
@@ -882,7 +891,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       }
     }
 
-    if (captureTurnMessages && hasRunningSubagentsForChat(chatId)) {
+    if (captureTurnMessages && hasPendingBackgroundResume(chatId)) {
       const responseMessages = await result.responseMessages
       setTurnResponseMessages(chatId, responseMessages)
     }
@@ -1050,39 +1059,43 @@ export const resumeOrchestrator = async (
     projectSlug,
     chatId,
     messages,
-    toolCallId,
-    completedResult,
+    completedResults,
     assistantId: inputAssistantId,
     onEvent,
     ...streamInput
   } = input
+
+  if (completedResults.length === 0) {
+    throw new Error('No completed subagent results to resume')
+  }
 
   const turnMessages = getTurnResponseMessages(chatId)
   if (!turnMessages) {
     throw new Error('No pending subagent turn to resume')
   }
 
-  onEvent({
-    type: 'tool-result',
-    toolCallId,
-    result: completedResult,
-    isError: false,
-  })
-  await persistToolRun(
-    projectSlug,
-    chatId,
-    toolCallId,
-    'spawn_subagent',
-    'done',
-    '',
-    { agentName: completedResult.name, blocking: false },
-    completedResult,
-  )
+  for (const item of completedResults) {
+    onEvent({
+      type: 'tool-result',
+      toolCallId: item.toolCallId,
+      result: item.result,
+      isError: false,
+    })
+    await persistToolRun(
+      projectSlug,
+      chatId,
+      item.toolCallId,
+      'spawn_subagent',
+      'done',
+      '',
+      { agentName: item.result.name, blocking: false },
+      item.result,
+    )
+  }
 
-  const patchedTurnMessages = patchSubagentToolResult(
+  const patchedTurnMessages = patchSubagentToolResults(
     turnMessages,
-    toolCallId,
-    completedResult,
+    completedResults,
   )
   const activeContextMeta = await readChatMeta(projectSlug, chatId).catch(() => null)
   const activeContext = activeContextMeta?.activeContext
@@ -1097,6 +1110,7 @@ export const resumeOrchestrator = async (
   const modelMessages = [...baseMessages, ...patchedTurnMessages]
 
   clearTurnResponseMessages(chatId)
+  clearPendingBackgroundResume(chatId)
 
   await runHarnessStream({
     ...streamInput,

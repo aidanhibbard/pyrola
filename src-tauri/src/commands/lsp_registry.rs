@@ -4,6 +4,8 @@ use std::collections::HashMap;
 pub enum LspInstallKind {
   Npm,
   GithubRelease,
+  /// Direct URL archive (tar.gz / zip / tar.xz). Used when GitHub Releases are not available.
+  HttpArchive,
   ToolchainPath,
   None,
 }
@@ -32,6 +34,10 @@ pub enum GithubTargetStyle {
   NodeStyle,
   /// Marksman release names: macos, linux-x64, linux-arm64, or plain .exe
   Marksman,
+  /// clangd release names: mac, linux, windows
+  ClangdOs,
+  /// zls 0.13-style: aarch64-macos, x86_64-linux, x86_64-windows
+  ZigOsArch,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +52,15 @@ pub struct GithubReleaseSpec {
 }
 
 #[derive(Debug, Clone)]
+pub struct HttpArchiveSpec {
+  pub url: &'static str,
+  /// Relative path or basename to locate after extract (searched recursively if needed).
+  pub binary_name: &'static str,
+  /// Version key for the managed install directory.
+  pub version_key: &'static str,
+}
+
+#[derive(Debug, Clone)]
 pub struct BuiltinLspSpec {
   pub id: &'static str,
   pub command: &'static [&'static str],
@@ -55,6 +70,7 @@ pub struct BuiltinLspSpec {
   pub install: LspInstallKind,
   pub npm: Option<NpmInstallSpec>,
   pub github: Option<GithubReleaseSpec>,
+  pub http: Option<HttpArchiveSpec>,
   pub root_markers: &'static [&'static str],
   pub requires_trust: bool,
 }
@@ -222,6 +238,7 @@ macro_rules! npm_spec {
         bin: $bin,
       }),
       github: None,
+      http: None,
       root_markers: $markers,
       requires_trust: false,
     }
@@ -238,7 +255,15 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     LspTier::A,
     &["typescript-language-server@4.3.3", "typescript@5.8.2"],
     "node_modules/typescript-language-server/lib/cli.mjs",
-    &["package.json"]
+    &[
+      "package.json",
+      "nuxt.config.ts",
+      "nuxt.config.js",
+      "nuxt.config.mjs",
+      "nuxt.config.cjs",
+      ".nuxtrc",
+      ".nuxt",
+    ]
   ),
   npm_spec!(
     "vue",
@@ -246,9 +271,17 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     &[".vue"],
     &["vue"],
     LspTier::A,
-    &["@vue/language-server@2.2.8", "@vue/typescript-plugin@2.2.8"],
+    &["@vue/language-server@2.2.8", "@vue/typescript-plugin@2.2.8", "typescript@5.8.2"],
     "node_modules/@vue/language-server/bin/vue-language-server.js",
-    &["package.json"]
+    &[
+      "package.json",
+      "nuxt.config.ts",
+      "nuxt.config.js",
+      "nuxt.config.mjs",
+      "nuxt.config.cjs",
+      ".nuxtrc",
+      ".nuxt",
+    ]
   ),
   npm_spec!(
     "json",
@@ -286,6 +319,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::Marksman,
     }),
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -316,6 +350,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: true,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &["Cargo.toml"],
     requires_trust: false,
   },
@@ -335,6 +370,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &["go.mod"],
     requires_trust: false,
   },
@@ -444,6 +480,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -458,11 +495,12 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     github: Some(GithubReleaseSpec {
       repo: "clangd/clangd",
       tag: "19.1.2",
-      asset: "clangd-{target}.zip",
+      asset: "clangd-{target}-{version}.zip",
       binary_name: "clangd",
       gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::ClangdOs,
     }),
+    http: None,
     root_markers: &["compile_commands.json", "CMakeLists.txt"],
     requires_trust: false,
   },
@@ -482,6 +520,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -501,6 +540,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: true,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -518,8 +558,9 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "zls-{target}.tar.xz",
       binary_name: "zls",
       gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::ZigOsArch,
     }),
+    http: None,
     root_markers: &["build.zig"],
     requires_trust: false,
   },
@@ -549,6 +590,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &["build.gradle", "build.gradle.kts", "settings.gradle"],
     requires_trust: false,
   },
@@ -568,6 +610,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -591,6 +634,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["deno.json", "deno.jsonc"],
     requires_trust: false,
   },
@@ -603,6 +647,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["Gemfile"],
     requires_trust: false,
   },
@@ -611,10 +656,15 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     command: &["jdtls"],
     extensions: &[".java"],
     language_ids: &["java"],
-    tier: LspTier::C,
-    install: LspInstallKind::ToolchainPath,
+    tier: LspTier::B,
+    install: LspInstallKind::HttpArchive,
     npm: None,
     github: None,
+    http: Some(HttpArchiveSpec {
+      url: "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz",
+      binary_name: "jdtls",
+      version_key: "latest",
+    }),
     root_markers: &["pom.xml", "build.gradle", "build.gradle.kts"],
     requires_trust: false,
   },
@@ -627,6 +677,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["*.csproj", "*.sln"],
     requires_trust: false,
   },
@@ -639,6 +690,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["Package.swift"],
     requires_trust: false,
   },
@@ -651,6 +703,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["mix.exs"],
     requires_trust: false,
   },
@@ -663,6 +716,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["stack.yaml", "cabal.project"],
     requires_trust: false,
   },
@@ -682,6 +736,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &["deps.edn", "project.clj"],
     requires_trust: false,
   },
@@ -694,6 +749,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["dune-project"],
     requires_trust: false,
   },
@@ -706,6 +762,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["pubspec.yaml"],
     requires_trust: false,
   },
@@ -718,6 +775,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["gleam.toml"],
     requires_trust: false,
   },
@@ -737,6 +795,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       gzip: false,
       target_style: GithubTargetStyle::RustTriple,
     }),
+    http: None,
     root_markers: &["flake.nix"],
     requires_trust: false,
   },
@@ -749,6 +808,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -761,6 +821,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::ToolchainPath,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["build.sbt"],
     requires_trust: false,
   },
@@ -774,6 +835,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::None,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["package.json"],
     requires_trust: true,
   },
@@ -786,6 +848,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::None,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["package.json"],
     requires_trust: true,
   },
@@ -798,6 +861,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     install: LspInstallKind::None,
     npm: None,
     github: None,
+    http: None,
     root_markers: &["biome.json", "biome.jsonc"],
     requires_trust: true,
   },
@@ -812,7 +876,11 @@ pub fn builtin_server_map() -> HashMap<String, (Vec<String>, Vec<String>, serde_
     let command = spec.command.iter().map(|s| (*s).to_string()).collect();
     let extensions = spec.extensions.iter().map(|s| (*s).to_string()).collect();
     let initialization = if spec.id == "vue" {
-      serde_json::json!({ "vue": { "complete": { "codelenses": true } } })
+      // typescript.tsdk is filled in at process start by build_initialization_options.
+      serde_json::json!({
+        "typescript": {},
+        "vue": { "complete": { "codelenses": true } }
+      })
     } else {
       serde_json::json!({})
     };
@@ -860,6 +928,36 @@ mod tests {
 
     assert!(root_marker_score(Some(&dir), typescript) < root_marker_score(Some(&dir), deno));
     let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn root_marker_score_prefers_nuxt_config_over_generic_package_json_alone() {
+    let dir = temp_dir("nuxt");
+    fs::write(dir.join("package.json"), "{}").unwrap();
+    fs::write(dir.join("nuxt.config.ts"), "export default {}").unwrap();
+
+    let vue = builtin_spec_by_id("vue").unwrap();
+    let deno = builtin_spec_by_id("deno").unwrap();
+
+    assert!(root_marker_score(Some(&dir), vue) < root_marker_score(Some(&dir), deno));
+    let _ = fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn language_id_for_extension_covers_systems_langs() {
+    assert_eq!(language_id_for_extension("astro"), "astro");
+    assert_eq!(language_id_for_extension("zig"), "zig");
+    assert_eq!(language_id_for_extension("java"), "java");
+    assert_eq!(language_id_for_extension("cpp"), "cpp");
+    assert_eq!(language_id_for_extension("c"), "c");
+  }
+
+  #[test]
+  fn java_is_managed_http_archive_tier_b() {
+    let java = builtin_spec_by_id("java").unwrap();
+    assert_eq!(java.tier, LspTier::B);
+    assert_eq!(java.install, LspInstallKind::HttpArchive);
+    assert!(java.http.is_some());
   }
 
   #[test]

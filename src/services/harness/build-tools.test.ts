@@ -317,6 +317,25 @@ describe('build-tools run_terminal', () => {
     })
   })
 
+  it('rejects terminal_output when shell_id is a subagent id', async () => {
+    const { register, resetSubagentRegistryForTests } = await import(
+      '@/services/harness/subagent-registry'
+    )
+    resetSubagentRegistryForTests()
+    register('chat-1', 'subagent-uuid', new AbortController(), {
+      toolCallId: 'tc-1',
+      agentName: 'explorer',
+    })
+
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    await expect(
+      runTool(tools.terminal_output.execute, { shell_id: 'subagent-uuid' }),
+    ).rejects.toThrow(/subagent, not a shell/i)
+    expect(getAgentShell).not.toHaveBeenCalled()
+  })
+
   it('stops a background shell', async () => {
     const buildTools = (await import('@/services/harness/build-tools')).default
     const tools = buildTools(ctx)

@@ -204,7 +204,7 @@ const handlePermissionLevelChange = (level: PermissionLevel): void => {
 }
 
 const handleSubmit = (payload: PromptInputMessage): void => {
-  if (props.status === 'streaming') {
+  if (props.status === 'streaming' || props.status === 'submitted') {
     emit('stop')
     return
   }
@@ -421,7 +421,7 @@ watch(
           <PromptInputSubmit
             class="ml-1 shrink-0"
             :status="submitStatus"
-            :disabled="disabled && status !== 'streaming'"
+            :disabled="disabled && status !== 'streaming' && status !== 'submitted'"
           />
         </PromptInputTools>
       </PromptInputFooter>

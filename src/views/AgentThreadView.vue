@@ -67,7 +67,14 @@ const harnessStatus = computed((): ChatStatus => {
     const subagent = chatStore.getSubagent(subagentId.value)
     return subagent?.status === 'running' ? 'streaming' : 'ready'
   }
-  return unref(harness.value?.status) ?? 'ready'
+  const status = unref(harness.value?.status) ?? 'ready'
+  if (status === 'streaming' || status === 'submitted') {
+    return status
+  }
+  const hasRunningSubagent = chatStore.timeline.value.some(
+    (item) => item.type === 'subagent' && item.status === 'running',
+  )
+  return hasRunningSubagent ? 'streaming' : status
 })
 const harnessPendingApprovals = computed(
   () => unref(harness.value?.pendingApprovals) ?? [],

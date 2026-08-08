@@ -33,7 +33,11 @@ import { createChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import {
   abort as abortSubagentsForChat,
   abortOne,
-  getSubagent,
+  clearPendingBackgroundResume,
+  clearTurnResponseMessages,
+  hasPendingBackgroundResume,
+  hasRunningSubagentsForChat,
+  listDeliverableBackgroundResults,
 } from '@/services/harness/subagent-registry'
 import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import compactSession from '@/services/harness/compact-session'
@@ -41,6 +45,7 @@ import writeHandoff from '@/services/harness/write-handoff'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import chatRouteFor from '@/utils/chat-route-for'
 import formatUnknownError from '@/utils/format-unknown-error'
+import shouldFlushBackgroundSubagentResume from '@/utils/should-flush-background-subagent-resume'
 import router from '@/router'
 
 export type AgentHarnessOptions = {
@@ -98,7 +103,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     mentions: ContextMention[]
     effectiveSettings: PyrolaSettings
   } | null>(null)
-  const resumingSubagents = new Set<string>()
+  const resumingBackgroundBatch = ref(false)
 
   const refreshSidebar = (): void => {
     fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
@@ -298,18 +303,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
           : item,
       )
       session.completeLocalSubagent(event.subagentId, event.summary, status)
-      if (!event.blocking && !resumingSubagents.has(event.subagentId)) {
-        resumingSubagents.add(event.subagentId)
-        resumeAfterSubagent(event.subagentId, event.summary)
-          .catch((err) => {
-            toast.error('Agent resume failed', {
-              description: err instanceof Error ? err.message : 'Unknown error',
-            })
-          })
-          .finally(() => {
-            resumingSubagents.delete(event.subagentId)
-          })
-      }
+      maybeFlushBackgroundSubagentResume()
     }
     if (event.type === 'question-request') {
       session.setPendingQuestion({
@@ -367,6 +361,9 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       status.value = mapMetaStatusToChatStatus(event.status, false)
       session.patchMeta({ status: event.status })
       refreshSidebar()
+      if (event.status === 'idle') {
+        maybeFlushBackgroundSubagentResume()
+      }
     }
     if (event.type === 'chat-meta-changed') {
       if (
@@ -389,17 +386,42 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     maybeClearAttentionWhenGatesEmpty()
   }
 
-  const resumeAfterSubagent = async (
-    subagentId: string,
-    summary: string,
-  ): Promise<void> => {
-    if (status.value === 'streaming' || status.value === 'submitted') {
+  const maybeFlushBackgroundSubagentResume = (): void => {
+    const action = shouldFlushBackgroundSubagentResume({
+      parentBusy:
+        status.value === 'streaming' ||
+        status.value === 'submitted' ||
+        resumingBackgroundBatch.value,
+      hasPending: hasPendingBackgroundResume(options.chatId),
+      hasRunning: hasRunningSubagentsForChat(options.chatId),
+      deliverableCount: listDeliverableBackgroundResults(options.chatId).length,
+    })
+
+    if (action === 'clear') {
+      clearPendingBackgroundResume(options.chatId)
+      clearTurnResponseMessages(options.chatId)
       return
     }
 
-    const record = getSubagent(subagentId)
+    if (action !== 'resume') {
+      return
+    }
+
+    resumeAfterBackgroundSubagents().catch((err) => {
+      toast.error('Agent resume failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+    })
+  }
+
+  const resumeAfterBackgroundSubagents = async (): Promise<void> => {
+    if (resumingBackgroundBatch.value) {
+      return
+    }
+
+    const completedResults = listDeliverableBackgroundResults(options.chatId)
     const cfg = lastRunConfig.value
-    if (!record || !cfg) {
+    if (completedResults.length === 0 || !cfg) {
       return
     }
 
@@ -414,6 +436,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       return
     }
 
+    resumingBackgroundBatch.value = true
     error.value = null
     status.value = 'submitted'
 
@@ -438,12 +461,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         signal: controller.signal,
         onEvent: handleEvent,
         assistantId: turnId,
-        toolCallId: record.toolCallId,
-        completedResult: {
-          subagentId,
-          name: record.agentName,
-          summary,
-        },
+        completedResults,
         skipUserPersist: true,
         permissionLevel: sessionPermissionLevel.value ?? undefined,
         persistPermission,
@@ -470,6 +488,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       await fleetSidebar.refreshSlug(options.projectSlug)
     } finally {
       abortController.value = null
+      resumingBackgroundBatch.value = false
     }
   }
 
@@ -735,6 +754,21 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   const stop = async (): Promise<void> => {
     abortController.value?.abort()
     abortSubagentsForChat(options.chatId)
+    const runningIds = new Set(
+      subagents.value
+        .filter((item) => item.status === 'running')
+        .map((item) => item.subagentId),
+    )
+    for (const subagentId of runningIds) {
+      session.completeLocalSubagent(subagentId, 'Stopped', 'stopped')
+    }
+    if (runningIds.size > 0) {
+      subagents.value = subagents.value.map((item) =>
+        runningIds.has(item.subagentId)
+          ? { ...item, status: 'stopped', summary: 'Stopped' }
+          : item,
+      )
+    }
     status.value = 'ready'
     session.finishAgentTurn()
     try {

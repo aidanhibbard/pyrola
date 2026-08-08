@@ -77,6 +77,7 @@ import {
   abortOne as abortSubagent,
   fail as failSubagent,
   getSubagent,
+  hasSubagent,
   register as registerSubagent,
   resolve as resolveSubagent,
 } from '@/services/harness/subagent-registry'
@@ -88,6 +89,7 @@ import {
   getPlanExecutionSession,
   markCreatedPlanThisTurn,
 } from '@/services/harness/plan-execution-session'
+import linkAbortSignal from '@/utils/link-abort-signal'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -305,6 +307,12 @@ const readTerminalOutput = async (
   block?: boolean,
   tail?: number,
 ): Promise<Record<string, unknown>> => {
+  if (hasSubagent(shellId)) {
+    throw new Error(
+      'That id is a subagent, not a shell. Do not poll subagents with terminal_output. End your turn; the harness resumes when background subagents finish.',
+    )
+  }
+
   const shell = getAgentShell(shellId)
   if (!shell) {
     throw new Error(`Shell not found: ${shellId}`)
@@ -1055,14 +1063,16 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   }),
   terminal_output: tool({
     description: withToolExamples(
-      'Read stdout/stderr from a background agent shell by shell_id. Use block true to wait until the shell exits.',
+      'Read stdout/stderr from a background agent shell by shell_id from run_terminal. Do not pass spawn_subagent ids; the harness resumes the parent when background subagents finish. Use block true to wait until the shell exits.',
       [
         { shell_id: 'shell_abc123', tail: 80 },
         { shell_id: 'shell_abc123', block: true },
       ],
     ),
     inputSchema: z.object({
-      shell_id: z.string().describe('Id returned by run_terminal when is_background is true'),
+      shell_id: z
+        .string()
+        .describe('Id returned by run_terminal when is_background is true (not a subagentId)'),
       block: z.boolean().optional().describe('Wait until the shell exits'),
       tail: z.number().optional().describe('Max trailing lines to return'),
     }),
@@ -1309,7 +1319,7 @@ const buildTools = (ctx: HarnessToolContext) => ({
   ...buildHarnessTools(ctx),
   spawn_subagent: tool({
     description: withToolExamples(
-      'Spawn a subagent. Default mode is blocking (waits until complete). Set mode to background to run concurrently and continue the parent turn; the harness resumes when the subagent finishes. agentName must be a very brief verb phrase that explains the work (for example "Reading auth", "Editing config").',
+      'Spawn a subagent. Default mode is blocking (waits until complete). Set mode to background to run concurrently: return immediately, end your turn, and do not poll with terminal_output (subagentId is not a shell_id). The harness resumes this chat with the summary when all background subagents finish. agentName must be a very brief verb phrase that explains the work (for example "Reading auth", "Editing config").',
       [
         {
           agentName: 'Reading auth',
@@ -1333,14 +1343,20 @@ const buildTools = (ctx: HarnessToolContext) => ({
       mode: z
         .enum(['blocking', 'background'])
         .default('blocking')
-        .describe('blocking waits; background returns while it runs'),
+        .describe(
+          'blocking waits inline; background returns running, then end your turn and wait for harness resume',
+        ),
     }),
     execute: async (
       { agentName, prompt, mode },
       { toolCallId },
     ): Promise<
       | { subagentId: string; name: string; summary: string }
-      | { subagentId: string; status: 'running' }
+      | {
+          subagentId: string
+          status: 'running'
+          note: string
+        }
     > => {
       assertNotAwaitingPlanGo(ctx.projectSlug, ctx.chatId)
 
@@ -1380,7 +1396,7 @@ const buildTools = (ctx: HarnessToolContext) => ({
 
       if (!blocking) {
         const controller = new AbortController()
-        ctx.signal?.addEventListener('abort', () => controller.abort(), { once: true })
+        linkAbortSignal(ctx.signal, controller)
 
         registerSubagent(ctx.chatId, subagentId, controller, {
           toolCallId,
@@ -1430,7 +1446,11 @@ const buildTools = (ctx: HarnessToolContext) => ({
           })
         })
 
-        return { subagentId, status: 'running' }
+        return {
+          subagentId,
+          status: 'running',
+          note: 'Do not poll with terminal_output. End your turn; the harness resumes when background subagents finish. subagentId is not a shell_id.',
+        }
       }
 
       try {
