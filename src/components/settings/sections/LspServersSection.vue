@@ -1,21 +1,39 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
+import {
+  Ban,
+  CircleCheck,
+  Download,
+  Loader2,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import { Label } from '@/components/shadcn/ui/label'
 import { Switch } from '@/components/shadcn/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
+import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import {
   isTauri,
+  lspCatalog,
   lspInstallServer,
   lspPrefetchDefaults,
-  lspStatus,
-  type LspServerStatus,
+  lspSetServerDisabled,
+  lspUninstallServer,
+  type LspCatalogEntry,
 } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import lspServerIconName from '@/utils/lsp-server-icon-name'
 
 const props = defineProps<{
   tab: SettingsTab
@@ -23,43 +41,11 @@ const props = defineProps<{
 
 const config = usePyrolaConfig()
 const fleet = useFleetRegistry()
-const statuses = ref<LspServerStatus[]>([])
+const catalog = ref<LspCatalogEntry[]>([])
 const installMessage = ref<string | null>(null)
+const busyIds = ref<Set<string>>(new Set())
+const prefetching = ref(false)
 let unlistenInstall: (() => void) | null = null
-
-const BUILTIN_SERVERS = [
-  { id: 'typescript', tier: 'A', label: 'TypeScript / JavaScript' },
-  { id: 'vue', tier: 'A', label: 'Vue / Nuxt' },
-  { id: 'json', tier: 'A', label: 'JSON' },
-  { id: 'yaml', tier: 'A', label: 'YAML' },
-  { id: 'markdown', tier: 'A', label: 'Markdown' },
-  { id: 'python', tier: 'B', label: 'Python (basedpyright)' },
-  { id: 'rust', tier: 'B', label: 'Rust' },
-  { id: 'gopls', tier: 'B', label: 'Go' },
-  { id: 'bash', tier: 'B', label: 'Bash' },
-  { id: 'html', tier: 'B', label: 'HTML' },
-  { id: 'css', tier: 'B', label: 'CSS' },
-  { id: 'tailwindcss', tier: 'B', label: 'Tailwind CSS' },
-  { id: 'svelte', tier: 'B', label: 'Svelte' },
-  { id: 'astro', tier: 'B', label: 'Astro' },
-  { id: 'prisma', tier: 'B', label: 'Prisma' },
-  { id: 'graphql', tier: 'B', label: 'GraphQL' },
-  { id: 'dockerfile', tier: 'B', label: 'Dockerfile' },
-  { id: 'lua', tier: 'B', label: 'Lua' },
-  { id: 'clangd', tier: 'B', label: 'C / C++ (clangd)' },
-  { id: 'terraform', tier: 'B', label: 'Terraform' },
-  { id: 'toml', tier: 'B', label: 'TOML' },
-  { id: 'zig', tier: 'B', label: 'Zig' },
-  { id: 'php', tier: 'B', label: 'PHP' },
-  { id: 'kotlin', tier: 'B', label: 'Kotlin' },
-  { id: 'xml', tier: 'B', label: 'XML' },
-  { id: 'sql', tier: 'B', label: 'SQL' },
-  { id: 'java', tier: 'B', label: 'Java (jdtls)' },
-] as const
-
-const lspEnabled = computed(
-  () => config.getScopeSettings(props.tab)['lsp.enabled'] ?? false,
-)
 
 const autoDownload = computed(
   () => config.getScopeSettings(props.tab)['lsp.autoDownload'] ?? true,
@@ -76,27 +62,26 @@ const workspaceTrusted = computed(() => {
   return records.some((record) => record.rootPath === root && record.trusted)
 })
 
-const refreshStatuses = async (): Promise<void> => {
+const setBusy = (serverId: string, busy: boolean): void => {
+  const next = new Set(busyIds.value)
+  if (busy) {
+    next.add(serverId)
+  } else {
+    next.delete(serverId)
+  }
+  busyIds.value = next
+}
+
+const isBusy = (serverId: string): boolean => busyIds.value.has(serverId)
+
+const refreshCatalog = async (): Promise<void> => {
   if (!isTauri()) {
     return
   }
   try {
-    statuses.value = await lspStatus()
+    catalog.value = await lspCatalog()
   } catch (error) {
-    toast.error('Failed to load LSP status', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const statusFor = (id: string): LspServerStatus | undefined =>
-  statuses.value.find((status) => status.id === id)
-
-const updateLspEnabled = async (value: boolean): Promise<void> => {
-  try {
-    await config.updateSetting(props.tab, 'lsp.enabled', value)
-  } catch (error) {
-    toast.error('Failed to save LSP setting', {
+    toast.error('Failed to load language servers', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   }
@@ -133,19 +118,83 @@ const trustWorkspace = async (): Promise<void> => {
   }
 }
 
-const retryInstall = async (serverId: string): Promise<void> => {
+const statusHint = (entry: LspCatalogEntry): string => {
+  const parts: string[] = []
+  if (entry.extensions.length > 0) {
+    parts.push(entry.extensions.slice(0, 6).join(', '))
+  }
+  parts.push(entry.running ? 'running' : 'idle')
+  if (entry.source && entry.source !== 'none') {
+    parts.push(entry.source)
+  } else if (entry.installable) {
+    parts.push('not installed')
+  } else if (entry.installKind === 'toolchain') {
+    parts.push('needs toolchain on PATH')
+  }
+  if (entry.requiresTrust && !workspaceTrusted.value) {
+    parts.push('requires workspace trust')
+  }
+  if (entry.disabled) {
+    parts.push('disabled')
+  }
+  if (entry.installState && entry.installState !== 'ready' && entry.installState !== 'missing') {
+    parts.push(entry.installState)
+  }
+  return parts.join(', ')
+}
+
+const installServer = async (serverId: string): Promise<void> => {
+  setBusy(serverId, true)
   try {
     await lspInstallServer(serverId)
-    await refreshStatuses()
+    await refreshCatalog()
     toast.success(`Installed ${serverId}`)
   } catch (error) {
     toast.error(`Failed to install ${serverId}`, {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
+  } finally {
+    setBusy(serverId, false)
+  }
+}
+
+const uninstallServer = async (serverId: string): Promise<void> => {
+  setBusy(serverId, true)
+  try {
+    await lspUninstallServer(serverId)
+    await refreshCatalog()
+    toast.success(`Uninstalled ${serverId}`)
+  } catch (error) {
+    toast.error(`Failed to uninstall ${serverId}`, {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  } finally {
+    setBusy(serverId, false)
+  }
+}
+
+const setDisabled = async (serverId: string, disabled: boolean): Promise<void> => {
+  setBusy(serverId, true)
+  try {
+    const rootPath = props.tab === 'project' ? activeRoot.value : null
+    if (props.tab === 'project' && !rootPath) {
+      toast.error('Open a project to change project language servers')
+      return
+    }
+    await lspSetServerDisabled(props.tab, serverId, disabled, rootPath)
+    await refreshCatalog()
+    toast.success(disabled ? `Disabled ${serverId}` : `Enabled ${serverId}`)
+  } catch (error) {
+    toast.error(`Failed to update ${serverId}`, {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  } finally {
+    setBusy(serverId, false)
   }
 }
 
 const prefetchDefaults = async (): Promise<void> => {
+  prefetching.value = true
   try {
     await lspPrefetchDefaults()
     toast.success('Installing default language support')
@@ -153,11 +202,13 @@ const prefetchDefaults = async (): Promise<void> => {
     toast.error('Failed to start language support install', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
+  } finally {
+    prefetching.value = false
   }
 }
 
 onMounted(async () => {
-  await refreshStatuses()
+  await refreshCatalog()
   if (!isTauri()) {
     return
   }
@@ -169,8 +220,8 @@ onMounted(async () => {
     }>('lsp://install', (event) => {
       installMessage.value = event.payload.message ?? `${event.payload.serverId}: ${event.payload.state}`
       if (event.payload.state === 'ready' || event.payload.state === 'error') {
-        refreshStatuses().then(() => undefined).catch((error: unknown) => {
-          toast.error('Failed to refresh LSP status', {
+        refreshCatalog().then(() => undefined).catch((error: unknown) => {
+          toast.error('Failed to refresh language servers', {
             description: error instanceof Error ? error.message : 'Unknown error',
           })
         })
@@ -189,22 +240,37 @@ onUnmounted(() => {
 
 <template>
   <SettingsSectionScroll title="LSP">
-    <div class="space-y-6">
-      <div class="flex items-center justify-between gap-4">
-        <div class="space-y-1">
-          <Label>Enable language servers</Label>
-          <p class="text-sm text-muted-foreground">
-            Language support installs automatically for Monaco and agent tools.
-          </p>
-        </div>
-        <Switch :model-value="lspEnabled" @update:model-value="updateLspEnabled" />
-      </div>
+    <template #actions>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8"
+            aria-label="Install defaults"
+            :disabled="!isTauri() || prefetching"
+            @click="prefetchDefaults"
+          >
+            <Loader2
+              v-if="prefetching"
+              class="h-4 w-4 animate-spin"
+            />
+            <Download
+              v-else
+              class="h-4 w-4"
+            />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Install defaults</TooltipContent>
+      </Tooltip>
+    </template>
 
+    <div class="space-y-6">
       <div class="flex items-center justify-between gap-4">
         <div class="space-y-1">
           <Label>Auto-download language servers</Label>
           <p class="text-sm text-muted-foreground">
-            Download Tier A defaults on project open. Disable for airgapped machines.
+            Download default language support on project open. Disable for airgapped machines.
           </p>
         </div>
         <Switch :model-value="autoDownload" @update:model-value="updateAutoDownload" />
@@ -219,61 +285,168 @@ onUnmounted(() => {
               Managed servers work without trust.
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!activeRoot || workspaceTrusted"
-            @click="trustWorkspace"
-          >
-            {{ workspaceTrusted ? 'Trusted' : 'Trust project' }}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8"
+                :aria-label="workspaceTrusted ? 'Workspace trusted' : 'Trust project'"
+                :disabled="!activeRoot || workspaceTrusted"
+                @click="trustWorkspace"
+              >
+                <ShieldCheck class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {{ workspaceTrusted ? 'Workspace trusted' : 'Trust project' }}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      <div class="flex items-center justify-between gap-3">
-        <p class="text-sm text-muted-foreground">
-          {{ installMessage ?? 'Built-in corpus: TypeScript, Vue, JSON, YAML, Markdown, plus lazy installs for Python, Rust, Go, and more.' }}
-        </p>
-        <Button size="sm" variant="secondary" @click="prefetchDefaults">
-          Install defaults
-        </Button>
-      </div>
+      <p
+        v-if="installMessage"
+        class="text-sm text-muted-foreground"
+      >
+        {{ installMessage }}
+      </p>
+      <p
+        v-else
+        class="text-sm text-muted-foreground"
+      >
+        Language servers are always available. Install managed ones below, or disable a server for this scope.
+      </p>
 
       <div class="space-y-2">
         <Label>Servers</Label>
         <ul class="divide-y divide-border/50 rounded-md border border-border/50">
           <li
-            v-for="server in BUILTIN_SERVERS"
-            :key="server.id"
+            v-for="entry in catalog"
+            :key="entry.id"
             class="flex items-center justify-between gap-3 px-3 py-2"
           >
-            <div class="min-w-0 space-y-0.5">
-              <p class="truncate text-sm font-medium">{{ server.label }}</p>
-              <p class="truncate text-xs text-muted-foreground">
-                Tier {{ server.tier }}
-                <template v-if="statusFor(server.id)">
-                  ,
-                  {{ statusFor(server.id)?.running ? 'running' : 'idle' }}
-                  <template v-if="statusFor(server.id)?.source">
-                    , {{ statusFor(server.id)?.source }}
-                  </template>
-                  <template v-if="statusFor(server.id)?.installState">
-                    , {{ statusFor(server.id)?.installState }}
-                  </template>
-                </template>
-              </p>
-              <p
-                v-if="statusFor(server.id)?.error"
-                class="truncate text-xs text-destructive"
-              >
-                {{ statusFor(server.id)?.error }}
-              </p>
+            <div class="flex min-w-0 items-start gap-2">
+              <WorkbenchFileEntryIcon
+                :name="lspServerIconName(entry.id, entry.extensions)"
+                class="mt-0.5"
+              />
+              <div class="min-w-0 space-y-0.5">
+                <p class="truncate text-sm font-medium">{{ entry.label }}</p>
+                <p class="truncate text-xs text-muted-foreground">
+                  {{ statusHint(entry) }}
+                </p>
+                <p
+                  v-if="entry.error"
+                  class="truncate text-xs text-destructive"
+                >
+                  {{ entry.error }}
+                </p>
+              </div>
             </div>
-            <Button size="sm" variant="ghost" @click="retryInstall(server.id)">
-              Retry
-            </Button>
+            <div class="flex shrink-0 items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-8 w-8"
+                    :aria-label="entry.disabled ? 'Enable' : 'Disable'"
+                    :disabled="isBusy(entry.id)"
+                    @click="setDisabled(entry.id, !entry.disabled)"
+                  >
+                    <CircleCheck
+                      v-if="entry.disabled"
+                      class="h-4 w-4"
+                    />
+                    <Ban
+                      v-else
+                      class="h-4 w-4"
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {{ entry.disabled ? 'Enable' : 'Disable' }}
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip v-if="entry.installable && !entry.installed">
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-8 w-8"
+                    aria-label="Install"
+                    :disabled="isBusy(entry.id) || entry.disabled"
+                    @click="installServer(entry.id)"
+                  >
+                    <Loader2
+                      v-if="isBusy(entry.id)"
+                      class="h-4 w-4 animate-spin"
+                    />
+                    <Download
+                      v-else
+                      class="h-4 w-4"
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Install</TooltipContent>
+              </Tooltip>
+
+              <Tooltip v-else-if="entry.installable && entry.error">
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-8 w-8"
+                    aria-label="Retry"
+                    :disabled="isBusy(entry.id) || entry.disabled"
+                    @click="installServer(entry.id)"
+                  >
+                    <Loader2
+                      v-if="isBusy(entry.id)"
+                      class="h-4 w-4 animate-spin"
+                    />
+                    <RotateCcw
+                      v-else
+                      class="h-4 w-4"
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Retry</TooltipContent>
+              </Tooltip>
+
+              <Tooltip v-if="entry.installable && entry.installed && entry.source === 'managed'">
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-8 w-8"
+                    aria-label="Uninstall"
+                    :disabled="isBusy(entry.id)"
+                    @click="uninstallServer(entry.id)"
+                  >
+                    <Loader2
+                      v-if="isBusy(entry.id)"
+                      class="h-4 w-4 animate-spin"
+                    />
+                    <Trash2
+                      v-else
+                      class="h-4 w-4"
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Uninstall</TooltipContent>
+              </Tooltip>
+            </div>
           </li>
         </ul>
+        <p
+          v-if="!isTauri()"
+          class="text-sm text-muted-foreground"
+        >
+          Language servers require the desktop app.
+        </p>
       </div>
     </div>
   </SettingsSectionScroll>

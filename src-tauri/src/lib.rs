@@ -12,17 +12,18 @@ use commands::{
   git_checkout_branch, git_commit, git_diff, git_list_branches, git_log, git_repo_info,
   git_show_file, git_status,
   has_project_pyrola, http_proxy_request, http_proxy_stream, http_proxy_stream_cancel, list_chats,
-  list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_install_server,
-  lsp_prefetch_defaults, lsp_request, lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_statuses,
+  list_pinned_chats, list_project_files, list_pyrola_files, lsp_catalog, lsp_ensure_server,
+  lsp_install_server, lsp_prefetch_defaults, lsp_request, lsp_set_server_disabled, lsp_status,
+  lsp_stop_server, lsp_uninstall_server, mcp_call_tool, mcp_list_statuses,
   mcp_list_tools, mcp_logout,
   mcp_refresh, mcp_start, mcp_status, mcp_stop, oauth_begin_loopback, oauth_cancel_loopback,
   open_external_url, pin_chat, read_chat_meta, read_chat_messages,
-  read_json_file, read_mcp_config, read_settings, registry_add_project, open_project_at_path,
+  read_json_file, read_lsp_config, read_mcp_config, read_settings, registry_add_project, open_project_at_path,
   registry_list_projects, registry_remove_project, registry_set_active_project,
   registry_update_project_root, resolve_launch_path, reveal_in_folder, set_secret, shell_kill_pty,
   shell_kill_tracked, shell_resize_pty, shell_spawn_pty, shell_spawn_tracked,
   shell_write_pty, update_chat_meta, watch_pyrola_paths, workspace_glob, workspace_grep,
-  write_json_file, write_mcp_config, write_settings, OAuthLoopbackState, WatchState,
+  write_json_file, write_lsp_config, write_mcp_config, write_settings, OAuthLoopbackState, WatchState,
 };
 use commands::http::HttpStreamRegistry;
 
@@ -170,6 +171,11 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
       lsp_stop_server,
       lsp_prefetch_defaults,
       lsp_install_server,
+      lsp_catalog,
+      lsp_uninstall_server,
+      lsp_set_server_disabled,
+      read_lsp_config,
+      write_lsp_config,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

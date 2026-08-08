@@ -55,7 +55,6 @@ export type PyrolaSettings = {
   'agent.sandbox.network'?: 'deny' | 'allow'
   'agent.maxStepsPerTurn'?: number
   'general.machineLabel'?: string
-  'lsp.enabled'?: boolean
   'lsp.autoDownload'?: boolean
   'workspace.trust'?: Array<{ rootPath: string; trusted: boolean }>
   'chat.autoTitle'?: boolean

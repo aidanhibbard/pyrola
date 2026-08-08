@@ -161,7 +161,7 @@ fn lsp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<P
   base_path(app, scope, root_path).map(|p| p.join("lsp.json"))
 }
 
-pub(crate) fn read_lsp_config(
+pub(crate) fn load_lsp_config(
   app: &AppHandle,
   scope: &str,
   root_path: Option<String>,
@@ -170,13 +170,42 @@ pub(crate) fn read_lsp_config(
   read_json(&path)
 }
 
+pub(crate) fn write_lsp_config_internal(
+  app: &AppHandle,
+  scope: &str,
+  root_path: Option<String>,
+  config: serde_json::Value,
+) -> Result<(), String> {
+  let path = lsp_path(app, scope, root_path)?;
+  write_json(&path, config)
+}
+
+#[tauri::command]
+pub fn read_lsp_config(
+  app: AppHandle,
+  scope: String,
+  root_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+  load_lsp_config(&app, &scope, root_path)
+}
+
+#[tauri::command]
+pub fn write_lsp_config(
+  app: AppHandle,
+  scope: String,
+  root_path: Option<String>,
+  config: serde_json::Value,
+) -> Result<(), String> {
+  write_lsp_config_internal(&app, &scope, root_path, config)
+}
+
 pub(crate) fn read_lsp_scope_configs(
   app: &AppHandle,
   project_root: Option<String>,
 ) -> Result<(serde_json::Value, serde_json::Value), String> {
-  let personal = read_lsp_config(app, "personal", None)?;
+  let personal = load_lsp_config(app, "personal", None)?;
   let project = match project_root {
-    Some(root) => read_lsp_config(app, "project", Some(root))?,
+    Some(root) => load_lsp_config(app, "project", Some(root))?,
     None => serde_json::json!({}),
   };
   Ok((personal, project))
@@ -184,34 +213,6 @@ pub(crate) fn read_lsp_scope_configs(
 
 pub(crate) fn read_settings_for_lsp(app: &AppHandle) -> Result<serde_json::Value, String> {
   read_settings_internal(app, "personal", None)
-}
-
-pub(crate) fn lsp_enabled_in_settings(
-  app: &AppHandle,
-  project_root: Option<&str>,
-) -> bool {
-  let personal = match read_settings_internal(app, "personal", None) {
-    Ok(settings) => settings,
-    Err(error) => {
-      log::warn!("Failed to read personal settings for LSP: {error}");
-      return true;
-    }
-  };
-
-  let mut enabled = personal
-    .get("lsp.enabled")
-    .and_then(|value| value.as_bool())
-    .unwrap_or(true);
-
-  if let Some(root) = project_root {
-    if let Ok(project_settings) = read_settings_internal(app, "project", Some(root.to_string())) {
-      if let Some(value) = project_settings.get("lsp.enabled").and_then(|v| v.as_bool()) {
-        enabled = value;
-      }
-    }
-  }
-
-  enabled
 }
 
 /// Returns true when the workspace root is trusted for project-local LSP execution.

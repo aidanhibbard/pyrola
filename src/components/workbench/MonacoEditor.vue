@@ -43,7 +43,6 @@ const props = defineProps<{
   projectId: string
   path: string | null
   openPaths?: string[]
-  lspEnabled?: boolean
   lineNumbers?: boolean
   wordWrap?: boolean
   diffView?: boolean
@@ -73,7 +72,7 @@ const pathByModel = new Map<monaco.editor.ITextModel, string>()
 const lspServerByPath = new Map<string, string>()
 const dirtyByPath = new Map<string, boolean>()
 
-const lspActive = computed(() => props.lspEnabled !== false && isTauri())
+const lspActive = computed(() => isTauri())
 
 const lineNumbersOption = computed((): 'on' | 'off' =>
   props.lineNumbers !== false ? 'on' : 'off',
@@ -127,7 +126,7 @@ const prepareMonacoEnvironment = (): void => {
   // tsserver worker does not understand Vue SFC or Vite CSS module imports,
   // so it produces false positives (e.g. "Cannot find module './App.vue'")
   // that Cursor/Volar do not show. Accurate diagnostics come from the
-  // external LSP (Volar) when `lsp.enabled` is on.
+  // external LSP (Volar) when language servers are available.
   const tsLang = monaco.languages.typescript as unknown as {
     typescriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
     javascriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }

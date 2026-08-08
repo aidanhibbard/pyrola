@@ -799,3 +799,25 @@ pub fn install_source_label(app: &AppHandle, server_id: &str) -> String {
   }
   "none".to_string()
 }
+
+/// Remove managed install cache for a server. Fails for PATH/toolchain-only servers.
+pub fn remove_managed_install(app: &AppHandle, server_id: &str) -> Result<(), String> {
+  let spec = builtin_spec_by_id(server_id)
+    .ok_or_else(|| format!("Unknown language server: {server_id}"))?;
+  if !matches!(
+    spec.install,
+    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive
+  ) {
+    return Err(
+      "Uninstall only applies to managed downloads. PATH/toolchain servers are not removed."
+        .to_string(),
+    );
+  }
+  let root = lsp_root(app)?.join(server_id);
+  if root.exists() {
+    fs::remove_dir_all(&root).map_err(|error| {
+      format!("Failed to remove managed language server '{server_id}': {error}")
+    })?;
+  }
+  Ok(())
+}

@@ -47,7 +47,6 @@ export const pyrolaSettingsSchema = z
     'agent.sandbox.network': z.enum(['deny', 'allow']).optional(),
     'agent.maxStepsPerTurn': z.number().int().min(1).max(200).optional(),
     'general.machineLabel': z.string().optional(),
-    'lsp.enabled': z.boolean().optional(),
     'lsp.autoDownload': z.boolean().optional(),
     'workspace.trust': z
       .array(
@@ -100,7 +99,6 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'agent.sandbox.enabled': true,
   'agent.sandbox.network': 'deny',
   'agent.maxStepsPerTurn': 40,
-  'lsp.enabled': true,
   'lsp.autoDownload': true,
   'workspace.trust': [],
   'chat.autoTitle': true,

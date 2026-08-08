@@ -17,7 +17,6 @@ import {
   WandSparkles,
   WrapText,
   X,
-  Zap,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import {
@@ -61,7 +60,6 @@ import WorkbenchEditorFileSearchDialog from '@/components/workbench/EditorFileSe
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
 import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
-import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
 import type { EditorPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
@@ -73,7 +71,6 @@ const props = defineProps<{
 }>()
 
 const workbench = useWorkbenchStore()
-const config = usePyrolaConfig()
 
 const monacoRef = ref<InstanceType<typeof WorkbenchMonacoEditor> | null>(null)
 const editorMode = ref<EditorMode>('edit')
@@ -88,16 +85,6 @@ const isNavigatingHistory = ref(false)
 const pathHistory = ref<string[]>([])
 const historyIndex = ref(-1)
 
-const lspEnabled = computed({
-  get: () => config.effectiveSettings.value['lsp.enabled'] ?? false,
-  set: (value: boolean) => {
-    config.updateSetting('personal', 'lsp.enabled', value).catch((error) => {
-      toast.error('Failed to update LSP setting', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    })
-  },
-})
 const lineNumbers = ref(true)
 const wordWrap = ref(false)
 const autoSave = ref(false)
@@ -594,7 +581,6 @@ watch(
               :project-id="tab.projectId"
               :path="selectedPath"
               :open-paths="openPaths"
-              :lsp-enabled="lspEnabled"
               :line-numbers="lineNumbers"
               :word-wrap="wordWrap"
               :diff-view="diffView"
@@ -667,11 +653,6 @@ watch(
                         <GitCompareArrows class="mr-2 h-4 w-4" />
                         Diff View
                         <Check v-if="diffView" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="lspEnabled = !lspEnabled">
-                        <Zap class="mr-2 h-4 w-4" />
-                        LSP
-                        <Check v-if="lspEnabled" class="ml-auto h-4 w-4" />
                       </DropdownMenuItem>
                       <DropdownMenuItem @click="lineNumbers = !lineNumbers">
                         <ListOrdered class="mr-2 h-4 w-4" />

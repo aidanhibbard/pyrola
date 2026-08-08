@@ -22,8 +22,8 @@ pub use chat::{
   read_chat_meta, read_chat_messages, truncate_chat_log, update_chat_meta,
 };
 pub use config::{
-  config_exists, read_json_file, read_mcp_config, read_settings, write_json_file, write_mcp_config,
-  write_settings,
+  config_exists, read_json_file, read_lsp_config, read_mcp_config, read_settings, write_json_file,
+  write_lsp_config, write_mcp_config, write_settings,
 };
 pub use fs::{
   fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir,
@@ -37,7 +37,10 @@ pub use glob::workspace_glob;
 pub use grep::workspace_grep;
 pub use http::{http_proxy_request, http_proxy_stream, http_proxy_stream_cancel};
 pub use keychain::{delete_secret, get_secret, set_secret};
-pub use lsp::{lsp_ensure_server, lsp_request, lsp_status, lsp_stop_server};
+pub use lsp::{
+  lsp_catalog, lsp_ensure_server, lsp_request, lsp_set_server_disabled, lsp_status, lsp_stop_server,
+  lsp_uninstall_server,
+};
 pub use lsp_install::{lsp_install_server, lsp_prefetch_defaults};
 pub use mcp::{
   mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,

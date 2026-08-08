@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { homeDir } from '@tauri-apps/api/path'
 import { open } from '@tauri-apps/plugin-dialog'
+import { lspConfigSchema } from '@/schemas/lsp-config'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { GitStatusResult } from '@/types/git/git-status-result'
 
@@ -52,6 +53,30 @@ export const writeMcpConfig = (
   rootPath?: string | null,
 ): Promise<void> =>
   call('write_mcp_config', { scope, config, rootPath: rootPath ?? null })
+
+export const readLspConfig = async (
+  scope: ConfigScope,
+  rootPath?: string | null,
+): Promise<Record<string, unknown> | boolean> => {
+  const raw = await call<unknown>('read_lsp_config', { scope, rootPath: rootPath ?? null })
+  const parsed = lspConfigSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid lsp.json')
+  }
+  return parsed.data as Record<string, unknown> | boolean
+}
+
+export const writeLspConfig = async (
+  scope: ConfigScope,
+  config: Record<string, unknown> | boolean,
+  rootPath?: string | null,
+): Promise<void> => {
+  const parsed = lspConfigSchema.safeParse(config)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? 'Invalid lsp.json')
+  }
+  await call('write_lsp_config', { scope, config: parsed.data, rootPath: rootPath ?? null })
+}
 
 export const watchPyrolaPaths = (projectRoot?: string | null): Promise<void> =>
   call('watch_pyrola_paths', { projectRoot: projectRoot ?? null })
@@ -596,10 +621,26 @@ export type LspServerStatus = {
   error?: string | null
   source?: string | null
   installState?: string | null
-  tier?: string | null
+}
+
+export type LspCatalogEntry = {
+  id: string
+  label: string
+  extensions: string[]
+  installKind: string
+  requiresTrust: boolean
+  installable: boolean
+  installed: boolean
+  running: boolean
+  disabled: boolean
+  error?: string | null
+  source?: string | null
+  installState?: string | null
 }
 
 export const lspStatus = (): Promise<LspServerStatus[]> => call('lsp_status')
+
+export const lspCatalog = (): Promise<LspCatalogEntry[]> => call('lsp_catalog')
 
 export const lspRequest = (
   serverId: string,
@@ -620,3 +661,19 @@ export const lspPrefetchDefaults = (): Promise<void> => call('lsp_prefetch_defau
 
 export const lspInstallServer = (serverId: string): Promise<void> =>
   call('lsp_install_server', { serverId })
+
+export const lspUninstallServer = (serverId: string): Promise<void> =>
+  call('lsp_uninstall_server', { serverId })
+
+export const lspSetServerDisabled = (
+  scope: ConfigScope,
+  serverId: string,
+  disabled: boolean,
+  rootPath?: string | null,
+): Promise<void> =>
+  call('lsp_set_server_disabled', {
+    scope,
+    serverId,
+    disabled,
+    rootPath: rootPath ?? null,
+  })

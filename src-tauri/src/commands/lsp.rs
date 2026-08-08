@@ -10,15 +10,16 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 
-use super::config::{lsp_enabled_in_settings, read_lsp_scope_configs, workspace_is_trusted};
+use super::config::{read_lsp_scope_configs, workspace_is_trusted};
 use super::fs::{canonical_project_root, resolve_workspace_path};
 use super::lsp_install::{
   ensure_portable_node, ensure_server_installed, find_node_bin, install_source_label,
   managed_bin_path, managed_typescript_lib, managed_vue_plugin_path, managed_vue_typescript_lib,
+  remove_managed_install,
 };
 use super::lsp_registry::{
-  allowlisted_lsp_basenames, builtin_server_map, builtin_spec_by_id, language_id_for_extension,
-  root_marker_score, tier_rank, LspInstallKind, LspTier,
+  allowlisted_lsp_basenames, builtin_server_map, builtin_spec_by_id, builtin_specs,
+  language_id_for_extension, root_marker_score, tier_rank, LspInstallKind,
 };
 use super::registry::{get_active_project, registry_list_projects};
 
@@ -32,8 +33,23 @@ pub struct LspServerStatus {
   pub source: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub install_state: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub tier: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspCatalogEntry {
+  pub id: String,
+  pub label: String,
+  pub extensions: Vec<String>,
+  pub install_kind: String,
+  pub requires_trust: bool,
+  pub installable: bool,
+  pub installed: bool,
+  pub running: bool,
+  pub disabled: bool,
+  pub error: Option<String>,
+  pub source: Option<String>,
+  pub install_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,7 +94,6 @@ async fn set_state(
   error: Option<String>,
   source: Option<String>,
   install_state: Option<String>,
-  tier: Option<String>,
 ) {
   let mut states = LSP_STATES.lock().await;
   let existing = states.get(id).cloned();
@@ -90,9 +105,76 @@ async fn set_state(
       error,
       source: source.or(existing.as_ref().and_then(|s| s.source.clone())),
       install_state: install_state.or(existing.as_ref().and_then(|s| s.install_state.clone())),
-      tier: tier.or(existing.as_ref().and_then(|s| s.tier.clone())),
     },
   );
+}
+
+fn server_display_label(id: &str) -> String {
+  match id {
+    "typescript" => "TypeScript / JavaScript".to_string(),
+    "vue" => "Vue / Nuxt".to_string(),
+    "json" => "JSON".to_string(),
+    "yaml" => "YAML".to_string(),
+    "markdown" => "Markdown".to_string(),
+    "python" => "Python".to_string(),
+    "rust" => "Rust".to_string(),
+    "gopls" => "Go".to_string(),
+    "bash" => "Bash".to_string(),
+    "html" => "HTML".to_string(),
+    "css" => "CSS".to_string(),
+    "tailwindcss" => "Tailwind CSS".to_string(),
+    "svelte" => "Svelte".to_string(),
+    "astro" => "Astro".to_string(),
+    "prisma" => "Prisma".to_string(),
+    "graphql" => "GraphQL".to_string(),
+    "dockerfile" => "Dockerfile".to_string(),
+    "lua" => "Lua".to_string(),
+    "clangd" => "C / C++".to_string(),
+    "terraform" => "Terraform".to_string(),
+    "toml" => "TOML".to_string(),
+    "zig" => "Zig".to_string(),
+    "php" => "PHP".to_string(),
+    "kotlin" => "Kotlin".to_string(),
+    "xml" => "XML".to_string(),
+    "sql" => "SQL".to_string(),
+    "java" => "Java".to_string(),
+    "eslint" => "ESLint".to_string(),
+    "oxlint" => "Oxlint".to_string(),
+    "biome" => "Biome".to_string(),
+    "deno" => "Deno".to_string(),
+    "ruby-lsp" => "Ruby".to_string(),
+    "sourcekit-lsp" => "Swift".to_string(),
+    "hls" => "Haskell".to_string(),
+    other => other
+      .split(|c| c == '-' || c == '_')
+      .filter(|part| !part.is_empty())
+      .map(|part| {
+        let mut chars = part.chars();
+        match chars.next() {
+          None => String::new(),
+          Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(" "),
+  }
+}
+
+fn install_kind_label(kind: LspInstallKind) -> &'static str {
+  match kind {
+    LspInstallKind::Npm => "npm",
+    LspInstallKind::GithubRelease => "github",
+    LspInstallKind::HttpArchive => "http",
+    LspInstallKind::ToolchainPath => "toolchain",
+    LspInstallKind::None => "none",
+  }
+}
+
+fn is_managed_install_kind(kind: LspInstallKind) -> bool {
+  matches!(
+    kind,
+    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive
+  )
 }
 
 fn builtin_lsp_servers() -> HashMap<String, LspServerEntry> {
@@ -330,10 +412,6 @@ fn active_project_root(app: &AppHandle) -> Option<String> {
 
 async fn load_effective_servers(app: &AppHandle) -> Result<HashMap<String, LspServerEntry>, String> {
   let project_root = active_project_root(app);
-  if !lsp_enabled_in_settings(app, project_root.as_deref()) {
-    return Err("LSP disabled".to_string());
-  }
-
   let (personal, project) = read_lsp_scope_configs(app, project_root.clone())?;
   let personal_effective = if personal.is_null() || personal.as_object().is_some_and(|o| o.is_empty()) {
     serde_json::json!(true)
@@ -353,7 +431,10 @@ async fn load_effective_servers(app: &AppHandle) -> Result<HashMap<String, LspSe
     }
   }
 
-  merge_lsp_servers(&personal_effective, &project_effective).ok_or_else(|| "LSP disabled".to_string())
+  merge_lsp_servers(&personal_effective, &project_effective).ok_or_else(|| {
+    "LSP disabled via lsp.json (set to false). Remove that override or enable individual servers."
+      .to_string()
+  })
 }
 
 fn path_to_uri(path: &Path) -> String {
@@ -852,7 +933,6 @@ fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String, app: AppHand
       Some("Language server exited".to_string()),
       None,
       Some("exited".to_string()),
-      None,
     )
     .await;
     let mut servers = LSP_SERVERS.lock().await;
@@ -880,7 +960,6 @@ fn spawn_keepalive(server_id: String, process: Arc<Mutex<LspProcess>>) {
           Some("Language server crashed".to_string()),
           None,
           Some("crashed".to_string()),
-          None,
         )
         .await;
         let servers = LSP_SERVERS.lock().await;
@@ -1133,20 +1212,12 @@ async fn start_server(
     );
   }
 
-  let tier = builtin_spec_by_id(&server_id).map(|s| match s.tier {
-    LspTier::A => "A".to_string(),
-    LspTier::B => "B".to_string(),
-    LspTier::C => "C".to_string(),
-    LspTier::D => "D".to_string(),
-  });
-
   set_state(
     &server_id,
     true,
     None,
     Some(resolved.source),
     Some("ready".to_string()),
-    tier,
   )
   .await;
   Ok(process)
@@ -1159,7 +1230,7 @@ async fn stop_server_internal(server_id: &str) -> Result<(), String> {
   };
 
   let Some(managed) = managed else {
-    set_state(server_id, false, None, None, Some("stopped".to_string()), None).await;
+    set_state(server_id, false, None, None, Some("stopped".to_string())).await;
     return Ok(());
   };
 
@@ -1185,7 +1256,7 @@ async fn stop_server_internal(server_id: &str) -> Result<(), String> {
     let _ = guard.child.kill().await;
   }
 
-  set_state(server_id, false, None, None, Some("stopped".to_string()), None).await;
+  set_state(server_id, false, None, None, Some("stopped".to_string())).await;
   Ok(())
 }
 
@@ -1214,18 +1285,10 @@ async fn ensure_running_server(
           error: Some("Workspace trust required for this language server".to_string()),
           source: Some("none".to_string()),
           install_state: Some("needs_trust".to_string()),
-          tier: Some("D".to_string()),
         });
       }
     }
   }
-
-  let tier = builtin_spec_by_id(&server_id).map(|s| match s.tier {
-    LspTier::A => "A".to_string(),
-    LspTier::B => "B".to_string(),
-    LspTier::C => "C".to_string(),
-    LspTier::D => "D".to_string(),
-  });
 
   set_state(
     &server_id,
@@ -1233,7 +1296,6 @@ async fn ensure_running_server(
     None,
     Some(install_source_label(app, &server_id)),
     Some("installing".to_string()),
-    tier.clone(),
   )
   .await;
 
@@ -1246,7 +1308,6 @@ async fn ensure_running_server(
         Some(error.clone()),
         Some(install_source_label(app, &server_id)),
         Some("error".to_string()),
-        tier.clone(),
       )
       .await;
       // Continue: PATH fallback may still work inside resolve_lsp_command
@@ -1284,7 +1345,6 @@ async fn ensure_running_server(
           error: None,
           source: Some(install_source_label(app, &server_id)),
           install_state: Some("ready".to_string()),
-          tier,
         });
       }
     } else {
@@ -1299,7 +1359,6 @@ async fn ensure_running_server(
       error: None,
       source: Some(install_source_label(app, &server_id)),
       install_state: Some("ready".to_string()),
-      tier,
     }),
     Err(error) => {
       set_state(
@@ -1308,7 +1367,6 @@ async fn ensure_running_server(
         Some(error.clone()),
         Some(install_source_label(app, &server_id)),
         Some("error".to_string()),
-        tier.clone(),
       )
       .await;
       Ok(LspServerStatus {
@@ -1317,7 +1375,6 @@ async fn ensure_running_server(
         error: Some(error),
         source: Some("none".to_string()),
         install_state: Some("error".to_string()),
-        tier,
       })
     }
   }
@@ -1508,4 +1565,173 @@ pub async fn lsp_ensure_server(
 #[tauri::command]
 pub async fn lsp_stop_server(server_id: String) -> Result<(), String> {
   stop_server_internal(&server_id).await
+}
+
+#[tauri::command]
+pub async fn lsp_catalog(app: AppHandle) -> Result<Vec<LspCatalogEntry>, String> {
+  let effective = load_effective_servers(&app).await.unwrap_or_default();
+  let states = LSP_STATES.lock().await;
+  let mut entries: Vec<LspCatalogEntry> = Vec::new();
+  let mut seen = std::collections::HashSet::new();
+
+  for spec in builtin_specs() {
+    seen.insert(spec.id.to_string());
+    let state = states.get(spec.id);
+    let source = install_source_label(&app, spec.id);
+    let installed = source != "none";
+    let installable = is_managed_install_kind(spec.install);
+    let disabled = !effective.contains_key(spec.id);
+    entries.push(LspCatalogEntry {
+      id: spec.id.to_string(),
+      label: server_display_label(spec.id),
+      extensions: spec.extensions.iter().map(|ext| (*ext).to_string()).collect(),
+      install_kind: install_kind_label(spec.install).to_string(),
+      requires_trust: spec.requires_trust,
+      installable,
+      installed,
+      running: state.map(|s| s.running).unwrap_or(false),
+      disabled,
+      error: state.and_then(|s| s.error.clone()),
+      source: Some(source),
+      install_state: state.and_then(|s| s.install_state.clone()).or_else(|| {
+        if installed {
+          Some("ready".to_string())
+        } else if installable {
+          Some("missing".to_string())
+        } else {
+          Some("toolchain".to_string())
+        }
+      }),
+    });
+  }
+
+  for (id, entry) in &effective {
+    if seen.contains(id) {
+      continue;
+    }
+    let state = states.get(id);
+    let source = if server_binary_available(&app, id, entry) {
+      "custom".to_string()
+    } else {
+      "none".to_string()
+    };
+    entries.push(LspCatalogEntry {
+      id: id.clone(),
+      label: server_display_label(id),
+      extensions: entry.extensions.clone(),
+      install_kind: "custom".to_string(),
+      requires_trust: false,
+      installable: false,
+      installed: source != "none",
+      running: state.map(|s| s.running).unwrap_or(false),
+      disabled: false,
+      error: state.and_then(|s| s.error.clone()),
+      source: Some(source),
+      install_state: state.and_then(|s| s.install_state.clone()),
+    });
+  }
+
+  entries.sort_by(|left, right| left.label.cmp(&right.label));
+  Ok(entries)
+}
+
+#[tauri::command]
+pub async fn lsp_uninstall_server(app: AppHandle, server_id: String) -> Result<(), String> {
+  stop_server_internal(&server_id).await?;
+  remove_managed_install(&app, &server_id)?;
+  set_state(
+    &server_id,
+    false,
+    None,
+    Some("none".to_string()),
+    Some("missing".to_string()),
+  )
+  .await;
+  Ok(())
+}
+
+#[tauri::command]
+pub async fn lsp_set_server_disabled(
+  app: AppHandle,
+  scope: String,
+  root_path: Option<String>,
+  server_id: String,
+  disabled: bool,
+) -> Result<(), String> {
+  if scope != "personal" && scope != "project" {
+    return Err("scope must be personal or project".to_string());
+  }
+  if scope == "project" && root_path.is_none() {
+    return Err("project scope requires rootPath".to_string());
+  }
+
+  let mut config = super::config::load_lsp_config(&app, &scope, root_path.clone())?;
+  if config.is_null() || config.is_boolean() {
+    config = serde_json::json!({});
+  }
+  let object = config
+    .as_object_mut()
+    .ok_or_else(|| "lsp.json must be an object to toggle servers".to_string())?;
+
+  if disabled {
+    let entry = object
+      .entry(server_id.clone())
+      .or_insert_with(|| serde_json::json!({}));
+    if let Some(entry_object) = entry.as_object_mut() {
+      entry_object.insert("disabled".to_string(), serde_json::Value::Bool(true));
+    } else {
+      *entry = serde_json::json!({ "disabled": true });
+    }
+  } else if let Some(entry) = object.get_mut(&server_id) {
+    if let Some(entry_object) = entry.as_object_mut() {
+      entry_object.remove("disabled");
+      if entry_object.is_empty() {
+        object.remove(&server_id);
+      }
+    }
+  } else {
+    object.remove(&server_id);
+  }
+
+  super::config::write_lsp_config_internal(&app, &scope, root_path, config)?;
+
+  if disabled {
+    stop_server_internal(&server_id).await.ok();
+  }
+
+  Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{resolve_lsp_servers, server_display_label};
+
+  #[test]
+  fn resolve_true_keeps_builtins() {
+    let servers = resolve_lsp_servers(&serde_json::json!(true), None).unwrap();
+    assert!(servers.contains_key("typescript"));
+    assert!(servers.contains_key("vue"));
+  }
+
+  #[test]
+  fn resolve_false_disables_all() {
+    assert!(resolve_lsp_servers(&serde_json::json!(false), None).is_none());
+  }
+
+  #[test]
+  fn resolve_disabled_flag_removes_server() {
+    let raw = serde_json::json!({
+      "typescript": { "disabled": true }
+    });
+    let servers = resolve_lsp_servers(&raw, None).unwrap();
+    assert!(!servers.contains_key("typescript"));
+    assert!(servers.contains_key("vue"));
+  }
+
+  #[test]
+  fn display_label_is_human_readable() {
+    assert_eq!(server_display_label("typescript"), "TypeScript / JavaScript");
+    assert_eq!(server_display_label("gopls"), "Go");
+    assert_eq!(server_display_label("custom-lsp"), "Custom Lsp");
+  }
 }

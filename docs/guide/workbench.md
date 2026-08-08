@@ -7,7 +7,7 @@ The right workbench sits beside the agent thread. Tabs share the active project 
 - Open files from the project tree into Monaco tabs.
 - Edit and save with dirty-state tracking.
 - Use markdown Edit / Split / Preview when viewing markdown.
-- Rely on managed LSP for languages the app installs (TypeScript, Vue, and others).
+- Rely on managed language servers the app can install (TypeScript, Vue, and others). Language support is always on in the desktop app; manage installs under Settings, LSP.
 
 ## Terminal
 

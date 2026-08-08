@@ -17,7 +17,7 @@ describe('isPersonalOnlyProjectKey', () => {
   })
 
   it('does not match other sections', () => {
-    expect(isPersonalOnlyProjectKey('lsp.enabled')).toBe(false)
+    expect(isPersonalOnlyProjectKey('lsp.autoDownload')).toBe(false)
     expect(isPersonalOnlyProjectKey('appearance.theme')).toBe(false)
     expect(isPersonalOnlyProjectKey('agent.permissionLevel')).toBe(false)
   })
@@ -27,7 +27,7 @@ describe('stripPersonalOnlyProjectOverrides', () => {
   it('removes providers and models keys while keeping other overrides', () => {
     const project: PyrolaSettings = {
       version: 1,
-      'lsp.enabled': false,
+      'lsp.autoDownload': false,
       'models.default': 'anthropic::claude-sonnet-4-5',
       'providers.openai.apiKeyRef': 'openai',
       'providers.custom.local': {
@@ -41,7 +41,7 @@ describe('stripPersonalOnlyProjectOverrides', () => {
 
     expect(stripped).toEqual({
       version: 1,
-      'lsp.enabled': false,
+      'lsp.autoDownload': false,
     })
   })
 })
@@ -50,7 +50,7 @@ describe('parseProjectOverrides', () => {
   it('strips providers and models keys from project records', () => {
     const parsed = parseProjectOverrides({
       version: 1,
-      'lsp.enabled': false,
+      'lsp.autoDownload': false,
       'models.default': 'openai::gpt-4o',
       'providers.anthropic.apiKeyRef': 'anthropic',
       'providers.custom.kat': {
@@ -62,7 +62,7 @@ describe('parseProjectOverrides', () => {
 
     expect(parsed).toEqual({
       version: 1,
-      'lsp.enabled': false,
+      'lsp.autoDownload': false,
     })
   })
 })
@@ -78,14 +78,14 @@ describe('mergeSettings with stripped project overrides', () => {
       version: 1 as const,
       'models.default': 'openai::gpt-4o',
       'providers.openai.apiKeyRef': 'other',
-      'lsp.enabled': false,
+      'lsp.autoDownload': false,
     }
     const project = parseProjectOverrides(projectRaw)
     const effective = mergeSettings(personal, project)
 
     expect(effective['models.default']).toBe('anthropic::claude-sonnet-4-5')
     expect(effective['providers.openai.apiKeyRef']).toBe('openai')
-    expect(effective['lsp.enabled']).toBe(false)
+    expect(effective['lsp.autoDownload']).toBe(false)
   })
 })
 

@@ -19,9 +19,11 @@ Guide: [MCP](../guide/mcp.md).
 Available under Personal and Project.
 
 - Open Settings, Personal or Project, LSP.
-- Review managed language servers the app can install (TypeScript, Vue, JSON, YAML, Markdown, and others).
-- Allow installs for languages you need in the Monaco editor and harness `lsp` / `diagnostics` tools.
-- Prefer project LSP overrides when a workspace needs different servers.
+- Language servers are always on. Install managed servers from the catalog, or disable individual servers for the current scope.
+- Auto-download installs default language support on project open (disable for airgapped machines).
+- Prefer project `lsp.json` overrides when a workspace needs different commands or disabled servers.
+
+Guide: [Workbench](../guide/workbench.md).
 
 ## Related
 
