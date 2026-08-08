@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import {
+  Activity,
+  AlertCircle,
   Ban,
-  CircleCheck,
   Download,
+  HardDrive,
   Loader2,
+  Package,
+  PackageX,
+  Play,
   RotateCcw,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
+  Wrench,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
@@ -33,7 +40,15 @@ import {
   type LspCatalogEntry,
 } from '@/services/pyrola/pyrola-tauri'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import formatUnknownError from '@/utils/format-unknown-error'
 import lspServerIconName from '@/utils/lsp-server-icon-name'
+
+type LspStatusBadge = {
+  key: string
+  label: string
+  icon: Component
+  className: string
+}
 
 const props = defineProps<{
   tab: SettingsTab
@@ -82,7 +97,7 @@ const refreshCatalog = async (): Promise<void> => {
     catalog.value = await lspCatalog()
   } catch (error) {
     toast.error('Failed to load language servers', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
@@ -92,7 +107,7 @@ const updateAutoDownload = async (value: boolean): Promise<void> => {
     await config.updateSetting(props.tab, 'lsp.autoDownload', value)
   } catch (error) {
     toast.error('Failed to save auto-download setting', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
@@ -113,34 +128,104 @@ const trustWorkspace = async (): Promise<void> => {
     toast.success('Workspace trusted for project-local language tools')
   } catch (error) {
     toast.error('Failed to save workspace trust', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
 
-const statusHint = (entry: LspCatalogEntry): string => {
-  const parts: string[] = []
-  if (entry.extensions.length > 0) {
-    parts.push(entry.extensions.slice(0, 6).join(', '))
-  }
-  parts.push(entry.running ? 'running' : 'idle')
-  if (entry.source && entry.source !== 'none') {
-    parts.push(entry.source)
-  } else if (entry.installable) {
-    parts.push('not installed')
-  } else if (entry.installKind === 'toolchain') {
-    parts.push('needs toolchain on PATH')
-  }
-  if (entry.requiresTrust && !workspaceTrusted.value) {
-    parts.push('requires workspace trust')
-  }
+const extensionsHint = (entry: LspCatalogEntry): string =>
+  entry.extensions.slice(0, 6).join(', ')
+
+const statusBadges = (entry: LspCatalogEntry): LspStatusBadge[] => {
+  const badges: LspStatusBadge[] = []
+
   if (entry.disabled) {
-    parts.push('disabled')
+    badges.push({
+      key: 'disabled',
+      label: 'Disabled',
+      icon: Ban,
+      className: 'text-muted-foreground',
+    })
   }
-  if (entry.installState && entry.installState !== 'ready' && entry.installState !== 'missing') {
-    parts.push(entry.installState)
+
+  if (entry.requiresTrust && !workspaceTrusted.value) {
+    badges.push({
+      key: 'trust',
+      label: 'Requires workspace trust',
+      icon: ShieldAlert,
+      className: 'text-amber-600 dark:text-amber-500',
+    })
   }
-  return parts.join(', ')
+
+  if (entry.running) {
+    badges.push({
+      key: 'running',
+      label: 'Running',
+      icon: Activity,
+      className: 'text-emerald-600 dark:text-emerald-500',
+    })
+  }
+
+  if (entry.source === 'managed') {
+    badges.push({
+      key: 'managed',
+      label: 'Managed install',
+      icon: Package,
+      className: 'text-muted-foreground',
+    })
+  } else if (entry.source === 'path') {
+    badges.push({
+      key: 'path',
+      label: 'Available on PATH',
+      icon: HardDrive,
+      className: 'text-muted-foreground',
+    })
+  } else if (entry.source === 'custom') {
+    badges.push({
+      key: 'custom',
+      label: 'Custom configuration',
+      icon: HardDrive,
+      className: 'text-muted-foreground',
+    })
+  } else if (entry.installable && !entry.installed) {
+    badges.push({
+      key: 'missing',
+      label: 'Not installed',
+      icon: PackageX,
+      className: 'text-muted-foreground',
+    })
+  } else if (entry.installKind === 'toolchain') {
+    badges.push({
+      key: 'toolchain',
+      label: 'Needs toolchain on PATH',
+      icon: Wrench,
+      className: 'text-muted-foreground',
+    })
+  }
+
+  if (entry.error) {
+    badges.push({
+      key: 'error',
+      label: entry.error,
+      icon: AlertCircle,
+      className: 'text-destructive',
+    })
+  } else if (
+    entry.installState
+    && entry.installState !== 'ready'
+    && entry.installState !== 'missing'
+    && entry.installState !== 'toolchain'
+    && entry.installState !== 'stopped'
+  ) {
+    badges.push({
+      key: 'state',
+      label: entry.installState,
+      icon: Loader2,
+      className: 'text-muted-foreground',
+    })
+  }
+
+  return badges
 }
 
 const installServer = async (serverId: string): Promise<void> => {
@@ -151,7 +236,7 @@ const installServer = async (serverId: string): Promise<void> => {
     toast.success(`Installed ${serverId}`)
   } catch (error) {
     toast.error(`Failed to install ${serverId}`, {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   } finally {
     setBusy(serverId, false)
@@ -166,7 +251,7 @@ const uninstallServer = async (serverId: string): Promise<void> => {
     toast.success(`Uninstalled ${serverId}`)
   } catch (error) {
     toast.error(`Failed to uninstall ${serverId}`, {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   } finally {
     setBusy(serverId, false)
@@ -186,7 +271,7 @@ const setDisabled = async (serverId: string, disabled: boolean): Promise<void> =
     toast.success(disabled ? `Disabled ${serverId}` : `Enabled ${serverId}`)
   } catch (error) {
     toast.error(`Failed to update ${serverId}`, {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   } finally {
     setBusy(serverId, false)
@@ -200,7 +285,7 @@ const prefetchDefaults = async (): Promise<void> => {
     toast.success('Installing default language support')
   } catch (error) {
     toast.error('Failed to start language support install', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   } finally {
     prefetching.value = false
@@ -222,7 +307,7 @@ onMounted(async () => {
       if (event.payload.state === 'ready' || event.payload.state === 'error') {
         refreshCatalog().then(() => undefined).catch((error: unknown) => {
           toast.error('Failed to refresh language servers', {
-            description: error instanceof Error ? error.message : 'Unknown error',
+            description: formatUnknownError(error),
           })
         })
       }
@@ -332,15 +417,37 @@ onUnmounted(() => {
                 class="mt-0.5"
               />
               <div class="min-w-0 space-y-0.5">
-                <p class="truncate text-sm font-medium">{{ entry.label }}</p>
-                <p class="truncate text-xs text-muted-foreground">
-                  {{ statusHint(entry) }}
-                </p>
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <p class="truncate text-sm font-medium">{{ entry.label }}</p>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <Tooltip
+                      v-for="badge in statusBadges(entry)"
+                      :key="badge.key"
+                    >
+                      <TooltipTrigger as-child>
+                        <span
+                          class="inline-flex"
+                          :aria-label="badge.label"
+                        >
+                          <component
+                            :is="badge.icon"
+                            class="h-3.5 w-3.5"
+                            :class="[
+                              badge.className,
+                              badge.key === 'state' ? 'animate-spin' : '',
+                            ]"
+                          />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{{ badge.label }}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
                 <p
-                  v-if="entry.error"
-                  class="truncate text-xs text-destructive"
+                  v-if="extensionsHint(entry)"
+                  class="truncate text-xs text-muted-foreground"
                 >
-                  {{ entry.error }}
+                  {{ extensionsHint(entry) }}
                 </p>
               </div>
             </div>
@@ -355,7 +462,7 @@ onUnmounted(() => {
                     :disabled="isBusy(entry.id)"
                     @click="setDisabled(entry.id, !entry.disabled)"
                   >
-                    <CircleCheck
+                    <Play
                       v-if="entry.disabled"
                       class="h-4 w-4"
                     />

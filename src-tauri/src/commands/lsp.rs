@@ -19,7 +19,7 @@ use super::lsp_install::{
 };
 use super::lsp_registry::{
   allowlisted_lsp_basenames, builtin_server_map, builtin_spec_by_id, builtin_specs,
-  language_id_for_extension, root_marker_score, tier_rank, LspInstallKind,
+  language_id_for_extension, root_marker_score, tier_rank, BuiltinLspSpec, LspInstallKind,
 };
 use super::registry::{get_active_project, registry_list_projects};
 
@@ -165,6 +165,7 @@ fn install_kind_label(kind: LspInstallKind) -> &'static str {
     LspInstallKind::Npm => "npm",
     LspInstallKind::GithubRelease => "github",
     LspInstallKind::HttpArchive => "http",
+    LspInstallKind::GoInstall => "go",
     LspInstallKind::ToolchainPath => "toolchain",
     LspInstallKind::None => "none",
   }
@@ -173,7 +174,10 @@ fn install_kind_label(kind: LspInstallKind) -> &'static str {
 fn is_managed_install_kind(kind: LspInstallKind) -> bool {
   matches!(
     kind,
-    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive
+    LspInstallKind::Npm
+      | LspInstallKind::GithubRelease
+      | LspInstallKind::HttpArchive
+      | LspInstallKind::GoInstall
   )
 }
 
@@ -1650,6 +1654,54 @@ pub async fn lsp_uninstall_server(app: AppHandle, server_id: String) -> Result<(
   Ok(())
 }
 
+fn opt_in_server_entry(spec: &BuiltinLspSpec) -> serde_json::Value {
+  serde_json::json!({
+    "command": spec.command,
+    "extensions": spec.extensions,
+  })
+}
+
+fn is_default_enabled_builtin(server_id: &str) -> bool {
+  builtin_server_map().contains_key(server_id)
+}
+
+/// Apply enable/disable to an lsp.json object. Opt-in servers (Tier D: biome, eslint, oxlint)
+/// are absent from the default builtin map, so enabling them writes a full command entry.
+fn apply_server_disabled_flag(
+  object: &mut serde_json::Map<String, serde_json::Value>,
+  server_id: &str,
+  disabled: bool,
+) {
+  if disabled {
+    let entry = object
+      .entry(server_id.to_string())
+      .or_insert_with(|| serde_json::json!({}));
+    if let Some(entry_object) = entry.as_object_mut() {
+      entry_object.insert("disabled".to_string(), serde_json::Value::Bool(true));
+    } else {
+      *entry = serde_json::json!({ "disabled": true });
+    }
+    return;
+  }
+
+  // Enabling
+  let opt_in_spec = builtin_spec_by_id(server_id).filter(|spec| !is_default_enabled_builtin(spec.id));
+
+  if let Some(spec) = opt_in_spec {
+    object.insert(server_id.to_string(), opt_in_server_entry(spec));
+    return;
+  }
+
+  if let Some(entry) = object.get_mut(server_id) {
+    if let Some(entry_object) = entry.as_object_mut() {
+      entry_object.remove("disabled");
+      if entry_object.is_empty() {
+        object.remove(server_id);
+      }
+    }
+  }
+}
+
 #[tauri::command]
 pub async fn lsp_set_server_disabled(
   app: AppHandle,
@@ -1673,25 +1725,7 @@ pub async fn lsp_set_server_disabled(
     .as_object_mut()
     .ok_or_else(|| "lsp.json must be an object to toggle servers".to_string())?;
 
-  if disabled {
-    let entry = object
-      .entry(server_id.clone())
-      .or_insert_with(|| serde_json::json!({}));
-    if let Some(entry_object) = entry.as_object_mut() {
-      entry_object.insert("disabled".to_string(), serde_json::Value::Bool(true));
-    } else {
-      *entry = serde_json::json!({ "disabled": true });
-    }
-  } else if let Some(entry) = object.get_mut(&server_id) {
-    if let Some(entry_object) = entry.as_object_mut() {
-      entry_object.remove("disabled");
-      if entry_object.is_empty() {
-        object.remove(&server_id);
-      }
-    }
-  } else {
-    object.remove(&server_id);
-  }
+  apply_server_disabled_flag(object, &server_id, disabled);
 
   super::config::write_lsp_config_internal(&app, &scope, root_path, config)?;
 
@@ -1704,13 +1738,19 @@ pub async fn lsp_set_server_disabled(
 
 #[cfg(test)]
 mod tests {
-  use super::{resolve_lsp_servers, server_display_label};
+  use super::{
+    apply_server_disabled_flag, resolve_lsp_servers, server_display_label,
+  };
 
   #[test]
   fn resolve_true_keeps_builtins() {
     let servers = resolve_lsp_servers(&serde_json::json!(true), None).unwrap();
     assert!(servers.contains_key("typescript"));
     assert!(servers.contains_key("vue"));
+    assert!(
+      !servers.contains_key("biome"),
+      "tier D servers stay opt-in by default"
+    );
   }
 
   #[test]
@@ -1726,6 +1766,66 @@ mod tests {
     let servers = resolve_lsp_servers(&raw, None).unwrap();
     assert!(!servers.contains_key("typescript"));
     assert!(servers.contains_key("vue"));
+  }
+
+  #[test]
+  fn enabling_biome_writes_opt_in_entry_and_resolves() {
+    let mut config = serde_json::json!({});
+    let object = config.as_object_mut().unwrap();
+    apply_server_disabled_flag(object, "biome", false);
+
+    let biome = object.get("biome").unwrap().as_object().unwrap();
+    assert_eq!(biome.get("disabled"), None);
+    assert!(biome.get("command").unwrap().as_array().unwrap().len() >= 1);
+
+    let servers = resolve_lsp_servers(&config, None).unwrap();
+    assert!(servers.contains_key("biome"));
+    assert!(servers.contains_key("typescript"));
+  }
+
+  #[test]
+  fn enabling_biome_after_disabled_restores_opt_in_entry() {
+    let mut config = serde_json::json!({
+      "biome": { "disabled": true }
+    });
+    let object = config.as_object_mut().unwrap();
+    apply_server_disabled_flag(object, "biome", false);
+
+    let biome = object.get("biome").unwrap().as_object().unwrap();
+    assert_eq!(biome.get("disabled"), None);
+    assert!(biome.contains_key("command"));
+
+    let servers = resolve_lsp_servers(&config, None).unwrap();
+    assert!(servers.contains_key("biome"));
+  }
+
+  #[test]
+  fn disabling_biome_marks_disabled_and_drops_from_effective() {
+    let mut config = serde_json::json!({});
+    let object = config.as_object_mut().unwrap();
+    apply_server_disabled_flag(object, "biome", false);
+    apply_server_disabled_flag(object, "biome", true);
+
+    assert_eq!(
+      object.get("biome").unwrap().get("disabled").and_then(|v| v.as_bool()),
+      Some(true)
+    );
+
+    let servers = resolve_lsp_servers(&config, None).unwrap();
+    assert!(!servers.contains_key("biome"));
+  }
+
+  #[test]
+  fn enabling_default_builtin_clears_disabled_override() {
+    let mut config = serde_json::json!({
+      "typescript": { "disabled": true }
+    });
+    let object = config.as_object_mut().unwrap();
+    apply_server_disabled_flag(object, "typescript", false);
+    assert!(!object.contains_key("typescript"));
+
+    let servers = resolve_lsp_servers(&config, None).unwrap();
+    assert!(servers.contains_key("typescript"));
   }
 
   #[test]

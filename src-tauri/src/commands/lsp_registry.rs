@@ -6,6 +6,8 @@ pub enum LspInstallKind {
   GithubRelease,
   /// Direct URL archive (tar.gz / zip / tar.xz). Used when GitHub Releases are not available.
   HttpArchive,
+  /// `go install <package>` into the managed server dir (requires Go on PATH).
+  GoInstall,
   ToolchainPath,
   None,
 }
@@ -38,6 +40,14 @@ pub enum GithubTargetStyle {
   ClangdOs,
   /// zls 0.13-style: aarch64-macos, x86_64-linux, x86_64-windows
   ZigOsArch,
+  /// taplo-style: darwin-aarch64, linux-x86_64, windows-x86_64
+  TaploOsArch,
+  /// clojure-lsp native: macos-aarch64, linux-amd64, windows-amd64
+  ClojureNative,
+  /// lemminx: osx-aarch_64, osx-x86_64, linux, win32
+  LemminxOs,
+  /// HashiCorp / Go style: darwin_arm64, linux_amd64, windows_amd64
+  HashicorpOsArch,
 }
 
 #[derive(Debug, Clone)]
@@ -53,10 +63,21 @@ pub struct GithubReleaseSpec {
 
 #[derive(Debug, Clone)]
 pub struct HttpArchiveSpec {
+  /// URL template. May include `{version}` and `{target}` when `target_style` is set.
   pub url: &'static str,
   /// Relative path or basename to locate after extract (searched recursively if needed).
   pub binary_name: &'static str,
-  /// Version key for the managed install directory.
+  /// Version key for the managed install directory (also substitutes `{version}` in url).
+  pub version_key: &'static str,
+  /// When set, `{target}` in `url` is replaced via `github_target_token`.
+  pub target_style: Option<GithubTargetStyle>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GoInstallSpec {
+  /// Package argument for `go install`, e.g. `golang.org/x/tools/gopls@v0.18.1`.
+  pub package: &'static str,
+  pub binary_name: &'static str,
   pub version_key: &'static str,
 }
 
@@ -71,6 +92,7 @@ pub struct BuiltinLspSpec {
   pub npm: Option<NpmInstallSpec>,
   pub github: Option<GithubReleaseSpec>,
   pub http: Option<HttpArchiveSpec>,
+  pub go: Option<GoInstallSpec>,
   pub root_markers: &'static [&'static str],
   pub requires_trust: bool,
 }
@@ -239,6 +261,7 @@ macro_rules! npm_spec {
       }),
       github: None,
       http: None,
+      go: None,
       root_markers: $markers,
       requires_trust: false,
     }
@@ -320,6 +343,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       target_style: GithubTargetStyle::Marksman,
     }),
     http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -351,6 +375,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       target_style: GithubTargetStyle::RustTriple,
     }),
     http: None,
+    go: None,
     root_markers: &["Cargo.toml"],
     requires_trust: false,
   },
@@ -360,17 +385,15 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     extensions: &[".go"],
     language_ids: &["go"],
     tier: LspTier::B,
-    install: LspInstallKind::GithubRelease,
+    install: LspInstallKind::GoInstall,
     npm: None,
-    github: Some(GithubReleaseSpec {
-      repo: "golang/tools",
-      tag: "gopls/v0.18.1",
-      asset: "gopls_{target}",
-      binary_name: "gopls",
-      gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
-    }),
+    github: None,
     http: None,
+    go: Some(GoInstallSpec {
+      package: "golang.org/x/tools/gopls@v0.18.1",
+      binary_name: "gopls",
+      version_key: "v0.18.1",
+    }),
     root_markers: &["go.mod"],
     requires_trust: false,
   },
@@ -478,9 +501,10 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "lua-language-server-{version}-{target}.tar.gz",
       binary_name: "bin/lua-language-server",
       gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::NodeStyle,
     }),
     http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -501,6 +525,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       target_style: GithubTargetStyle::ClangdOs,
     }),
     http: None,
+    go: None,
     root_markers: &["compile_commands.json", "CMakeLists.txt"],
     requires_trust: false,
   },
@@ -510,17 +535,16 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     extensions: &[".tf", ".tfvars"],
     language_ids: &["terraform", "terraform-vars"],
     tier: LspTier::B,
-    install: LspInstallKind::GithubRelease,
+    install: LspInstallKind::HttpArchive,
     npm: None,
-    github: Some(GithubReleaseSpec {
-      repo: "hashicorp/terraform-ls",
-      tag: "v0.36.4",
-      asset: "terraform-ls_{version}_{target}.zip",
+    github: None,
+    http: Some(HttpArchiveSpec {
+      url: "https://releases.hashicorp.com/terraform-ls/{version}/terraform-ls_{version}_{target}.zip",
       binary_name: "terraform-ls",
-      gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      version_key: "0.36.4",
+      target_style: Some(GithubTargetStyle::HashicorpOsArch),
     }),
-    http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -534,13 +558,14 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: Some(GithubReleaseSpec {
       repo: "tamasfe/taplo",
-      tag: "release-taplo-cli-0.9.3",
+      tag: "0.9.3",
       asset: "taplo-full-{target}.gz",
       binary_name: "taplo",
       gzip: true,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::TaploOsArch,
     }),
     http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -561,6 +586,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       target_style: GithubTargetStyle::ZigOsArch,
     }),
     http: None,
+    go: None,
     root_markers: &["build.zig"],
     requires_trust: false,
   },
@@ -591,6 +617,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       target_style: GithubTargetStyle::RustTriple,
     }),
     http: None,
+    go: None,
     root_markers: &["build.gradle", "build.gradle.kts", "settings.gradle"],
     requires_trust: false,
   },
@@ -608,9 +635,10 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       asset: "lemminx-{target}.zip",
       binary_name: "lemminx",
       gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::LemminxOs,
     }),
     http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -621,7 +649,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     &["sql"],
     LspTier::B,
     &["sql-language-server@1.7.0"],
-    "node_modules/sql-language-server/dist/bin/cli.js",
+    "node_modules/sql-language-server/npm_bin/cli.js",
     &[]
   ),
   // Tier C toolchain
@@ -635,6 +663,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["deno.json", "deno.jsonc"],
     requires_trust: false,
   },
@@ -648,6 +677,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["Gemfile"],
     requires_trust: false,
   },
@@ -664,7 +694,9 @@ static BUILTINS: &[BuiltinLspSpec] = &[
       url: "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz",
       binary_name: "jdtls",
       version_key: "latest",
+      target_style: None,
     }),
+    go: None,
     root_markers: &["pom.xml", "build.gradle", "build.gradle.kts"],
     requires_trust: false,
   },
@@ -678,6 +710,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["*.csproj", "*.sln"],
     requires_trust: false,
   },
@@ -691,6 +724,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["Package.swift"],
     requires_trust: false,
   },
@@ -704,6 +738,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["mix.exs"],
     requires_trust: false,
   },
@@ -717,6 +752,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["stack.yaml", "cabal.project"],
     requires_trust: false,
   },
@@ -730,13 +766,14 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: Some(GithubReleaseSpec {
       repo: "clojure-lsp/clojure-lsp",
-      tag: "2025.03.07-17.42.45",
+      tag: "2026.07.06-14.34.19",
       asset: "clojure-lsp-native-{target}.zip",
       binary_name: "clojure-lsp",
       gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
+      target_style: GithubTargetStyle::ClojureNative,
     }),
     http: None,
+    go: None,
     root_markers: &["deps.edn", "project.clj"],
     requires_trust: false,
   },
@@ -750,6 +787,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["dune-project"],
     requires_trust: false,
   },
@@ -763,6 +801,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["pubspec.yaml"],
     requires_trust: false,
   },
@@ -776,6 +815,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["gleam.toml"],
     requires_trust: false,
   },
@@ -785,17 +825,11 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     extensions: &[".nix"],
     language_ids: &["nix"],
     tier: LspTier::C,
-    install: LspInstallKind::GithubRelease,
+    install: LspInstallKind::ToolchainPath,
     npm: None,
-    github: Some(GithubReleaseSpec {
-      repo: "oxalica/nil",
-      tag: "2024-08-06",
-      asset: "nil-{target}",
-      binary_name: "nil",
-      gzip: false,
-      target_style: GithubTargetStyle::RustTriple,
-    }),
+    github: None,
     http: None,
+    go: None,
     root_markers: &["flake.nix"],
     requires_trust: false,
   },
@@ -809,6 +843,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &[],
     requires_trust: false,
   },
@@ -822,6 +857,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["build.sbt"],
     requires_trust: false,
   },
@@ -836,6 +872,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["package.json"],
     requires_trust: true,
   },
@@ -849,6 +886,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["package.json"],
     requires_trust: true,
   },
@@ -862,6 +900,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     npm: None,
     github: None,
     http: None,
+    go: None,
     root_markers: &["biome.json", "biome.jsonc"],
     requires_trust: true,
   },
@@ -958,6 +997,55 @@ mod tests {
     assert_eq!(java.tier, LspTier::B);
     assert_eq!(java.install, LspInstallKind::HttpArchive);
     assert!(java.http.is_some());
+  }
+
+  #[test]
+  fn fixed_github_asset_styles_match_release_conventions() {
+    let lua = builtin_spec_by_id("lua").unwrap();
+    assert_eq!(
+      lua.github.as_ref().unwrap().target_style,
+      GithubTargetStyle::NodeStyle
+    );
+
+    let toml = builtin_spec_by_id("toml").unwrap();
+    let toml_gh = toml.github.as_ref().unwrap();
+    assert_eq!(toml_gh.tag, "0.9.3");
+    assert_eq!(toml_gh.target_style, GithubTargetStyle::TaploOsArch);
+
+    let clojure = builtin_spec_by_id("clojure").unwrap();
+    let clojure_gh = clojure.github.as_ref().unwrap();
+    assert_eq!(clojure_gh.tag, "2026.07.06-14.34.19");
+    assert_eq!(clojure_gh.target_style, GithubTargetStyle::ClojureNative);
+
+    let xml = builtin_spec_by_id("xml").unwrap();
+    assert_eq!(
+      xml.github.as_ref().unwrap().target_style,
+      GithubTargetStyle::LemminxOs
+    );
+  }
+
+  #[test]
+  fn terraform_uses_hashicorp_http_archive() {
+    let terraform = builtin_spec_by_id("terraform").unwrap();
+    assert_eq!(terraform.install, LspInstallKind::HttpArchive);
+    let http = terraform.http.as_ref().unwrap();
+    assert_eq!(http.version_key, "0.36.4");
+    assert_eq!(
+      http.target_style,
+      Some(GithubTargetStyle::HashicorpOsArch)
+    );
+    assert!(http.url.contains("releases.hashicorp.com"));
+  }
+
+  #[test]
+  fn gopls_uses_go_install_and_nix_is_toolchain() {
+    let gopls = builtin_spec_by_id("gopls").unwrap();
+    assert_eq!(gopls.install, LspInstallKind::GoInstall);
+    assert!(gopls.go.is_some());
+
+    let nix = builtin_spec_by_id("nix").unwrap();
+    assert_eq!(nix.install, LspInstallKind::ToolchainPath);
+    assert!(nix.github.is_none());
   }
 
   #[test]

@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 
 use super::lsp_registry::{
   builtin_spec_by_id, tier_a_ids, BuiltinLspSpec, GithubReleaseSpec, GithubTargetStyle,
-  LspInstallKind, LspTier,
+  HttpArchiveSpec, LspInstallKind, LspTier,
 };
 use super::paths::user_pyrola_dir;
 
@@ -125,7 +125,49 @@ fn github_target_token(style: GithubTargetStyle) -> Result<String, String> {
       ("windows", "x86") => "x86-windows".to_string(),
       _ => return Err(format!("Unsupported platform for zls: {os}/{arch}")),
     }),
+    GithubTargetStyle::TaploOsArch => Ok(match (os, arch) {
+      ("macos", "aarch64") => "darwin-aarch64".to_string(),
+      ("macos", "x86_64") => "darwin-x86_64".to_string(),
+      ("linux", "aarch64") => "linux-aarch64".to_string(),
+      ("linux", "x86_64") => "linux-x86_64".to_string(),
+      ("windows", "x86_64") => "windows-x86_64".to_string(),
+      ("windows", "x86") => "windows-x86".to_string(),
+      _ => return Err(format!("Unsupported platform for taplo: {os}/{arch}")),
+    }),
+    GithubTargetStyle::ClojureNative => Ok(match (os, arch) {
+      ("macos", "aarch64") => "macos-aarch64".to_string(),
+      ("macos", "x86_64") => "macos-amd64".to_string(),
+      ("linux", "aarch64") => "linux-aarch64".to_string(),
+      ("linux", "x86_64") => "linux-amd64".to_string(),
+      ("windows", "x86_64") => "windows-amd64".to_string(),
+      _ => return Err(format!("Unsupported platform for clojure-lsp: {os}/{arch}")),
+    }),
+    GithubTargetStyle::LemminxOs => Ok(match (os, arch) {
+      ("macos", "aarch64") => "osx-aarch_64".to_string(),
+      ("macos", "x86_64") => "osx-x86_64".to_string(),
+      ("linux", _) => "linux".to_string(),
+      ("windows", _) => "win32".to_string(),
+      _ => return Err(format!("Unsupported platform for lemminx: {os}/{arch}")),
+    }),
+    GithubTargetStyle::HashicorpOsArch => Ok(match (os, arch) {
+      ("macos", "aarch64") => "darwin_arm64".to_string(),
+      ("macos", "x86_64") => "darwin_amd64".to_string(),
+      ("linux", "aarch64") => "linux_arm64".to_string(),
+      ("linux", "x86_64") => "linux_amd64".to_string(),
+      ("windows", "x86_64") => "windows_amd64".to_string(),
+      ("windows", "aarch64") => "windows_arm64".to_string(),
+      _ => return Err(format!("Unsupported platform for HashiCorp assets: {os}/{arch}")),
+    }),
   }
+}
+
+fn resolve_http_archive_url(spec: &HttpArchiveSpec) -> Result<String, String> {
+  let mut url = spec.url.replace("{version}", spec.version_key);
+  if let Some(style) = spec.target_style {
+    let target = github_target_token(style)?;
+    url = url.replace("{target}", &target);
+  }
+  Ok(url)
 }
 
 fn resolve_github_asset(spec: &GithubReleaseSpec) -> Result<(String, String), String> {
@@ -141,6 +183,11 @@ fn resolve_github_asset(spec: &GithubReleaseSpec) -> Result<(String, String), St
   // zls Windows assets are zip, not tar.xz.
   if spec.target_style == GithubTargetStyle::ZigOsArch && std::env::consts::OS == "windows" {
     asset = asset.replace(".tar.xz", ".zip");
+  }
+
+  // lua-language-server Windows assets are zip, not tar.gz.
+  if spec.target_style == GithubTargetStyle::NodeStyle && std::env::consts::OS == "windows" {
+    asset = asset.replace(".tar.gz", ".zip");
   }
 
   let url = format!(
@@ -373,6 +420,11 @@ fn version_key_for_spec(spec: &BuiltinLspSpec) -> String {
       .as_ref()
       .map(|h| h.version_key.to_string())
       .unwrap_or_else(|| "latest".to_string()),
+    LspInstallKind::GoInstall => spec
+      .go
+      .as_ref()
+      .map(|g| g.version_key.to_string())
+      .unwrap_or_else(|| "latest".to_string()),
     _ => "path".to_string(),
   }
 }
@@ -394,16 +446,31 @@ pub fn managed_bin_path(app: &AppHandle, spec: &BuiltinLspSpec) -> Option<PathBu
       let github = spec.github.as_ref()?;
       let candidate = dir.join(github.binary_name);
       if candidate.is_file() {
-        Some(candidate)
-      } else {
-        // Some archives nest under a top folder
-        let nested = dir.join(github.binary_name.rsplit('/').next().unwrap_or(github.binary_name));
-        if nested.is_file() {
-          Some(nested)
-        } else {
-          find_file_named(&dir, Path::new(github.binary_name).file_name()?.to_str()?)
+        return Some(candidate);
+      }
+      // Some archives nest under a top folder
+      let nested = dir.join(github.binary_name.rsplit('/').next().unwrap_or(github.binary_name));
+      if nested.is_file() {
+        return Some(nested);
+      }
+      // lemminx ships as lemminx-{target} (and lemminx-{target}.exe on Windows).
+      if github.target_style == GithubTargetStyle::LemminxOs {
+        if let Ok(target) = github_target_token(GithubTargetStyle::LemminxOs) {
+          let platform_name = if cfg!(windows) {
+            format!("lemminx-{target}.exe")
+          } else {
+            format!("lemminx-{target}")
+          };
+          let platform_bin = dir.join(&platform_name);
+          if platform_bin.is_file() {
+            return Some(platform_bin);
+          }
+          if let Some(found) = find_file_named(&dir, &platform_name) {
+            return Some(found);
+          }
         }
       }
+      find_file_named(&dir, Path::new(github.binary_name).file_name()?.to_str()?)
     }
     LspInstallKind::HttpArchive => {
       let http = spec.http.as_ref()?;
@@ -412,6 +479,22 @@ pub fn managed_bin_path(app: &AppHandle, spec: &BuiltinLspSpec) -> Option<PathBu
         Some(candidate)
       } else {
         find_file_named(&dir, Path::new(http.binary_name).file_name()?.to_str()?)
+      }
+    }
+    LspInstallKind::GoInstall => {
+      let go = spec.go.as_ref()?;
+      let candidate = dir.join(go.binary_name);
+      if candidate.is_file() {
+        Some(candidate)
+      } else if cfg!(windows) {
+        let exe = dir.join(format!("{}.exe", go.binary_name));
+        if exe.is_file() {
+          Some(exe)
+        } else {
+          None
+        }
+      } else {
+        None
       }
     }
     _ => None,
@@ -437,9 +520,10 @@ fn find_file_named(dir: &Path, name: &str) -> Option<PathBuf> {
 #[allow(dead_code)]
 pub fn is_installed(app: &AppHandle, spec: &BuiltinLspSpec) -> bool {
   match spec.install {
-    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive => {
-      managed_bin_path(app, spec).is_some()
-    }
+    LspInstallKind::Npm
+    | LspInstallKind::GithubRelease
+    | LspInstallKind::HttpArchive
+    | LspInstallKind::GoInstall => managed_bin_path(app, spec).is_some(),
     LspInstallKind::ToolchainPath => which::which(spec.command.first().copied().unwrap_or("")).is_ok(),
     LspInstallKind::None => false,
   }
@@ -478,7 +562,7 @@ async fn npm_install_packages(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
   );
 
   // Prefer `node /path/to/npm` style via corepack/npm from PATH, else node -e with npx-like install
-  let status = if let Some(npm_bin) = npm_cli {
+  let output = if let Some(npm_bin) = npm_cli {
     TokioCommand::new(npm_bin)
       .args(
         [
@@ -493,9 +577,9 @@ async fn npm_install_packages(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
         ]
         .concat(),
       )
-      .stdout(Stdio::null())
+      .stdout(Stdio::piped())
       .stderr(Stdio::piped())
-      .status()
+      .output()
       .await
       .map_err(|e| e.to_string())?
   } else if let Ok(system_npm) = which::which("npm") {
@@ -513,9 +597,9 @@ async fn npm_install_packages(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
         ]
         .concat(),
       )
-      .stdout(Stdio::null())
+      .stdout(Stdio::piped())
       .stderr(Stdio::piped())
-      .status()
+      .output()
       .await
       .map_err(|e| e.to_string())?
   } else {
@@ -527,8 +611,14 @@ async fn npm_install_packages(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
     );
   };
 
-  if !status.success() {
-    return Err(format!("npm install failed for {}", spec.id));
+  if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let truncated: String = stderr.chars().take(500).collect();
+    let detail = truncated.trim();
+    if detail.is_empty() {
+      return Err(format!("npm install failed for {}", spec.id));
+    }
+    return Err(format!("npm install failed for {}: {detail}", spec.id));
   }
 
   fs::write(&marker, b"ok").map_err(|e| e.to_string())?;
@@ -586,7 +676,47 @@ async fn github_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBu
     }
   }
 
+  // lemminx archives name the binary lemminx-{target}; normalize to binary_name.
+  if github.target_style == GithubTargetStyle::LemminxOs {
+    normalize_lemminx_binary(&dir, github.binary_name)?;
+  }
+
+  #[cfg(unix)]
+  if let Some(bin) = managed_bin_path(app, spec) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin, perms).map_err(|e| e.to_string())?;
+  }
+
   managed_bin_path(app, spec).ok_or_else(|| format!("Downloaded {} but binary missing", spec.id))
+}
+
+fn normalize_lemminx_binary(dir: &Path, binary_name: &str) -> Result<(), String> {
+  let dest = dir.join(binary_name);
+  if dest.is_file() {
+    return Ok(());
+  }
+  let target = github_target_token(GithubTargetStyle::LemminxOs)?;
+  let platform_name = if cfg!(windows) {
+    format!("lemminx-{target}.exe")
+  } else {
+    format!("lemminx-{target}")
+  };
+  let source = dir
+    .join(&platform_name)
+    .canonicalize()
+    .ok()
+    .filter(|path| path.is_file())
+    .or_else(|| find_file_named(dir, &platform_name));
+  let Some(source) = source else {
+    return Ok(());
+  };
+  if source == dest {
+    return Ok(());
+  }
+  fs::rename(&source, &dest).map_err(|e| format!("Failed to normalize lemminx binary: {e}"))?;
+  Ok(())
 }
 
 async fn http_archive_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBuf, String> {
@@ -613,14 +743,15 @@ async fn http_archive_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
     Some(format!("Downloading {}", spec.id)),
   );
 
-  let bytes = download_bytes(http.url).await.map_err(|e| {
+  let url = resolve_http_archive_url(http)?;
+  let bytes = download_bytes(&url).await.map_err(|e| {
     format!(
       "Failed to download {} ({e}). Falling back to PATH if available.",
       spec.id
     )
   })?;
 
-  extract_archive_bytes(&bytes, http.url, &dir)?;
+  extract_archive_bytes(&bytes, &url, &dir)?;
 
   #[cfg(unix)]
   if let Some(bin) = managed_bin_path(app, spec) {
@@ -641,6 +772,61 @@ async fn http_archive_install(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<
   }
 
   Ok(path)
+}
+
+async fn go_install_package(app: &AppHandle, spec: &BuiltinLspSpec) -> Result<PathBuf, String> {
+  let go_spec = spec
+    .go
+    .as_ref()
+    .ok_or_else(|| format!("Server {} has no go install spec", spec.id))?;
+  let key = version_key_for_spec(spec);
+  let dir = managed_server_dir(app, spec.id, &key)?;
+  if let Some(existing) = managed_bin_path(app, spec) {
+    return Ok(existing);
+  }
+
+  let go_bin = which::which("go").map_err(|_| {
+    format!(
+      "Go is required to install {}. Install Go and ensure `go` is on PATH, then try again.",
+      spec.id
+    )
+  })?;
+
+  emit_progress(
+    app,
+    spec.id,
+    "installing",
+    Some(format!("Running go install for {}", spec.id)),
+  );
+
+  let output = TokioCommand::new(go_bin)
+    .args(["install", go_spec.package])
+    .env("GOBIN", &dir)
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .output()
+    .await
+    .map_err(|e| e.to_string())?;
+
+  if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let truncated: String = stderr.chars().take(500).collect();
+    return Err(format!(
+      "go install failed for {}: {}",
+      spec.id,
+      truncated.trim()
+    ));
+  }
+
+  #[cfg(unix)]
+  if let Some(bin) = managed_bin_path(app, spec) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin, perms).map_err(|e| e.to_string())?;
+  }
+
+  managed_bin_path(app, spec).ok_or_else(|| format!("Installed {} but binary missing", spec.id))
 }
 
 pub async fn ensure_server_installed(
@@ -688,6 +874,18 @@ pub async fn ensure_server_installed(
       }
     },
     LspInstallKind::HttpArchive => match http_archive_install(app, spec).await {
+      Ok(path) => Ok(Some(path)),
+      Err(error) => {
+        let fallback = which::which(spec.command.first().copied().unwrap_or("")).ok();
+        if fallback.is_some() {
+          emit_progress(app, server_id, "path", Some(error));
+          Ok(fallback)
+        } else {
+          Err(error)
+        }
+      }
+    },
+    LspInstallKind::GoInstall => match go_install_package(app, spec).await {
       Ok(path) => Ok(Some(path)),
       Err(error) => {
         let fallback = which::which(spec.command.first().copied().unwrap_or("")).ok();
@@ -806,7 +1004,10 @@ pub fn remove_managed_install(app: &AppHandle, server_id: &str) -> Result<(), St
     .ok_or_else(|| format!("Unknown language server: {server_id}"))?;
   if !matches!(
     spec.install,
-    LspInstallKind::Npm | LspInstallKind::GithubRelease | LspInstallKind::HttpArchive
+    LspInstallKind::Npm
+      | LspInstallKind::GithubRelease
+      | LspInstallKind::HttpArchive
+      | LspInstallKind::GoInstall
   ) {
     return Err(
       "Uninstall only applies to managed downloads. PATH/toolchain servers are not removed."
