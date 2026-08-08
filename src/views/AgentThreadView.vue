@@ -43,7 +43,7 @@ const threadReady = ref(false)
 const loadedThreadKey = ref<string | null>(null)
 const homeRoot = ref<string | null>(null)
 const sessionPermissionLevel = ref<PermissionLevel>(
-  config.effectiveSettings.value['agent.permissionLevel'] ?? 'ask',
+  config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist',
 )
 const permissionLevelTouched = ref(false)
 
@@ -388,7 +388,7 @@ watch(
       return
     }
     sessionPermissionLevel.value =
-      config.effectiveSettings.value['agent.permissionLevel'] ?? 'ask'
+      config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist'
     harness.value?.setPermissionLevel(sessionPermissionLevel.value)
   },
   { immediate: true },

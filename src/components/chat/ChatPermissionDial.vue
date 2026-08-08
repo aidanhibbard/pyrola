@@ -20,6 +20,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/shadcn/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { Button } from '@/components/shadcn/ui/button'
 
 const props = defineProps<{
@@ -31,6 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const showBypassWarning = ref(false)
+const open = ref(false)
 
 type LevelMeta = {
   label: string
@@ -62,8 +68,13 @@ const LEVELS: Record<PermissionLevel, LevelMeta> = {
 
 const currentMeta = computed(() => LEVELS[props.modelValue])
 
+const tooltipLabel = computed(
+  () => `Permission: ${currentMeta.value.label}`,
+)
+
 const handleSelect = (level: PermissionLevel): void => {
   if (level === 'bypass' && props.modelValue !== 'bypass') {
+    open.value = false
     showBypassWarning.value = true
     return
   }
@@ -102,47 +113,60 @@ const cancelBypass = (): void => {
     </AlertDialogContent>
   </AlertDialog>
 
-  <DropdownMenu>
-    <DropdownMenuTrigger as-child>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="h-7 gap-1.5 px-2 text-xs"
-        :title="`Permission level: ${currentMeta.label}`"
-      >
-        <component
-          :is="currentMeta.icon"
-          class="size-3.5 shrink-0"
-          :class="currentMeta.class"
-        />
-        <span :class="currentMeta.class">{{ currentMeta.label }}</span>
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" class="w-60">
-      <DropdownMenuLabel class="text-xs text-muted-foreground">
-        Permission level (this session)
-      </DropdownMenuLabel>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem
-        v-for="(meta, level) in LEVELS"
-        :key="level"
-        class="flex flex-col items-start gap-0.5 py-2"
-        @select="handleSelect(level as PermissionLevel)"
-      >
-        <div class="flex items-center gap-2">
-          <component :is="meta.icon" class="size-4 shrink-0" :class="meta.class" />
-          <span class="font-medium" :class="{ 'text-foreground': modelValue === level }">
-            {{ meta.label }}
-          </span>
-          <span
-            v-if="modelValue === level"
-            class="ml-auto text-xs text-muted-foreground"
-          >
-            active
-          </span>
-        </div>
-        <p class="ml-6 text-xs text-muted-foreground">{{ meta.description }}</p>
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+  <Tooltip :disable-closing-trigger="true">
+    <TooltipTrigger as-child>
+      <span class="inline-flex shrink-0">
+        <DropdownMenu v-model:open="open">
+          <DropdownMenuTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-7 w-7 shrink-0"
+              :aria-label="tooltipLabel"
+            >
+              <component
+                :is="currentMeta.icon"
+                class="size-3.5"
+                :class="currentMeta.class"
+              />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-60">
+            <DropdownMenuLabel class="text-xs text-muted-foreground">
+              Permission level (this session)
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              v-for="(meta, level) in LEVELS"
+              :key="level"
+              class="flex flex-col items-start gap-0.5 py-2"
+              @select="handleSelect(level as PermissionLevel)"
+            >
+              <div class="flex w-full items-center gap-2">
+                <component
+                  :is="meta.icon"
+                  class="size-4 shrink-0"
+                  :class="meta.class"
+                />
+                <span
+                  class="font-medium"
+                  :class="{ 'text-foreground': modelValue === level }"
+                >
+                  {{ meta.label }}
+                </span>
+                <span
+                  v-if="modelValue === level"
+                  class="ml-auto text-xs text-muted-foreground"
+                >
+                  active
+                </span>
+              </div>
+              <p class="ml-6 text-xs text-muted-foreground">{{ meta.description }}</p>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    </TooltipTrigger>
+    <TooltipContent class="z-[100]">{{ tooltipLabel }}</TooltipContent>
+  </Tooltip>
 </template>

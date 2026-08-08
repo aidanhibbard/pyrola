@@ -88,7 +88,7 @@ const syncDraftSelection = (): void => {
 const resolveDefaultPermissionLevel = (): PermissionLevel =>
   props.permissionLevel
   ?? config.effectiveSettings.value['agent.permissionLevel']
-  ?? 'ask'
+  ?? 'allowlist'
 
 const localPermissionLevel = ref<PermissionLevel>(resolveDefaultPermissionLevel())
 
@@ -279,7 +279,7 @@ watch(
     }
     if (props.permissionLevel === undefined) {
       localPermissionLevel.value =
-        config.effectiveSettings.value['agent.permissionLevel'] ?? 'ask'
+        config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist'
     }
     if (!session.modeInitialized) {
       session.selectedMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'

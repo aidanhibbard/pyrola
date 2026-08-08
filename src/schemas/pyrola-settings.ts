@@ -98,7 +98,7 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'appearance.theme': 'system',
   'agent.defaultMode': 'agent',
   'agent.autoApproveGlobs': [],
-  'agent.permissionLevel': 'ask',
+  'agent.permissionLevel': 'allowlist',
   'agent.permissions': [],
   'agent.mcp.trust': [],
   'agent.sandbox.enabled': true,

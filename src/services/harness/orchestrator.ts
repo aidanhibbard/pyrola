@@ -576,7 +576,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     projectSlug,
     chatId,
     settings,
-    permissionLevel: input.permissionLevel ?? settings['agent.permissionLevel'] ?? 'ask',
+    permissionLevel: input.permissionLevel ?? settings['agent.permissionLevel'] ?? 'allowlist',
     sessionAllows,
     sessionDenies,
     sandboxEnabled: settings['agent.sandbox.enabled'] ?? false,
