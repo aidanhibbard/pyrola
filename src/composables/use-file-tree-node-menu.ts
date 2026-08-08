@@ -224,7 +224,7 @@ export default () => {
       return
     }
 
-    const mode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
+    const mode = 'agent' as const
     const model = resolveModelForRole(mode, config.effectiveSettings.value) ?? ''
     if (!model) {
       toast.error('Select a default model in Settings before starting a chat')

@@ -19,7 +19,7 @@ describe('isPersonalOnlyProjectKey', () => {
   it('does not match other sections', () => {
     expect(isPersonalOnlyProjectKey('lsp.enabled')).toBe(false)
     expect(isPersonalOnlyProjectKey('appearance.theme')).toBe(false)
-    expect(isPersonalOnlyProjectKey('agent.defaultMode')).toBe(false)
+    expect(isPersonalOnlyProjectKey('agent.permissionLevel')).toBe(false)
   })
 })
 

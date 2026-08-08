@@ -59,7 +59,6 @@ import {
 } from '@/services/models/resolve-model-call-options'
 import { toast } from 'vue-sonner'
 import truncateToolResult from '@/utils/truncate-tool-result'
-import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import dropTrailingAssistantMessages from '@/utils/drop-trailing-assistant-messages'
 import prepareMessagesForModelVision from '@/utils/prepare-messages-for-model-vision'
@@ -448,8 +447,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     assistantId,
     captureTurnMessages,
   } = input
-
-  fleetCounter.increment()
 
   setAgentShellEventEmitter(chatId, onEvent)
 
@@ -935,7 +932,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       throw error
     }
   } finally {
-    fleetCounter.decrement()
     rejectPendingForChat(chatId)
     rejectPendingQuestionsForChat(chatId)
     setAgentShellEventEmitter(chatId, null)
@@ -963,14 +959,6 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
 }
 
 export default async (input: OrchestratorInput): Promise<void> => {
-  const limit = input.settings['fleet.maxConcurrentAgents'] ?? 4
-  if (fleetCounter.get() >= limit) {
-    toast.error('Too many concurrent agents', {
-      description: `Fleet limit is ${limit}. Stop a running agent before starting another.`,
-    })
-    return
-  }
-
   const {
     projectSlug,
     chatId,
@@ -1085,14 +1073,6 @@ export default async (input: OrchestratorInput): Promise<void> => {
 export const resumeOrchestrator = async (
   input: ResumeOrchestratorInput,
 ): Promise<void> => {
-  const limit = input.settings['fleet.maxConcurrentAgents'] ?? 4
-  if (fleetCounter.get() >= limit) {
-    toast.error('Too many concurrent agents', {
-      description: `Fleet limit is ${limit}. Stop a running agent before starting another.`,
-    })
-    return
-  }
-
   const {
     projectSlug,
     chatId,

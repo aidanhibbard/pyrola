@@ -5,7 +5,6 @@ import AppearanceSection from '@/components/settings/sections/AppearanceSection.
 import ProvidersSection from '@/components/settings/sections/ProvidersSection.vue'
 import ModelsSection from '@/components/settings/sections/ModelsSection.vue'
 import McpServersSection from '@/components/settings/sections/McpServersSection.vue'
-import FleetSection from '@/components/settings/sections/FleetSection.vue'
 import GeneralSection from '@/components/settings/sections/GeneralSection.vue'
 import AgentsSection from '@/components/settings/sections/AgentsSection.vue'
 import PermissionsSection from '@/components/settings/sections/PermissionsSection.vue'
@@ -39,8 +38,6 @@ const sectionComponent = computed(() => {
       return ModelsSection
     case 'mcp':
       return McpServersSection
-    case 'fleet':
-      return FleetSection
     case 'general':
       return GeneralSection
     case 'agents':

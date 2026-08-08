@@ -149,27 +149,8 @@ fn settings_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Res
   base_path(app, scope, root_path).map(|p| p.join("settings.json"))
 }
 
-pub(crate) fn tray_background_enabled(app: &AppHandle) -> bool {
-  let path = match settings_path(app, "personal", None) {
-    Ok(path) => path,
-    Err(error) => {
-      log::warn!("Failed to resolve personal settings path: {error}");
-      return false;
-    }
-  };
-
-  let settings = match read_json(&path) {
-    Ok(settings) => settings,
-    Err(error) => {
-      log::warn!("Failed to read personal settings: {error}");
-      return false;
-    }
-  };
-
-  settings
-    .get("fleet.trayBackground")
-    .and_then(|value| value.as_bool())
-    .unwrap_or(false)
+pub(crate) fn tray_background_enabled(_app: &AppHandle) -> bool {
+  true
 }
 
 fn mcp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<PathBuf, String> {

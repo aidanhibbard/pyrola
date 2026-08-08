@@ -3,7 +3,6 @@ export type SettingsSectionId =
   | 'providers'
   | 'models'
   | 'mcp'
-  | 'fleet'
   | 'general'
   | 'agents'
   | 'plans'
@@ -20,7 +19,6 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
   'providers',
   'models',
   'lsp',
-  'fleet',
   'permissions',
   'plans',
   'skills',
@@ -43,7 +41,6 @@ export const SECTION_LABELS: Record<SettingsSectionId, string> = {
   providers: 'Providers',
   models: 'Models',
   mcp: 'MCP',
-  fleet: 'Fleet',
   general: 'General',
   agents: 'Agents',
   plans: 'Plans',

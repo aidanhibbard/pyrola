@@ -296,7 +296,7 @@ watch(
         config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist'
     }
     if (!session.modeInitialized) {
-      session.selectedMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
+      session.selectedMode = 'agent'
       session.modeInitialized = true
     }
     if (!session.modelInitialized) {

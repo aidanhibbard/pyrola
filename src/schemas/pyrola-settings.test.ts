@@ -32,6 +32,19 @@ describe('migratePyrolaSettings', () => {
     expect('chat.autoTitleModel' in migrated).toBe(false)
   })
 
+  it('strips removed fleet and default mode keys', () => {
+    const migrated = migratePyrolaSettings({
+      version: 1,
+      'agent.defaultMode': 'plan',
+      'fleet.maxConcurrentAgents': 4,
+      'fleet.trayBackground': true,
+    })
+
+    expect('agent.defaultMode' in migrated).toBe(false)
+    expect('fleet.maxConcurrentAgents' in migrated).toBe(false)
+    expect('fleet.trayBackground' in migrated).toBe(false)
+  })
+
   it('defaults duplicate tab behavior to ask', () => {
     const migrated = migratePyrolaSettings({ version: 1 })
 

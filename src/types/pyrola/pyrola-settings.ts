@@ -47,7 +47,6 @@ export type PyrolaCustomProvider = {
 export type PyrolaSettings = {
   version: 1
   'appearance.theme'?: PyrolaTheme
-  'agent.defaultMode'?: PyrolaChatMode
   'agent.autoApproveGlobs'?: string[]
   'agent.permissionLevel'?: PermissionLevel
   'agent.permissions'?: PermissionRecord[]
@@ -55,8 +54,6 @@ export type PyrolaSettings = {
   'agent.sandbox.enabled'?: boolean
   'agent.sandbox.network'?: 'deny' | 'allow'
   'agent.maxStepsPerTurn'?: number
-  'fleet.maxConcurrentAgents'?: number
-  'fleet.trayBackground'?: boolean
   'general.machineLabel'?: string
   'lsp.enabled'?: boolean
   'lsp.autoDownload'?: boolean

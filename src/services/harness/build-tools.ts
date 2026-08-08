@@ -1363,7 +1363,6 @@ const buildTools = (ctx: HarnessToolContext) => ({
         throw new Error('Subagent aborted')
       }
 
-      const fleetLimit = ctx.settings['fleet.maxConcurrentAgents'] ?? 4
       const subagentId = crypto.randomUUID()
       const lockedSubagentModel = getPlanExecutionSession(
         ctx.projectSlug,
@@ -1388,7 +1387,6 @@ const buildTools = (ctx: HarnessToolContext) => ({
           agentName,
         },
         {
-          maxConcurrent: fleetLimit,
           pendingResume: !blocking,
         },
       )

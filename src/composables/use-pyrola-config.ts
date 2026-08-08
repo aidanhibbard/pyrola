@@ -1,6 +1,6 @@
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import { toast } from 'vue-sonner'
-import type { PyrolaSettings, PyrolaTheme, PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { PyrolaSettings, PyrolaTheme } from '@/types/pyrola/pyrola-settings'
 import { defaultPyrolaSettings } from '@/schemas/pyrola-settings'
 import { stripPersonalOnlyProjectOverrides } from '@/services/config/merge-settings'
 import {
@@ -135,14 +135,8 @@ export default () => {
     usingPersonalDefault,
     setTheme: (tab: SettingsTab, theme: PyrolaTheme) =>
       updateSetting(tab, 'appearance.theme', theme),
-    setDefaultMode: (mode: PyrolaChatMode) =>
-      updateSetting('personal', 'agent.defaultMode', mode),
-    setMaxConcurrentAgents: (count: number) =>
-      updateSetting('personal', 'fleet.maxConcurrentAgents', count),
     setMachineLabel: (label: string) =>
       updateSetting('personal', 'general.machineLabel', label),
-    setTrayBackground: (enabled: boolean) =>
-      updateSetting('personal', 'fleet.trayBackground', enabled),
   }
 }
 

@@ -12,7 +12,6 @@ import {
 export { customProviderSchema, customProviderModelSchema } from '@/schemas/providers/custom-provider'
 
 const themeSchema = z.enum(['light', 'dark', 'system'])
-const chatModeSchema = z.enum(['ask', 'plan', 'studio', 'agent', 'orchestrator'])
 const duplicateTabBehaviorSchema = z.enum(['ask', 'open-existing', 'open-new'])
 
 const modelRefStringSchema = z.string().min(1)
@@ -24,7 +23,6 @@ export const pyrolaSettingsSchema = z
   .object({
     version: z.literal(1),
     'appearance.theme': themeSchema.optional(),
-    'agent.defaultMode': chatModeSchema.optional(),
     'agent.autoApproveGlobs': z.array(z.string()).optional(),
     'agent.permissionLevel': z.enum(['ask', 'allowlist', 'bypass']).optional(),
     'agent.permissions': z
@@ -47,8 +45,6 @@ export const pyrolaSettingsSchema = z
     'agent.sandbox.enabled': z.boolean().optional(),
     'agent.sandbox.network': z.enum(['deny', 'allow']).optional(),
     'agent.maxStepsPerTurn': z.number().int().min(1).max(200).optional(),
-    'fleet.maxConcurrentAgents': z.number().int().min(1).max(16).optional(),
-    'fleet.trayBackground': z.boolean().optional(),
     'general.machineLabel': z.string().optional(),
     'lsp.enabled': z.boolean().optional(),
     'lsp.autoDownload': z.boolean().optional(),
@@ -96,7 +92,6 @@ export const validatePyrolaSettings = (
 export const defaultPyrolaSettings = (): PyrolaSettings => ({
   version: 1,
   'appearance.theme': 'system',
-  'agent.defaultMode': 'agent',
   'agent.autoApproveGlobs': [],
   'agent.permissionLevel': 'allowlist',
   'agent.permissions': [],
@@ -104,8 +99,6 @@ export const defaultPyrolaSettings = (): PyrolaSettings => ({
   'agent.sandbox.enabled': true,
   'agent.sandbox.network': 'deny',
   'agent.maxStepsPerTurn': 40,
-  'fleet.maxConcurrentAgents': 4,
-  'fleet.trayBackground': false,
   'lsp.enabled': true,
   'lsp.autoDownload': true,
   'workspace.trust': [],
@@ -159,6 +152,9 @@ const migrateDeprecatedModelKeys = (record: Record<string, unknown>): Record<str
   delete next['agent.defaultProvider']
   delete next['agent.defaultModel']
   delete next['chat.autoTitleModel']
+  delete next['agent.defaultMode']
+  delete next['fleet.maxConcurrentAgents']
+  delete next['fleet.trayBackground']
 
   return next
 }

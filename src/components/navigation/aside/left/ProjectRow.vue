@@ -92,7 +92,7 @@ const handleStartChat = async (): Promise<void> => {
   startingChat.value = true
   try {
     await fleet.setActiveProject(fleetProject.id)
-    const defaultMode = config.effectiveSettings.value['agent.defaultMode'] ?? 'agent'
+    const defaultMode = 'agent' as const
     const model = resolveModelForRole(defaultMode, config.effectiveSettings.value) ?? ''
     if (!model) {
       toast.error('Select a default model in Settings before starting a chat')

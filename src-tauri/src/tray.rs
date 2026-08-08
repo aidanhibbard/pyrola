@@ -4,8 +4,6 @@ use tauri::{
   AppHandle, Manager, Window,
 };
 
-use crate::commands::config::tray_background_enabled;
-
 const MAIN_WINDOW_LABEL: &str = "main";
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
@@ -54,10 +52,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn handle_close_requested(window: &Window) {
-  if !tray_background_enabled(window.app_handle()) {
-    return;
-  }
-
   if let Err(error) = window.hide() {
     log::error!("Failed to hide window to tray: {error}");
   }

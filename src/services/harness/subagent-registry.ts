@@ -35,33 +35,13 @@ const resolveCompletionWaiters = (subagentId: string, result: SubagentResult): v
   }
 }
 
-export const countRunningSubagents = (): number => {
-  let count = 0
-  for (const record of subagents.values()) {
-    if (record.status === 'running') {
-      count += 1
-    }
-  }
-  return count
-}
-
 export const register = (
   chatId: string,
   subagentId: string,
   controller: AbortController,
   meta: { toolCallId: string; agentName: string },
-  options?: { pendingResume?: boolean; maxConcurrent?: number },
+  options?: { pendingResume?: boolean },
 ): SubagentRecord => {
-  const maxConcurrent = options?.maxConcurrent
-  if (
-    typeof maxConcurrent === 'number' &&
-    countRunningSubagents() >= maxConcurrent
-  ) {
-    throw new Error(
-      `Fleet limit reached (${maxConcurrent} concurrent agents). Stop a running agent before spawning another.`,
-    )
-  }
-
   const record: SubagentRecord = {
     subagentId,
     chatId,
