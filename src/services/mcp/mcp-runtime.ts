@@ -2,7 +2,9 @@ import { auth, type OAuthClientProvider } from '@ai-sdk/mcp'
 import { listen } from '@tauri-apps/api/event'
 import type { McpHttpServer, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { isMcpHttpServer, isMcpStdioServer } from '@/types/pyrola/mcp-config'
+import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { isAllowedMcpUrl } from '@/services/mcp/is-allowed-mcp-url'
+import { assertSafeMcpEnvOverlay } from '@/services/mcp/mcp-dangerous-env'
 import {
   callHttpTool,
   getHttpPrompt,
@@ -19,11 +21,14 @@ import {
   stopHttpServer,
 } from '@/services/mcp/mcp-http-client'
 import { mcpKnownSecretKeys } from '@/services/mcp/mcp-keychain-keys'
+import { mcpOAuthFetch } from '@/services/mcp/mcp-oauth-fetch'
+import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import { createPyrolaOAuthProvider } from '@/services/mcp/pyrola-oauth-provider'
 import {
   listRequiredInputIdsForServer,
   resolveServerTemplates,
 } from '@/services/mcp/resolve-mcp-inputs'
+import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import {
   deleteSecret,
   mcpCallTool,
@@ -41,10 +46,18 @@ import {
 
 type OAuthCallbackPayload = {
   code: string
-  state?: string
+  state: string
+  error?: string | null
+}
+
+export type McpRuntimeOptions = {
+  settings?: PyrolaSettings
+  confirmAuthorizationServerOrigin?: (origin: string) => Promise<boolean>
+  skipTrustCheck?: boolean
 }
 
 const OAUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
+const oauthInFlight = new Map<string, Promise<McpServerState>>()
 
 const clearServerSecrets = async (
   serverId: string,
@@ -56,11 +69,32 @@ const clearServerSecrets = async (
   }
 }
 
+const assertServerTrusted = (
+  serverId: string,
+  config: McpServerConfig,
+  options?: McpRuntimeOptions,
+): void => {
+  if (options?.skipTrustCheck) {
+    return
+  }
+  const settings = options?.settings
+  if (!settings) {
+    throw new Error('MCP trust check requires settings')
+  }
+  const fingerprint = mcpServerFingerprint(config)
+  if (!isMcpTrusted(settings, serverId, fingerprint, sessionTrusts)) {
+    throw new Error(
+      `MCP server "${serverId}" is not trusted for the current configuration`,
+    )
+  }
+}
+
 const createTokenProvider = (
   serverId: string,
   config: McpHttpServer,
   redirectUrl: string,
-  openUrl: (url: string) => Promise<void>,
+  openUrl: (url: string, allowedOrigin: string) => Promise<void>,
+  confirmAuthorizationServerOrigin?: (origin: string) => Promise<boolean>,
 ): OAuthClientProvider =>
   createPyrolaOAuthProvider({
     serverId,
@@ -69,6 +103,7 @@ const createTokenProvider = (
     allowedAuthorizationServers: config.oauth?.allowedAuthorizationServers,
     redirectUrl,
     openUrl,
+    confirmAuthorizationServerOrigin,
   })
 
 const waitForOAuthCallback = async (
@@ -127,6 +162,14 @@ const waitForOAuthCallback = async (
       }, OAUTH_CALLBACK_TIMEOUT_MS)
 
       listen<OAuthCallbackPayload>('oauth-callback', (event) => {
+        if (event.payload.error) {
+          settle('reject', new Error(event.payload.error))
+          return
+        }
+        if (!event.payload.state) {
+          settle('reject', new Error('OAuth callback missing state'))
+          return
+        }
         settle('resolve', event.payload)
       })
         .then((fn) => {
@@ -154,8 +197,11 @@ const waitForOAuthCallback = async (
 const startHttp = async (
   serverId: string,
   config: McpHttpServer,
+  options?: McpRuntimeOptions,
   authProvider?: OAuthClientProvider,
 ): Promise<McpServerState> => {
+  assertServerTrusted(serverId, config, options)
+
   if (!isAllowedMcpUrl(config.url)) {
     throw new Error(
       'MCP URL must use https, or http on localhost / 127.0.0.1',
@@ -182,38 +228,50 @@ const startHttp = async (
     headers,
   }
 
-  if (config.oauth) {
-    const provider =
-      authProvider ??
-      createTokenProvider(
-        serverId,
-        resolvedConfig,
-        'http://127.0.0.1/oauth-pending',
-        async () => {
-          throw new Error('OAuth redirect requires authenticate()')
-        },
-      )
-    const tokens = await provider.tokens()
-    if (!tokens?.access_token) {
-      return markHttpAuthRequired(serverId, resolvedConfig, 'Authentication required')
-    }
-    return startHttpServer(serverId, resolvedConfig, { authProvider: provider })
-  }
+  const provider =
+    authProvider ??
+    createTokenProvider(
+      serverId,
+      resolvedConfig,
+      'http://127.0.0.1/oauth-pending',
+      async () => {
+        throw new Error('OAuth redirect requires authenticate()')
+      },
+      options?.confirmAuthorizationServerOrigin,
+    )
 
-  return startHttpServer(serverId, resolvedConfig, {
-    authProvider,
-  })
+  try {
+    return await startHttpServer(serverId, resolvedConfig, {
+      authProvider: provider,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (
+      /unauthorized|401|auth_required/i.test(message) ||
+      error instanceof Error && error.name === 'UnauthorizedError'
+    ) {
+      return markHttpAuthRequired(serverId, resolvedConfig, message)
+    }
+    throw error
+  }
 }
 
 const startStdio = async (
   serverId: string,
   config: Extract<McpServerConfig, { command: string }>,
+  options?: McpRuntimeOptions,
 ): Promise<McpServerState> => {
+  assertServerTrusted(serverId, config, options)
+
   let args = config.args ?? []
+  let serverEnv: Record<string, string> | undefined
   try {
     const resolved = await resolveServerTemplates(serverId, config)
     if (resolved.args) {
       args = resolved.args
+    }
+    if (resolved.serverEnv) {
+      serverEnv = assertSafeMcpEnvOverlay(resolved.serverEnv)
     }
   } catch (error) {
     if (
@@ -225,18 +283,19 @@ const startStdio = async (
     throw error
   }
 
-  return mcpStart(serverId, config.command, args)
+  return mcpStart(serverId, config.command, args, serverEnv)
 }
 
 const start = async (
   serverId: string,
   config: McpServerConfig,
+  options?: McpRuntimeOptions,
 ): Promise<McpServerState> => {
   if (isMcpHttpServer(config)) {
-    return startHttp(serverId, config)
+    return startHttp(serverId, config, options)
   }
   if (isMcpStdioServer(config)) {
-    return startStdio(serverId, config)
+    return startStdio(serverId, config, options)
   }
   throw new Error('Unsupported MCP server config')
 }
@@ -279,17 +338,12 @@ const logout = async (
   await mcpLogout(serverId)
 }
 
-const authenticate = async (
+const runAuthenticateHttp = async (
   serverId: string,
-  config: McpServerConfig,
+  config: McpHttpServer,
+  options?: McpRuntimeOptions,
 ): Promise<McpServerState> => {
-  if (!isMcpHttpServer(config)) {
-    return start(serverId, config)
-  }
-
-  if (!config.oauth) {
-    return startHttp(serverId, config)
-  }
+  assertServerTrusted(serverId, config, options)
 
   const loopback = await oauthBeginLoopback()
   const abort = new AbortController()
@@ -300,18 +354,23 @@ const authenticate = async (
       serverId,
       config,
       loopback.redirectUrl,
-      async (url: string) => {
-        await openExternalUrl(url)
+      async (url: string, allowedOrigin: string) => {
+        await openExternalUrl(url, allowedOrigin)
       },
+      options?.confirmAuthorizationServerOrigin,
     )
 
-    const first = await auth(provider, { serverUrl: config.url })
+    const first = await auth(provider, {
+      serverUrl: config.url,
+      fetchFn: mcpOAuthFetch,
+    })
     if (first === 'REDIRECT') {
       const callback = await callbackPromise
       const second = await auth(provider, {
         serverUrl: config.url,
         authorizationCode: callback.code,
         callbackState: callback.state,
+        fetchFn: mcpOAuthFetch,
       })
       if (second !== 'AUTHORIZED') {
         throw new Error('OAuth authorization did not complete')
@@ -332,7 +391,7 @@ const authenticate = async (
       }
     }
 
-    return startHttp(serverId, config, provider)
+    return startHttp(serverId, config, options, provider)
   } catch (error) {
     abort.abort()
     try {
@@ -353,6 +412,27 @@ const authenticate = async (
       // Loopback may already be closed after a successful callback.
     }
   }
+}
+
+const authenticate = async (
+  serverId: string,
+  config: McpServerConfig,
+  options?: McpRuntimeOptions,
+): Promise<McpServerState> => {
+  if (!isMcpHttpServer(config)) {
+    return start(serverId, config, options)
+  }
+
+  const existing = oauthInFlight.get(serverId)
+  if (existing) {
+    return existing
+  }
+
+  const flight = runAuthenticateHttp(serverId, config, options).finally(() => {
+    oauthInFlight.delete(serverId)
+  })
+  oauthInFlight.set(serverId, flight)
+  return flight
 }
 
 const callTool = async (

@@ -19,7 +19,9 @@ type CreatePyrolaOAuthProviderArgs = {
   clientId?: string
   allowedAuthorizationServers?: string[]
   redirectUrl: string
-  openUrl: (url: string) => void | Promise<void>
+  openUrl: (url: string, allowedOrigin: string) => void | Promise<void>
+  /** Required when no allowlist and no pinned AS: user must confirm the AS origin. */
+  confirmAuthorizationServerOrigin?: (origin: string) => Promise<boolean>
 }
 
 const originOf = (value: string | URL): string => {
@@ -53,6 +55,7 @@ export const createPyrolaOAuthProvider = (
     allowedAuthorizationServers,
     redirectUrl,
     openUrl,
+    confirmAuthorizationServerOrigin,
   } = args
 
   const provider: OAuthClientProvider = {
@@ -118,9 +121,19 @@ export const createPyrolaOAuthProvider = (
     saveAuthorizationServerInformation: async (
       authorizationServerInformation: OAuthAuthorizationServerInformation,
     ): Promise<void> => {
+      const existing = parseJson<{ origin?: string }>(
+        await getSecret(mcpOAuthAsInfoKey(serverId)),
+      )
       await setSecret(
         mcpOAuthAsInfoKey(serverId),
-        JSON.stringify(authorizationServerInformation),
+        JSON.stringify({
+          ...authorizationServerInformation,
+          origin:
+            existing?.origin ??
+            (authorizationServerInformation.authorizationServerUrl
+              ? originOf(authorizationServerInformation.authorizationServerUrl)
+              : undefined),
+        }),
       )
     },
 
@@ -146,29 +159,38 @@ export const createPyrolaOAuthProvider = (
         OAuthAuthorizationServerInformation & { origin?: string }
       >(await getSecret(mcpOAuthAsInfoKey(serverId)))
 
-      if (!stored) {
-        await setSecret(
-          mcpOAuthAsInfoKey(serverId),
-          JSON.stringify({
-            origin: asOrigin,
-            authorizationServerUrl: String(authorizationServerUrl),
-            tokenEndpoint: '',
-          }),
-        )
-        return
-      }
-
       const pinnedOrigin =
-        stored.origin ??
-        (stored.authorizationServerUrl
+        stored?.origin ??
+        (stored?.authorizationServerUrl
           ? originOf(stored.authorizationServerUrl)
           : undefined)
 
-      if (pinnedOrigin && pinnedOrigin !== asOrigin) {
+      if (pinnedOrigin) {
+        if (pinnedOrigin !== asOrigin) {
+          throw new Error(
+            `Authorization server origin changed from ${pinnedOrigin} to ${asOrigin}`,
+          )
+        }
+        return
+      }
+
+      const confirmed = confirmAuthorizationServerOrigin
+        ? await confirmAuthorizationServerOrigin(asOrigin)
+        : false
+      if (!confirmed) {
         throw new Error(
-          `Authorization server origin changed from ${pinnedOrigin} to ${asOrigin}`,
+          `Authorization server origin ${asOrigin} was not confirmed`,
         )
       }
+
+      await setSecret(
+        mcpOAuthAsInfoKey(serverId),
+        JSON.stringify({
+          origin: asOrigin,
+          authorizationServerUrl: String(authorizationServerUrl),
+          tokenEndpoint: '',
+        }),
+      )
     },
 
     state: async (): Promise<string> => randomHex(32),
@@ -183,7 +205,7 @@ export const createPyrolaOAuthProvider = (
     },
 
     redirectToAuthorization: async (authorizationUrl: URL): Promise<void> => {
-      await openUrl(authorizationUrl.toString())
+      await openUrl(authorizationUrl.toString(), authorizationUrl.origin)
     },
 
     invalidateCredentials: async (

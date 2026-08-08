@@ -74,8 +74,10 @@ export type OAuthLoopbackStart = {
   redirectUrl: string
 }
 
-export const openExternalUrl = (url: string): Promise<void> =>
-  call('open_external_url', { url })
+export const openExternalUrl = (
+  url: string,
+  allowedOrigin: string,
+): Promise<void> => call('open_external_url', { url, allowedOrigin })
 
 export const oauthBeginLoopback = (): Promise<OAuthLoopbackStart> =>
   call('oauth_begin_loopback')
@@ -205,7 +207,9 @@ export const mcpStart = (
   serverId: string,
   command: string,
   args: string[],
-): Promise<McpServerState> => call('mcp_start', { serverId, command, args })
+  env?: Record<string, string>,
+): Promise<McpServerState> =>
+  call('mcp_start', { serverId, command, args, env: env ?? null })
 
 export const mcpStop = (serverId: string): Promise<void> => call('mcp_stop', { serverId })
 

@@ -32,6 +32,7 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
 import type { EffectiveMcpServer } from '@/services/mcp/merge-mcp-config'
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
+import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 
 const {
@@ -197,7 +198,12 @@ const handleToggleChange = async (
 
   if (
     checked &&
-    !isMcpTrusted(config.effectiveSettings.value, server.id, sessionTrusts)
+    !isMcpTrusted(
+      config.effectiveSettings.value,
+      server.id,
+      mcpServerFingerprint(server.config),
+      sessionTrusts,
+    )
   ) {
     toast.error('Trust this server in Settings first', {
       description: `${server.id} must be trusted before it can be enabled.`,
@@ -219,7 +225,14 @@ const handleLogin = async (server: EffectiveMcpServer): Promise<void> => {
   if (isServerLoading(server.id)) {
     return
   }
-  if (!isMcpTrusted(config.effectiveSettings.value, server.id, sessionTrusts)) {
+  if (
+    !isMcpTrusted(
+      config.effectiveSettings.value,
+      server.id,
+      mcpServerFingerprint(server.config),
+      sessionTrusts,
+    )
+  ) {
     toast.error('Trust this server in Settings first', {
       description: `${server.id} must be trusted before authentication.`,
     })

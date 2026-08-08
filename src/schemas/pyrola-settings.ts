@@ -39,6 +39,7 @@ export const pyrolaSettingsSchema = z
         z.object({
           serverId: z.string(),
           scope: z.enum(['session', 'workspace', 'always', 'never']),
+          fingerprint: z.string().min(1).optional(),
         }),
       )
       .optional(),

@@ -7,4 +7,6 @@ export type PendingMcpAuthView = {
   kind: McpAuthKind
   title: string
   detail?: string
+  subagentId?: string
+  subagentLabel?: string
 }

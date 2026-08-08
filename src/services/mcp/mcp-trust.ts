@@ -1,7 +1,8 @@
 import type { McpTrustRecord, McpTrustScope } from '@/types/harness/permission'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 
-export const sessionTrusts = new Set<string>()
+/** sessionId -> fingerprint trusted for this app session */
+export const sessionTrusts = new Map<string, string>()
 
 export const getMcpTrust = (
   settings: PyrolaSettings,
@@ -12,23 +13,36 @@ export const getMcpTrust = (
 export const isMcpTrusted = (
   settings: PyrolaSettings,
   serverId: string,
-  trustedInSession: Set<string> = sessionTrusts,
+  fingerprint: string,
+  trustedInSession: Map<string, string> = sessionTrusts,
 ): boolean => {
-  if (trustedInSession.has(serverId)) {
+  if (!fingerprint) {
+    return false
+  }
+  if (trustedInSession.get(serverId) === fingerprint) {
     return true
   }
   const record = getMcpTrust(settings, serverId)
-  return record?.scope === 'always' || record?.scope === 'workspace'
+  if (!record?.fingerprint || record.fingerprint !== fingerprint) {
+    return false
+  }
+  return record.scope === 'always' || record.scope === 'workspace'
 }
 
 export const upsertMcpTrustRecord = (
   records: McpTrustRecord[],
   serverId: string,
   scope: McpTrustScope,
+  fingerprint: string,
 ): McpTrustRecord[] => {
+  const next: McpTrustRecord = { serverId, scope, fingerprint }
   const existing = records.findIndex((r) => r.serverId === serverId)
   if (existing >= 0) {
-    return records.map((r, i) => (i === existing ? { serverId, scope } : r))
+    return records.map((r, i) => (i === existing ? next : r))
   }
-  return [...records, { serverId, scope }]
+  return [...records, next]
+}
+
+export const clearSessionTrust = (serverId: string): void => {
+  sessionTrusts.delete(serverId)
 }

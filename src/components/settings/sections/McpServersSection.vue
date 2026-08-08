@@ -1,6 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, LogIn, LogOut, Play, Plus, RefreshCw, Server, ShieldAlert, Square, Trash2 } from '@lucide/vue'
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  KeyRound,
+  Loader2,
+  LogIn,
+  LogOut,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Server,
+  ShieldAlert,
+  Square,
+  Trash2,
+} from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -8,8 +26,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
-import { Input } from '@/components/shadcn/ui/input'
-import { Label } from '@/components/shadcn/ui/label'
 import { Badge } from '@/components/shadcn/ui/badge'
 import {
   Empty,
@@ -26,10 +42,12 @@ import {
   DialogTitle,
 } from '@/components/shadcn/ui/dialog'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
+import SettingsMcpManageMcpServerDialog from '@/components/settings/mcp/ManageMcpServerDialog.vue'
+import ChatMcpSecretsForm from '@/components/chat/ChatMcpSecretsForm.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useMcpServers from '@/composables/use-mcp-servers'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
-import type { McpServerConfig } from '@/types/pyrola/mcp-config'
+import type { McpConfig, McpInputDefinition, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { isMcpHttpServer } from '@/types/pyrola/mcp-config'
 import type { McpTrustScope } from '@/types/harness/permission'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
@@ -37,7 +55,15 @@ import {
   isMcpTrusted,
   sessionTrusts,
   upsertMcpTrustRecord,
+  clearSessionTrust,
 } from '@/services/mcp/mcp-trust'
+import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
+import { clearMcpToolBaseline } from '@/services/mcp/mcp-tool-baseline'
+import {
+  listRequiredInputIdsForServer,
+  loadMcpInputValues,
+  saveMcpInputValues,
+} from '@/services/mcp/resolve-mcp-inputs'
 
 const props = defineProps<{
   tab: SettingsTab
@@ -55,7 +81,7 @@ const {
   refreshAllServers,
   authenticateServer,
   logoutServer,
-  addServer,
+  upsertServer,
   deleteServer,
   setServerEnabled,
   listScopedMcpServers,
@@ -64,21 +90,45 @@ const {
 
 type TrustPending = {
   serverId: string
+  fingerprint: string
   action: () => Promise<void>
 }
 
 const expanded = ref<Record<string, boolean>>({})
 const refreshingAll = ref(false)
-const addOpen = ref(false)
-const serverId = ref('')
-const command = ref('npx')
-const args = ref('shadcn-vue@latest,mcp')
+const manageOpen = ref(false)
+const manageMode = ref<'create' | 'edit'>('create')
+const manageServerId = ref<string | null>(null)
+const secretsOpen = ref(false)
+const secretsServerId = ref<string | null>(null)
+const secretsConfigured = ref<Record<string, boolean>>({})
+const asConfirmOpen = ref(false)
+const asConfirmOrigin = ref('')
+const asConfirmResolve = ref<((confirmed: boolean) => void) | null>(null)
 const trustPending = ref<TrustPending | null>(null)
 const trustSaving = ref(false)
 
 const scopedServers = computed(() =>
   listScopedMcpServers(personalMcp.value, projectMcp.value, props.tab),
 )
+
+const scopedMcpConfig = computed((): McpConfig =>
+  props.tab === 'personal' ? personalMcp.value : projectMcp.value,
+)
+
+const manageInitialConfig = computed((): McpServerConfig | null => {
+  if (!manageServerId.value) {
+    return null
+  }
+  return scopedMcpConfig.value.servers[manageServerId.value] ?? null
+})
+
+const secretsServerConfig = computed((): McpServerConfig | null => {
+  if (!secretsServerId.value) {
+    return null
+  }
+  return scopedMcpConfig.value.servers[secretsServerId.value] ?? null
+})
 
 const toggleExpanded = (id: string): void => {
   expanded.value[id] = !expanded.value[id]
@@ -107,12 +157,45 @@ const showAuthControl = (serverConfig: McpServerConfig, id: string): boolean => 
   return false
 }
 
-const requireTrust = async (id: string, action: () => Promise<void>): Promise<void> => {
-  if (isMcpTrusted(config.effectiveSettings.value, id, sessionTrusts)) {
+const refreshSecretsBadges = async (): Promise<void> => {
+  const next: Record<string, boolean> = {}
+  for (const server of scopedServers.value) {
+    const ids = listRequiredInputIdsForServer(server.config)
+    if (ids.length === 0) {
+      next[server.id] = false
+      continue
+    }
+    const { missing } = await loadMcpInputValues(server.id, ids)
+    next[server.id] = missing.length === 0
+  }
+  secretsConfigured.value = next
+}
+
+const confirmAsOrigin = (origin: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    asConfirmOrigin.value = origin
+    asConfirmResolve.value = resolve
+    asConfirmOpen.value = true
+  })
+
+const handleAsConfirm = (confirmed: boolean): void => {
+  asConfirmOpen.value = false
+  const resolve = asConfirmResolve.value
+  asConfirmResolve.value = null
+  resolve?.(confirmed)
+}
+
+const requireTrust = async (
+  id: string,
+  serverConfig: McpServerConfig,
+  action: () => Promise<void>,
+): Promise<void> => {
+  const fingerprint = mcpServerFingerprint(serverConfig)
+  if (isMcpTrusted(config.effectiveSettings.value, id, fingerprint, sessionTrusts)) {
     await action()
     return
   }
-  trustPending.value = { serverId: id, action }
+  trustPending.value = { serverId: id, fingerprint, action }
 }
 
 const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
@@ -124,18 +207,21 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
   trustSaving.value = true
 
   try {
+    await clearMcpToolBaseline(pending.serverId)
+
     if (scope === 'never') {
+      clearSessionTrust(pending.serverId)
       const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
       await config.updateSetting(
         'personal',
         'agent.mcp.trust',
-        upsertMcpTrustRecord(existing, pending.serverId, 'never'),
+        upsertMcpTrustRecord(existing, pending.serverId, 'never', pending.fingerprint),
       )
       return
     }
 
     if (scope === 'session') {
-      sessionTrusts.add(pending.serverId)
+      sessionTrusts.set(pending.serverId, pending.fingerprint)
     } else if (scope === 'workspace') {
       const rootPath = config.activeRootPath.value
       if (rootPath) {
@@ -143,14 +229,24 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
         await config.updateSetting(
           'project',
           'agent.mcp.trust',
-          upsertMcpTrustRecord(existing, pending.serverId, 'workspace'),
+          upsertMcpTrustRecord(
+            existing,
+            pending.serverId,
+            'workspace',
+            pending.fingerprint,
+          ),
         )
       } else {
         const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
         await config.updateSetting(
           'personal',
           'agent.mcp.trust',
-          upsertMcpTrustRecord(existing, pending.serverId, 'always'),
+          upsertMcpTrustRecord(
+            existing,
+            pending.serverId,
+            'always',
+            pending.fingerprint,
+          ),
         )
       }
     } else {
@@ -158,7 +254,12 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
       await config.updateSetting(
         'personal',
         'agent.mcp.trust',
-        upsertMcpTrustRecord(existing, pending.serverId, 'always'),
+        upsertMcpTrustRecord(
+          existing,
+          pending.serverId,
+          'always',
+          pending.fingerprint,
+        ),
       )
     }
 
@@ -175,12 +276,13 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
 const handleEnabledChange = async (
   id: string,
   enabled: boolean,
+  serverConfig: McpServerConfig,
 ): Promise<void> => {
   if (isServerLoading(id)) {
     return
   }
   if (enabled) {
-    await requireTrust(id, async () => {
+    await requireTrust(id, serverConfig, async () => {
       try {
         await setServerEnabled(id, true, config.activeRootPath.value)
       } catch (error) {
@@ -212,7 +314,7 @@ const handleRefreshServer = async (
     await refreshServer(id, serverConfig)
     return
   }
-  await requireTrust(id, () => startServer(id, serverConfig))
+  await requireTrust(id, serverConfig, () => startServer(id, serverConfig))
 }
 
 const handleAuthAction = async (
@@ -220,35 +322,71 @@ const handleAuthAction = async (
   serverConfig: McpServerConfig,
 ): Promise<void> => {
   if (serverStatus(id) === 'auth_required') {
-    await requireTrust(id, async () => {
+    await requireTrust(id, serverConfig, async () => {
       try {
-        await authenticateServer(id, serverConfig)
+        await authenticateServer(id, serverConfig, {
+          confirmAuthorizationServerOrigin: confirmAsOrigin,
+        })
       } catch {
         // authenticateServer already toasts.
       }
     })
     return
   }
-  await logoutServer(id)
+  await logoutServer(id, serverConfig)
 }
 
-const submitNewServer = async (): Promise<void> => {
-  if (!serverId.value.trim()) {
-    toast.error('Server ID is required')
-    return
+const openCreateServer = (): void => {
+  manageMode.value = 'create'
+  manageServerId.value = null
+  manageOpen.value = true
+}
+
+const openEditServer = (id: string): void => {
+  manageMode.value = 'edit'
+  manageServerId.value = id
+  manageOpen.value = true
+}
+
+const openSecrets = (id: string): void => {
+  secretsServerId.value = id
+  secretsOpen.value = true
+}
+
+const handleManageSave = async (payload: {
+  serverId: string
+  previousId?: string
+  config: McpServerConfig
+  inputs: McpInputDefinition[]
+  secretValues: Record<string, string>
+}): Promise<void> => {
+  try {
+    await upsertServer(
+      props.tab,
+      payload.serverId,
+      payload.config,
+      config.activeRootPath.value,
+      {
+        previousId: payload.previousId,
+        inputs: payload.inputs,
+      },
+    )
+    if (Object.keys(payload.secretValues).length > 0) {
+      await saveMcpInputValues(payload.serverId, payload.secretValues)
+    }
+    toast.success(manageMode.value === 'create' ? 'Server saved' : 'Server updated')
+    await refreshSecretsBadges()
+  } catch (error) {
+    toast.error('Failed to save MCP server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
   }
-  const serverConfig: McpServerConfig = {
-    command: command.value,
-    args: args.value.split(',').map((part) => part.trim()).filter(Boolean),
-  }
-  await addServer(props.tab, serverId.value.trim(), serverConfig, config.activeRootPath.value)
-  addOpen.value = false
-  toast.success('Server saved')
 }
 
 onMounted(async () => {
   try {
     await refreshStates()
+    await refreshSecretsBadges()
   } catch (error) {
     toast.error('Failed to refresh MCP server status', {
       description: error instanceof Error ? error.message : 'Unknown error',
@@ -285,8 +423,14 @@ const refreshAll = async (): Promise<void> => {
               :disabled="refreshingAll"
               @click="refreshAll"
             >
-              <Loader2 v-if="refreshingAll" class="h-4 w-4 animate-spin" />
-              <RefreshCw v-else class="h-4 w-4" />
+              <Loader2
+                v-if="refreshingAll"
+                class="h-4 w-4 animate-spin"
+              />
+              <RefreshCw
+                v-else
+                class="h-4 w-4"
+              />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Refresh all</TooltipContent>
@@ -298,7 +442,7 @@ const refreshAll = async (): Promise<void> => {
               size="icon"
               class="h-8 w-8"
               aria-label="Add server"
-              @click="addOpen = true"
+              @click="openCreateServer"
             >
               <Plus class="h-4 w-4" />
             </Button>
@@ -318,12 +462,15 @@ const refreshAll = async (): Promise<void> => {
         </EmptyMedia>
         <EmptyTitle>No MCP servers configured</EmptyTitle>
         <EmptyDescription>
-          Add a server to connect tools and external context to your agents.
+          Add a stdio or HTTP server. Enter API keys in the same dialog; they are stored in the keychain.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
 
-    <div v-else class="space-y-2">
+    <div
+      v-else
+      class="space-y-2"
+    >
       <div
         v-for="server in scopedServers"
         :key="server.id"
@@ -335,8 +482,14 @@ const refreshAll = async (): Promise<void> => {
             :disabled="isServerLoading(server.id)"
             @click="toggleExpanded(server.id)"
           >
-            <ChevronDown v-if="expanded[server.id]" class="h-4 w-4 shrink-0" />
-            <ChevronRight v-else class="h-4 w-4 shrink-0" />
+            <ChevronDown
+              v-if="expanded[server.id]"
+              class="h-4 w-4 shrink-0"
+            />
+            <ChevronRight
+              v-else
+              class="h-4 w-4 shrink-0"
+            />
             <span class="truncate font-medium">{{ server.id }}</span>
             <Loader2
               v-if="isServerLoading(server.id) || serverStatus(server.id) === 'starting' || serverStatus(server.id) === 'refreshing'"
@@ -365,7 +518,47 @@ const refreshAll = async (): Promise<void> => {
           >
             {{ serverStates[server.id]?.tools?.length }} tools
           </Badge>
+          <Badge
+            v-if="secretsConfigured[server.id]"
+            variant="secondary"
+          >
+            Secrets configured
+          </Badge>
+          <Badge
+            v-if="serverStatus(server.id) === 'connected' && isAuthCapableServer(server.config)"
+            variant="outline"
+          >
+            OAuth connected
+          </Badge>
           <div class="ml-auto flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  aria-label="Edit server"
+                  @click="openEditServer(server.id)"
+                >
+                  <Pencil class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit server</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  aria-label="Edit secrets"
+                  @click="openSecrets(server.id)"
+                >
+                  <KeyRound class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit secrets</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger as-child>
                 <Button
@@ -392,10 +585,16 @@ const refreshAll = async (): Promise<void> => {
                     : 'text-green-600 dark:text-green-400'"
                   :disabled="isServerLoading(server.id)"
                   :aria-label="`${isServerRunning(server.id, server.config) ? 'Stop' : 'Start'} ${server.id}`"
-                  @click="handleEnabledChange(server.id, !isServerRunning(server.id, server.config))"
+                  @click="handleEnabledChange(server.id, !isServerRunning(server.id, server.config), server.config)"
                 >
-                  <Square v-if="isServerRunning(server.id, server.config)" class="h-4 w-4" />
-                  <Play v-else class="h-4 w-4" />
+                  <Square
+                    v-if="isServerRunning(server.id, server.config)"
+                    class="h-4 w-4"
+                  />
+                  <Play
+                    v-else
+                    class="h-4 w-4"
+                  />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -415,8 +614,14 @@ const refreshAll = async (): Promise<void> => {
                   :aria-label="serverStatus(server.id) === 'auth_required' ? 'Log in' : 'Log out'"
                   @click="handleAuthAction(server.id, server.config)"
                 >
-                  <LogIn v-if="serverStatus(server.id) === 'auth_required'" class="h-4 w-4" />
-                  <LogOut v-else class="h-4 w-4" />
+                  <LogIn
+                    v-if="serverStatus(server.id) === 'auth_required'"
+                    class="h-4 w-4"
+                  />
+                  <LogOut
+                    v-else
+                    class="h-4 w-4"
+                  />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -449,39 +654,80 @@ const refreshAll = async (): Promise<void> => {
             :key="tool.name"
             class="py-2 text-sm"
           >
-            <p class="font-mono">{{ tool.name }}</p>
-            <p class="text-muted-foreground">{{ tool.description }}</p>
+            <p class="font-mono">
+              {{ tool.name }}
+            </p>
+            <p class="text-muted-foreground">
+              {{ tool.description }}
+            </p>
           </div>
         </div>
       </div>
     </div>
 
-    <Dialog :open="addOpen" @update:open="(open) => (addOpen = open)">
-      <DialogContent>
+    <SettingsMcpManageMcpServerDialog
+      v-model:open="manageOpen"
+      :mode="manageMode"
+      :server-id="manageServerId"
+      :initial-config="manageInitialConfig"
+      :mcp-config="scopedMcpConfig"
+      @save="handleManageSave"
+    />
+
+    <Dialog
+      :open="secretsOpen"
+      @update:open="(open) => (secretsOpen = open)"
+    >
+      <DialogContent class="sm:max-w-lg">
+        <ChatMcpSecretsForm
+          v-if="secretsServerId && secretsServerConfig"
+          :server-id="secretsServerId"
+          :server-config="secretsServerConfig"
+          :mcp-config="scopedMcpConfig"
+          :show-oauth-actions="isAuthCapableServer(secretsServerConfig)"
+          :oauth-status="serverStatus(secretsServerId)"
+          @saved="refreshSecretsBadges"
+          @sign-in="secretsServerId && secretsServerConfig && handleAuthAction(secretsServerId, secretsServerConfig)"
+          @log-out="secretsServerId && logoutServer(secretsServerId, secretsServerConfig ?? undefined)"
+        />
+      </DialogContent>
+    </Dialog>
+
+    <Dialog
+      :open="asConfirmOpen"
+      @update:open="(open) => { if (!open) handleAsConfirm(false) }"
+    >
+      <DialogContent class="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add MCP server</DialogTitle>
+          <DialogTitle>Confirm authorization server</DialogTitle>
         </DialogHeader>
-        <div class="space-y-3">
-          <div class="space-y-2">
-            <Label>Server ID</Label>
-            <Input v-model="serverId" placeholder="shadcn" />
-          </div>
-          <div class="space-y-2">
-            <Label>Command</Label>
-            <Input v-model="command" />
-          </div>
-          <div class="space-y-2">
-            <Label>Args (comma-separated)</Label>
-            <Input v-model="args" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button @click="submitNewServer">Save &amp; Start</Button>
+        <p class="text-sm text-muted-foreground">
+          Allow OAuth with origin
+          <span class="font-mono text-foreground">{{ asConfirmOrigin }}</span>?
+          Only confirm origins you trust.
+        </p>
+        <DialogFooter class="flex-col gap-2 sm:flex-col">
+          <Button
+            class="w-full"
+            @click="handleAsConfirm(true)"
+          >
+            Trust this authorization server
+          </Button>
+          <Button
+            variant="ghost"
+            class="w-full"
+            @click="handleAsConfirm(false)"
+          >
+            Cancel
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <Dialog :open="trustPending !== null" @update:open="(open) => { if (!open) trustPending = null }">
+    <Dialog
+      :open="trustPending !== null"
+      @update:open="(open) => { if (!open) trustPending = null }"
+    >
       <DialogContent class="max-w-sm">
         <DialogHeader>
           <DialogTitle>Trust MCP server?</DialogTitle>
@@ -489,10 +735,12 @@ const refreshAll = async (): Promise<void> => {
         <div class="space-y-3 text-sm text-muted-foreground">
           <p>
             <span class="font-mono font-medium text-foreground">{{ trustPending?.serverId }}</span>
-            is an MCP server that can execute code on your machine. Choose how much you trust it.
+            is an MCP server that can execute code on your machine (for example via npx or uvx).
+            Choose how much you trust this exact command or URL.
           </p>
           <p class="text-xs">
-            Untrusted servers cannot be started or called by agents.
+            Untrusted servers cannot be started or called by agents. Changing the command, args, or URL
+            requires trust again.
           </p>
         </div>
         <DialogFooter class="flex-col gap-2 sm:flex-col">

@@ -12,6 +12,8 @@ export type PendingMcpAuth = {
   kind: McpAuthKind
   title: string
   detail?: string
+  subagentId?: string
+  subagentLabel?: string
   resolve: (result: McpAuthResolution) => void
 }
 

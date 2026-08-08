@@ -50,6 +50,11 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
   studio: [
     ...PLAN_TOOLS,
     'write_studio_artifact',
+    'call_mcp_tool',
+    'get_mcp_tools',
+    'list_mcp_resources',
+    'read_mcp_resource',
+    'get_mcp_prompt',
   ],
   agent: [
     'read_file',

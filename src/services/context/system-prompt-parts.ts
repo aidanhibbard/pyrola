@@ -74,7 +74,18 @@ const formatMcpCatalog = async (
       continue
     }
     const toolLines = state.tools
-      .map((tool) => `  - ${tool.name}${tool.description ? `: ${tool.description}` : ''}`)
+      .map(
+        (tool) =>
+          `  - ${tool.name}${
+            tool.description
+              ? `: ${
+                  tool.description.length > 200
+                    ? `${tool.description.slice(0, 200)}...`
+                    : tool.description
+                }`
+              : ''
+          }`,
+      )
       .join('\n')
     lines.push(`- ${server.id} (${state.status}):\n${toolLines}`)
   }

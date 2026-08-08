@@ -3,13 +3,21 @@ import { toast } from 'vue-sonner'
 import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
-import mcpRuntime from '@/services/mcp/mcp-runtime'
+import mcpRuntime, { type McpRuntimeOptions } from '@/services/mcp/mcp-runtime'
+import { resolveMcpAuthForServer } from '@/services/mcp/mcp-auth-gate'
+import { listRequiredInputIdsForServer } from '@/services/mcp/resolve-mcp-inputs'
+import { mcpKnownSecretKeys } from '@/services/mcp/mcp-keychain-keys'
+import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
+import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import {
+  deleteSecret,
   readMcpConfig,
   writeMcpConfig,
   type McpServerState,
 } from '@/services/pyrola/pyrola-tauri'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
+import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import usePyrolaConfig from '@/composables/use-pyrola-config'
 
 const isActiveStatus = (status: string): boolean =>
   status === 'connected' || status === 'starting' || status === 'refreshing'
@@ -22,6 +30,31 @@ const authenticatingServers = ref<Record<string, boolean>>({})
 let refreshGeneration = 0
 
 export default () => {
+  const config = usePyrolaConfig()
+
+  const runtimeOptions = (
+    extras?: Pick<McpRuntimeOptions, 'confirmAuthorizationServerOrigin' | 'skipTrustCheck'>,
+  ): McpRuntimeOptions => ({
+    settings: config.effectiveSettings.value as PyrolaSettings,
+    ...extras,
+  })
+
+  const assertTrustedOrThrow = (serverId: string, serverConfig: McpServerConfig): void => {
+    const fingerprint = mcpServerFingerprint(serverConfig)
+    if (
+      !isMcpTrusted(
+        config.effectiveSettings.value,
+        serverId,
+        fingerprint,
+        sessionTrusts,
+      )
+    ) {
+      throw new Error(
+        `MCP server "${serverId}" is not trusted for the current configuration`,
+      )
+    }
+  }
+
   const setServerLoading = (serverId: string, loading: boolean): void => {
     loadingServers.value = {
       ...loadingServers.value,
@@ -152,12 +185,17 @@ export default () => {
 
   const startServer = async (
     serverId: string,
-    config: McpServerConfig,
+    serverConfig: McpServerConfig,
     options?: { quiet?: boolean; manageLoading?: boolean },
   ): Promise<void> => {
     const run = async (): Promise<void> => {
       try {
-        const state = await mcpRuntime.start(serverId, config)
+        assertTrustedOrThrow(serverId, serverConfig)
+        const state = await mcpRuntime.start(
+          serverId,
+          serverConfig,
+          runtimeOptions(),
+        )
         serverStates.value = {
           ...serverStates.value,
           [serverId]: state,
@@ -240,7 +278,8 @@ export default () => {
 
   const authenticateServer = async (
     serverId: string,
-    config: McpServerConfig,
+    serverConfig: McpServerConfig,
+    extras?: Pick<McpRuntimeOptions, 'confirmAuthorizationServerOrigin'>,
   ): Promise<void> => {
     authenticatingServers.value = {
       ...authenticatingServers.value,
@@ -248,11 +287,17 @@ export default () => {
     }
     await withServerLoading(serverId, async () => {
       try {
-        const state = await mcpRuntime.authenticate(serverId, config)
+        assertTrustedOrThrow(serverId, serverConfig)
+        const state = await mcpRuntime.authenticate(
+          serverId,
+          serverConfig,
+          runtimeOptions(extras),
+        )
         serverStates.value = {
           ...serverStates.value,
           [serverId]: state,
         }
+        resolveMcpAuthForServer(serverId, { action: 'authenticated' })
         toast.success(`${serverId} authenticated`)
       } catch (error) {
         serverStates.value = {
@@ -357,16 +402,114 @@ export default () => {
     await refreshStates()
   }
 
+  const upsertServer = async (
+    tab: SettingsTab,
+    serverId: string,
+    serverConfig: McpServerConfig,
+    rootPath: string | null,
+    options?: {
+      previousId?: string
+      inputs?: import('@/types/pyrola/mcp-config').McpInputDefinition[]
+    },
+  ): Promise<void> => {
+    const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
+    const nextServers = { ...scoped.servers }
+    const previousId = options?.previousId
+
+    if (previousId && previousId !== serverId) {
+      delete nextServers[previousId]
+      await mcpRuntime.stop(previousId)
+      const previous = scoped.servers[previousId]
+      if (previous) {
+        for (const key of mcpKnownSecretKeys(
+          previousId,
+          listRequiredInputIdsForServer(previous),
+        )) {
+          try {
+            await deleteSecret(key)
+          } catch {
+            // Best-effort.
+          }
+        }
+      }
+    }
+
+    const existing = previousId
+      ? scoped.servers[previousId]
+      : scoped.servers[serverId]
+    if (
+      existing &&
+      mcpServerFingerprint(existing) !== mcpServerFingerprint(serverConfig)
+    ) {
+      for (const key of mcpKnownSecretKeys(
+        previousId && previousId !== serverId ? previousId : serverId,
+        listRequiredInputIdsForServer(existing),
+      )) {
+        try {
+          await deleteSecret(key)
+        } catch {
+          // Best-effort on fingerprint change.
+        }
+      }
+      sessionTrusts.delete(serverId)
+      if (previousId) {
+        sessionTrusts.delete(previousId)
+      }
+    }
+
+    nextServers[serverId] = serverConfig
+
+    let nextInputs = scoped.inputs
+    if (options?.inputs) {
+      const byId = new Map((scoped.inputs ?? []).map((item) => [item.id, item]))
+      for (const item of options.inputs) {
+        byId.set(item.id, item)
+      }
+      nextInputs = [...byId.values()]
+    }
+
+    await saveScopedConfig(
+      tab,
+      {
+        servers: nextServers,
+        ...(nextInputs && nextInputs.length > 0 ? { inputs: nextInputs } : {}),
+      },
+      rootPath,
+    )
+    await refreshStates()
+  }
+
   const deleteServer = async (
     tab: SettingsTab,
     serverId: string,
     rootPath: string | null,
   ): Promise<void> => {
     const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
+    const removed = scoped.servers[serverId]
     const { [serverId]: _removed, ...rest } = scoped.servers
     await saveScopedConfig(tab, { servers: rest }, rootPath)
-    await mcpRuntime.stop(serverId)
+    await mcpRuntime.stop(serverId, removed)
+    if (removed) {
+      const inputIds = listRequiredInputIdsForServer(removed)
+      for (const key of mcpKnownSecretKeys(serverId, inputIds)) {
+        try {
+          await deleteSecret(key)
+        } catch {
+          // Best-effort keychain cleanup.
+        }
+      }
+    }
     await refreshStates()
+  }
+
+  const updateServer = async (
+    tab: SettingsTab,
+    serverId: string,
+    serverConfig: McpServerConfig,
+    rootPath: string | null,
+    previousId?: string,
+  ): Promise<void> => {
+    await upsertServer(tab, serverId, serverConfig, rootPath, { previousId })
   }
 
   const setServerEnabled = async (
@@ -381,6 +524,10 @@ export default () => {
         description: serverId,
       })
       return
+    }
+
+    if (enabled) {
+      assertTrustedOrThrow(serverId, server.config)
     }
 
     const tab: SettingsTab =
@@ -407,7 +554,6 @@ export default () => {
       },
     }
 
-    // Optimistic UI so the switch moves immediately.
     if (tab === 'personal') {
       personalMcp.value = nextScoped
     } else {
@@ -425,7 +571,6 @@ export default () => {
         }
         await refreshStates()
       } catch (error) {
-        // Roll back optimistic enablement on failure.
         if (tab === 'personal') {
           personalMcp.value = scoped
         } else {
@@ -452,6 +597,8 @@ export default () => {
     authenticateServer,
     logoutServer,
     addServer,
+    updateServer,
+    upsertServer,
     deleteServer,
     setServerEnabled,
     listEffectiveMcpServers,

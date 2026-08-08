@@ -19,7 +19,8 @@ pub struct OAuthLoopbackStart {
 #[serde(rename_all = "camelCase")]
 struct OAuthCallbackPayload {
   code: String,
-  state: Option<String>,
+  state: String,
+  error: Option<String>,
 }
 
 struct OAuthLoopbackSession {
@@ -53,7 +54,7 @@ impl OAuthLoopbackState {
   }
 }
 
-fn parse_callback_request(request: &str) -> Result<(String, Option<String>), String> {
+fn parse_callback_request(request: &str) -> Result<(String, String), String> {
   let request_line = request
     .lines()
     .next()
@@ -79,15 +80,23 @@ fn parse_callback_request(request: &str) -> Result<(String, Option<String>), Str
 
   let mut code: Option<String> = None;
   let mut state: Option<String> = None;
+  let mut oauth_error: Option<String> = None;
   for (key, value) in url.query_pairs() {
     if key == "code" {
       code = Some(value.into_owned());
     } else if key == "state" {
       state = Some(value.into_owned());
+    } else if key == "error" {
+      oauth_error = Some(value.into_owned());
     }
   }
 
+  if let Some(error) = oauth_error {
+    return Err(format!("OAuth authorization failed: {error}"));
+  }
+
   let code = code.ok_or_else(|| "OAuth callback missing code".to_string())?;
+  let state = state.ok_or_else(|| "OAuth callback missing state".to_string())?;
   Ok((code, state))
 }
 
@@ -99,11 +108,34 @@ async fn cancel_existing(state: &OAuthLoopbackState) {
 }
 
 #[tauri::command]
-pub fn open_external_url(url: String) -> Result<(), String> {
+pub fn open_external_url(url: String, allowed_origin: Option<String>) -> Result<(), String> {
   let parsed = Url::parse(&url).map_err(|error| format!("Invalid URL: {error}"))?;
-  if parsed.scheme() != "http" && parsed.scheme() != "https" {
-    return Err("Only http and https URLs can be opened".to_string());
+  let scheme = parsed.scheme();
+  let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
+  let is_loopback = host == "localhost" || host == "127.0.0.1" || host == "::1";
+
+  if scheme == "http" {
+    if !is_loopback {
+      return Err("http URLs may only be opened for localhost".to_string());
+    }
+  } else if scheme != "https" {
+    return Err("Only https URLs can be opened (or http localhost)".to_string());
   }
+
+  let Some(allowed) = allowed_origin.filter(|value| !value.trim().is_empty()) else {
+    return Err("allowed_origin is required to open external URLs".to_string());
+  };
+
+  let allowed_parsed =
+    Url::parse(&allowed).map_err(|error| format!("Invalid allowed origin: {error}"))?;
+  if parsed.origin() != allowed_parsed.origin() {
+    return Err(format!(
+      "URL origin {} does not match allowed origin {}",
+      parsed.origin().ascii_serialization(),
+      allowed_parsed.origin().ascii_serialization()
+    ));
+  }
+
   open::that_detached(url).map_err(|error| error.to_string())
 }
 
@@ -150,14 +182,27 @@ pub async fn oauth_begin_loopback(
     let _ = stream.write_all(response.as_bytes()).await;
     let _ = stream.shutdown().await;
 
-    if let Ok((code, callback_state)) = parse_callback_request(&request) {
-      let _ = app.emit(
-        "oauth-callback",
-        OAuthCallbackPayload {
-          code,
-          state: callback_state,
-        },
-      );
+    match parse_callback_request(&request) {
+      Ok((code, callback_state)) => {
+        let _ = app.emit(
+          "oauth-callback",
+          OAuthCallbackPayload {
+            code,
+            state: callback_state,
+            error: None,
+          },
+        );
+      }
+      Err(message) => {
+        let _ = app.emit(
+          "oauth-callback",
+          OAuthCallbackPayload {
+            code: String::new(),
+            state: String::new(),
+            error: Some(message),
+          },
+        );
+      }
     }
 
     if let Some(state) = app.try_state::<OAuthLoopbackState>() {

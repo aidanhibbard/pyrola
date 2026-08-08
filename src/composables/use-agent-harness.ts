@@ -26,8 +26,10 @@ import {
   listPendingMcpAuthForChat,
   rejectPendingMcpAuthForChat,
   resolveMcpAuth,
+  resolveMcpAuthForServer,
   type McpAuthResolution,
 } from '@/services/mcp/mcp-auth-gate'
+import { requestQuestion } from '@/services/harness/question-gate'
 import type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
 import useMcpServers from '@/composables/use-mcp-servers'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
@@ -160,6 +162,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       kind: entry.kind,
       title: entry.title,
       detail: entry.detail,
+      subagentId: entry.subagentId,
+      subagentLabel: entry.subagentLabel,
     }))
     const hadPending = pendingMcpAuth.value.length > 0
     pendingMcpAuth.value = next
@@ -245,19 +249,22 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     maybeClearAttentionWhenGatesEmpty()
   }
 
+  const confirmAsOriginForChat = async (origin: string): Promise<boolean> => {
+    const answer = await requestQuestion(
+      options.chatId,
+      `mcp-as-confirm-${crypto.randomUUID()}`,
+      `Trust OAuth authorization server origin ${origin}? Only confirm origins you trust.`,
+      ['Trust', 'Cancel'],
+    )
+    return answer === 'Trust'
+  }
+
   const authenticatePendingMcpAuth = async (toolCallId: string): Promise<void> => {
     const entry =
       pendingMcpAuth.value.find((item) => item.toolCallId === toolCallId) ??
       listPendingMcpAuthForChat(options.chatId).find((item) => item.toolCallId === toolCallId)
     if (!entry) {
       toast.error('MCP authentication request expired')
-      return
-    }
-
-    if (entry.kind === 'inputs') {
-      toast.error('MCP inputs required', {
-        description: 'Open Settings to provide the required inputs, then authenticate again.',
-      })
       return
     }
 
@@ -289,10 +296,13 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     }
 
     try {
-      await mcpServers.authenticateServer(entry.serverId, server.config)
-      resolveMcpAuthDecision(toolCallId, { action: 'authenticated' })
+      await mcpServers.authenticateServer(entry.serverId, server.config, {
+        confirmAuthorizationServerOrigin: confirmAsOriginForChat,
+      })
+      resolveMcpAuthForServer(entry.serverId, { action: 'authenticated' })
+      syncPendingMcpAuth()
+      maybeClearAttentionWhenGatesEmpty()
     } catch (error) {
-      // authenticateServer already toasts Error failures; keep the request pending.
       if (!(error instanceof Error)) {
         toast.error('MCP authentication failed', {
           description: String(error),

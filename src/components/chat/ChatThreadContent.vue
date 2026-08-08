@@ -5,6 +5,7 @@ import type { ChatStatus } from 'ai'
 import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PendingQuestionState } from '@/types/chat/pending-question'
 import type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
+import type { McpConfig } from '@/types/pyrola/mcp-config'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
@@ -31,6 +32,8 @@ const props = defineProps<{
   pendingApprovals: PendingApprovalView[]
   pendingQuestion?: PendingQuestionState | null
   pendingMcpAuth?: PendingMcpAuthView[]
+  personalMcp?: McpConfig
+  projectMcp?: McpConfig
   readOnly?: boolean
 }>()
 
@@ -40,6 +43,7 @@ const emit = defineEmits<{
   authenticateMcp: [toolCallId: string]
   skipMcpAuth: [toolCallId: string]
   openMcpSettings: [serverId: string]
+  secretsSavedMcp: [toolCallId: string, serverId: string]
   retry: []
   stopSubagent: [subagentId: string]
 }>()
@@ -363,9 +367,12 @@ watch(
         <ChatMcpAuthCard
           v-else-if="!readOnly && activeMcpAuth"
           :auth="activeMcpAuth"
+          :personal-mcp="personalMcp ?? { servers: {} }"
+          :project-mcp="projectMcp ?? { servers: {} }"
           @authenticate="(toolCallId) => emit('authenticateMcp', toolCallId)"
           @skip="(toolCallId) => emit('skipMcpAuth', toolCallId)"
           @open-settings="(serverId) => emit('openMcpSettings', serverId)"
+          @secrets-saved="(toolCallId, serverId) => emit('secretsSavedMcp', toolCallId, serverId)"
         />
         <ChatToolCard
           v-for="[toolCallId, approval] in readOnly ? [] : approvalMap"

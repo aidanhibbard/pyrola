@@ -1,18 +1,41 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
+import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { Button } from '@/components/shadcn/ui/button'
 import { Marker, MarkerContent } from '@/components/shadcn/ui/marker'
+import ChatMcpSecretsForm from '@/components/chat/ChatMcpSecretsForm.vue'
+import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 
 const props = defineProps<{
   auth: PendingMcpAuthView
+  personalMcp: McpConfig
+  projectMcp: McpConfig
 }>()
 
 const emit = defineEmits<{
   authenticate: [toolCallId: string]
   skip: [toolCallId: string]
   openSettings: [serverId: string]
+  secretsSaved: [toolCallId: string, serverId: string]
 }>()
+
+const secretsSavedOnce = ref(false)
+
+const serverConfig = computed((): McpServerConfig | null => {
+  const effective = listEffectiveMcpServers(props.personalMcp, props.projectMcp)
+  return effective.find((item) => item.id === props.auth.serverId)?.config ?? null
+})
+
+const mcpConfig = computed((): McpConfig => {
+  const effective = listEffectiveMcpServers(props.personalMcp, props.projectMcp)
+  const server = effective.find((item) => item.id === props.auth.serverId)
+  if (server?.scope === 'project') {
+    return props.projectMcp
+  }
+  return props.personalMcp
+})
 
 const handleAuthenticate = (): void => {
   try {
@@ -43,11 +66,19 @@ const handleOpenSettings = (): void => {
     })
   }
 }
+
+const handleSecretsSaved = (): void => {
+  secretsSavedOnce.value = true
+  emit('secretsSaved', props.auth.toolCallId, props.auth.serverId)
+}
 </script>
 
 <template>
   <div class="w-full space-y-3">
-    <Marker variant="border" class="w-full">
+    <Marker
+      variant="border"
+      class="w-full"
+    >
       <MarkerContent>
         Waiting for MCP authentication
       </MarkerContent>
@@ -58,6 +89,9 @@ const handleOpenSettings = (): void => {
       </p>
       <p class="font-mono text-xs text-muted-foreground">
         {{ auth.serverId }}
+        <span v-if="auth.subagentLabel">
+          ({{ auth.subagentLabel }})
+        </span>
       </p>
       <p
         v-if="auth.detail"
@@ -66,12 +100,21 @@ const handleOpenSettings = (): void => {
         {{ auth.detail }}
       </p>
     </div>
+
+    <ChatMcpSecretsForm
+      v-if="auth.kind === 'inputs' && serverConfig"
+      :server-id="auth.serverId"
+      :server-config="serverConfig"
+      :mcp-config="mcpConfig"
+      @saved="handleSecretsSaved"
+    />
+
     <div class="flex flex-wrap gap-2">
       <Button
         size="sm"
         @click="handleAuthenticate"
       >
-        Authenticate
+        {{ auth.kind === 'inputs' ? (secretsSavedOnce ? 'Continue' : 'Authenticate') : 'Authenticate' }}
       </Button>
       <Button
         size="sm"

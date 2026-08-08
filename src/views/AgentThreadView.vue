@@ -17,6 +17,7 @@ import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import useMcpServers from '@/composables/use-mcp-servers'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { consumePendingChatMessage, PENDING_CHAT_MESSAGE_EVENT } from '@/services/chat/pending-message'
 import {
@@ -35,6 +36,10 @@ const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
 const config = usePyrolaConfig()
+const {
+  personalMcp: mcpPersonalConfig,
+  projectMcp: mcpProjectConfig,
+} = useMcpServers()
 const contextActions = useChatContextActions()
 const workbench = useWorkbenchStore()
 const contextBudgetSync = useChatContextBudgetSync()
@@ -317,6 +322,16 @@ const handleAuthenticateMcp = async (toolCallId: string): Promise<void> => {
   }
 }
 
+const handleSecretsSavedMcp = async (toolCallId: string): Promise<void> => {
+  try {
+    await harness.value?.authenticatePendingMcpAuth(toolCallId)
+  } catch (error) {
+    toast.error('MCP authentication failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleSkipMcpAuth = (toolCallId: string): void => {
   harness.value?.resolveMcpAuthDecision(toolCallId, { action: 'skipped' })
 }
@@ -495,12 +510,15 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       :pending-approvals="isSubagentView ? [] : harnessPendingApprovals"
       :pending-question="isSubagentView ? null : pendingQuestion"
       :pending-mcp-auth="isSubagentView ? [] : harnessPendingMcpAuth"
+      :personal-mcp="mcpPersonalConfig"
+      :project-mcp="mcpProjectConfig"
       :read-only="isSubagentView"
       @resolve-approval="handleResolveApproval"
       @submit-answer="handleSubmitAnswer"
       @authenticate-mcp="handleAuthenticateMcp"
       @skip-mcp-auth="handleSkipMcpAuth"
       @open-mcp-settings="handleOpenMcpSettings"
+      @secrets-saved-mcp="(toolCallId) => handleSecretsSavedMcp(toolCallId)"
       @retry="handleRetry"
       @stop-subagent="handleStopSubagent"
     />

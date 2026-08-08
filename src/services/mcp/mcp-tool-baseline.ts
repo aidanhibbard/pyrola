@@ -150,7 +150,10 @@ export const detectMcpToolDrift = async (
   const current = await fingerprintMcpTools(tools)
   const drift = detectMcpToolFingerprintDrift(current, baseline.fingerprints)
   return {
-    drifted: drift.changed.length > 0 || drift.added.length > 0,
+    drifted:
+      drift.changed.length > 0 ||
+      drift.added.length > 0 ||
+      drift.removed.length > 0,
     changed: drift.changed,
     added: drift.added,
     removed: drift.removed,

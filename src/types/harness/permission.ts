@@ -36,4 +36,6 @@ export type McpTrustScope = 'session' | 'workspace' | 'always' | 'never'
 export type McpTrustRecord = {
   serverId: string
   scope: McpTrustScope
+  /** Hash of transport identity (url or command+args). Missing = untrusted until re-granted. */
+  fingerprint?: string
 }
