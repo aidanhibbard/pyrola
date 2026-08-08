@@ -14,9 +14,8 @@ const props = defineProps<Props>()
 
 <template>
   <InputGroupAddon
-    align="block-end"
-    :class="cn('order-first flex-wrap gap-1', props.class)"
-    v-bind="props"
+    align="block-start"
+    :class="cn('order-first w-full flex-wrap gap-1', props.class)"
   >
     <slot />
   </InputGroupAddon>

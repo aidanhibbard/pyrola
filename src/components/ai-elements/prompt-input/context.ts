@@ -47,6 +47,19 @@ export function usePromptInputProvider(props: {
     const fileName = file.name.toLowerCase()
     const fileType = file.type.toLowerCase()
 
+    // Clipboard pastes often omit MIME type. Treat empty type as an image when
+    // the accept filter is image-only.
+    if (!fileType) {
+      return patterns.some((pattern) => {
+        const normalizedPattern = pattern.toLowerCase()
+        return (
+          normalizedPattern === 'image/*' ||
+          normalizedPattern.startsWith('image/') ||
+          (normalizedPattern.startsWith('.') && fileName.endsWith(normalizedPattern))
+        )
+      })
+    }
+
     return patterns.some((pattern) => {
       const normalizedPattern = pattern.toLowerCase()
 
@@ -60,6 +73,26 @@ export function usePromptInputProvider(props: {
 
       return fileType === normalizedPattern
     })
+  }
+
+  const inferMediaType = (file: File): string => {
+    if (file.type) {
+      return file.type
+    }
+    const name = file.name.toLowerCase()
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) {
+      return 'image/jpeg'
+    }
+    if (name.endsWith('.gif')) {
+      return 'image/gif'
+    }
+    if (name.endsWith('.webp')) {
+      return 'image/webp'
+    }
+    if (name.endsWith('.svg')) {
+      return 'image/svg+xml'
+    }
+    return 'image/png'
   }
 
   const addFiles = (incoming: File[] | FileList) => {
@@ -93,8 +126,8 @@ export function usePromptInputProvider(props: {
       id: nanoid(),
       type: 'file',
       url: URL.createObjectURL(file),
-      mediaType: file.type,
-      filename: file.name,
+      mediaType: inferMediaType(file),
+      filename: file.name || 'image.png',
       file,
     }))
 

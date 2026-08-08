@@ -24,11 +24,9 @@ import {
 import { type PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
+import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import parseModelRef from '@/utils/parse-model-ref'
 import mapSubagentResultStatus from '@/utils/map-subagent-result-status'
-import listConfiguredProviders from '@/services/providers/list-configured-providers'
-import createModel from '@/services/providers/create-model'
-import resolveModelVision from '@/services/harness/resolve-model-vision'
 import { createChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import {
   abort as abortSubagentsForChat,
@@ -553,32 +551,16 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
 
     if (!args.skipUserMessage) {
       const fileParts = args.files ?? []
-      const modelInstance = await createModel({
-        providerId: parsedModel.providerId,
-        modelId: parsedModel.modelId,
-        settings: config.effectiveSettings.value,
-      })
-      const supportsVision = await resolveModelVision({
-        model: modelInstance,
-        providerId: parsedModel.providerId,
-        modelId: parsedModel.modelId,
-        settings: config.effectiveSettings.value,
-      })
 
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string; filename?: string }
       > = [{ type: 'text', text: args.text }]
 
+      // Always keep file parts on the UI message so the thread can show
+      // thumbnails. Non-vision models get text placeholders later, only for
+      // convertToModelMessages in the orchestrator.
       for (const file of fileParts) {
-        if (!supportsVision) {
-          parts.push({
-            type: 'text',
-            text: `[Attachment: ${file.filename || 'file'} (${file.mediaType || 'unknown'})]`,
-          })
-          continue
-        }
-
         const url = file.url
         if (url?.startsWith('file://')) {
           parts.push({

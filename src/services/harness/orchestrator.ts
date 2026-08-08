@@ -62,6 +62,7 @@ import truncateToolResult from '@/utils/truncate-tool-result'
 import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import dropTrailingAssistantMessages from '@/utils/drop-trailing-assistant-messages'
+import prepareMessagesForModelVision from '@/utils/prepare-messages-for-model-vision'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -993,7 +994,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
   const userLine = {
     id: existingUser?.id ?? crypto.randomUUID(),
     role: 'user' as const,
-    parts: [{ type: 'text', text: userText }],
+    parts: existingUser?.parts ?? [{ type: 'text' as const, text: userText }],
     createdAt: nowIso(),
     model:
       typeof existingUser?.metadata === 'object' &&
@@ -1042,7 +1043,20 @@ export default async (input: OrchestratorInput): Promise<void> => {
     messages,
     activeContext,
   )
-  const recentModelMessages = await convertToModelMessages(contextMessages)
+  const visionModel = await createModel({
+    providerId: input.providerId,
+    modelId: input.modelId,
+    settings: input.settings,
+  })
+  const supportsVision = await resolveModelVision({
+    model: visionModel,
+    providerId: input.providerId,
+    modelId: input.modelId,
+    settings: input.settings,
+  })
+  const recentModelMessages = await convertToModelMessages(
+    prepareMessagesForModelVision(contextMessages, supportsVision),
+  )
   const effectiveModelMessages: ModelMessage[] = checkpointText
     ? [
         {
@@ -1128,7 +1142,20 @@ export const resumeOrchestrator = async (
     activeContext,
   )
   const priorMessages = dropTrailingAssistantMessages(contextMessages)
-  const recentModelMessages = await convertToModelMessages(priorMessages)
+  const visionModel = await createModel({
+    providerId: input.providerId,
+    modelId: input.modelId,
+    settings: input.settings,
+  })
+  const supportsVision = await resolveModelVision({
+    model: visionModel,
+    providerId: input.providerId,
+    modelId: input.modelId,
+    settings: input.settings,
+  })
+  const recentModelMessages = await convertToModelMessages(
+    prepareMessagesForModelVision(priorMessages, supportsVision),
+  )
   const baseMessages: ModelMessage[] = checkpointText
     ? [{ role: 'user', content: checkpointText }, ...recentModelMessages]
     : recentModelMessages

@@ -25,7 +25,6 @@ provide(AttachmentsKey, { variant })
       cn(
         'flex items-start',
         variant === 'list' ? 'flex-col gap-2' : 'flex-wrap gap-2',
-        variant === 'grid' && 'ml-auto w-fit',
         props.class,
       )
     "

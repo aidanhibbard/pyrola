@@ -377,6 +377,18 @@ const parsePart = (part: Record<string, unknown>): MessagePart => {
   if (part.type === 'reasoning' && typeof part.text === 'string') {
     return { type: 'reasoning', text: part.text }
   }
+  if (
+    part.type === 'file' &&
+    typeof part.url === 'string' &&
+    typeof part.mediaType === 'string'
+  ) {
+    return {
+      type: 'file',
+      url: part.url,
+      mediaType: part.mediaType,
+      ...(typeof part.filename === 'string' ? { filename: part.filename } : {}),
+    }
+  }
   if (typeof part.text === 'string') {
     return { type: 'text', text: part.text }
   }

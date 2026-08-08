@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { PencilIcon } from '@lucide/vue'
-import type { UIMessage } from 'ai'
+import type { FileUIPart, UIMessage } from 'ai'
+import {
+  Attachment,
+  AttachmentPreview,
+  Attachments,
+} from '@/components/ai-elements/attachments'
+import type { AttachmentData } from '@/components/ai-elements/attachments'
 import AiElementsMessageMessage from '@/components/ai-elements/message/Message.vue'
 import AiElementsMessageMessageAction from '@/components/ai-elements/message/MessageAction.vue'
 import AiElementsMessageMessageActions from '@/components/ai-elements/message/MessageActions.vue'
@@ -35,6 +41,24 @@ const text = computed(() =>
     .map((part) => (part.type === 'text' ? part.text : ''))
     .join(''),
 )
+
+const fileAttachments = computed((): AttachmentData[] => {
+  const attachments: AttachmentData[] = []
+  props.message.parts.forEach((part, index) => {
+    if (part.type !== 'file') {
+      return
+    }
+    const filePart = part as FileUIPart
+    attachments.push({
+      id: `${props.message.id}-file-${index}`,
+      type: 'file',
+      url: filePart.url,
+      mediaType: filePart.mediaType,
+      filename: filePart.filename,
+    })
+  })
+  return attachments
+})
 
 const metadata = computed((): UserMessageMetadata => {
   const value = props.message.metadata
@@ -90,7 +114,22 @@ const handleConfirmOpenChange = (open: boolean): void => {
 
 <template>
   <div class="flex w-full min-w-0 flex-col items-end gap-1.5">
+    <Attachments
+      v-if="fileAttachments.length > 0"
+      variant="grid"
+      class="max-w-[80%]"
+    >
+      <Attachment
+        v-for="file in fileAttachments"
+        :key="file.id"
+        :data="file"
+      >
+        <AttachmentPreview />
+      </Attachment>
+    </Attachments>
+
     <AiElementsMessageMessage
+      v-if="text.length > 0"
       from="user"
       class="group/user-message min-w-0 max-w-[80%]"
     >

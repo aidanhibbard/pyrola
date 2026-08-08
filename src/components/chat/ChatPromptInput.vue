@@ -27,6 +27,7 @@ import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
 import ChatMcpServerPicker from '@/components/chat/ChatMcpServerPicker.vue'
 import ChatSkillsPicker from '@/components/chat/ChatSkillsPicker.vue'
 import ChatPermissionDial from '@/components/chat/ChatPermissionDial.vue'
+import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
@@ -385,6 +386,7 @@ watch(
         multiple
         @submit="handleSubmit"
       >
+        <ChatPromptAttachments />
         <PromptInputBody>
           <ChatPromptEditSync />
           <ChatPromptMentionSync />
