@@ -1,8 +1,14 @@
 {
   "name": "pyrola",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.0",
   "private": true,
+  "description": "Local-first BYOK Agents UI",
   "license": "MIT",
+  "homepage": "https://github.com/aidanhibbard/pyrola",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aidanhibbard/pyrola.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
