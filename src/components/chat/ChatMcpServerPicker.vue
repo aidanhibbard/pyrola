@@ -8,13 +8,14 @@ import {
   CircleIcon,
   Loader2Icon,
   LogInIcon,
+  PlayIcon,
   ServerIcon,
   SettingsIcon,
   ShieldAlertIcon,
+  SquareIcon,
 } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
-import { Switch } from '@/components/shadcn/ui/switch'
 import {
   Popover,
   PopoverContent,
@@ -88,6 +89,9 @@ const isServerLoading = (serverId: string): boolean =>
 
 const isServerEnabled = (server: EffectiveMcpServer): boolean =>
   isMcpServerEnabled(server.config)
+
+const isServerRunning = (server: EffectiveMcpServer): boolean =>
+  isServerEnabled(server) && serverStatus(server.id) !== 'stopped'
 
 const statusLabel = (server: EffectiveMcpServer): string => {
   if (isServerLoading(server.id)) {
@@ -187,7 +191,7 @@ const handleToggleChange = async (
   if (isServerLoading(server.id)) {
     return
   }
-  if (checked === isServerEnabled(server)) {
+  if (checked === isServerRunning(server)) {
     return
   }
 
@@ -348,13 +352,28 @@ const handleLogin = async (server: EffectiveMcpServer): Promise<void> => {
             </TooltipContent>
           </Tooltip>
 
-          <Switch
-            class="shrink-0"
-            :model-value="isServerEnabled(server)"
-            :disabled="isServerLoading(server.id)"
-            :aria-label="`${isServerEnabled(server) ? 'Disable' : 'Enable'} ${server.id}`"
-            @update:model-value="(checked: boolean) => handleToggleChange(server, checked)"
-          />
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="size-7 shrink-0"
+                :class="isServerRunning(server)
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-green-600 dark:text-green-400'"
+                :disabled="isServerLoading(server.id)"
+                :aria-label="`${isServerRunning(server) ? 'Stop' : 'Start'} ${server.id}`"
+                @click="handleToggleChange(server, !isServerRunning(server))"
+              >
+                <SquareIcon v-if="isServerRunning(server)" class="size-3.5" />
+                <PlayIcon v-else class="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {{ isServerRunning(server) ? `Stop ${server.id}` : `Start ${server.id}` }}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </PopoverContent>

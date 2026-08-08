@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, LogIn, LogOut, Plus, RefreshCw, Server, ShieldAlert, Trash2 } from '@lucide/vue'
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, LogIn, LogOut, Play, Plus, RefreshCw, Server, ShieldAlert, Square, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
-import { Switch } from '@/components/shadcn/ui/switch'
 import {
   Tooltip,
   TooltipContent,
@@ -93,6 +92,9 @@ const serverStatus = (id: string): string =>
 
 const isServerLoading = (id: string): boolean =>
   loadingServers.value[id] === true || authenticatingServers.value[id] === true
+
+const isServerRunning = (id: string, serverConfig: McpServerConfig): boolean =>
+  isMcpServerEnabled(serverConfig) && serverStatus(id) !== 'stopped'
 
 const showAuthControl = (serverConfig: McpServerConfig, id: string): boolean => {
   const status = serverStatus(id)
@@ -379,12 +381,31 @@ const refreshAll = async (): Promise<void> => {
               </TooltipTrigger>
               <TooltipContent>Refresh server</TooltipContent>
             </Tooltip>
-            <Switch
-              :model-value="isMcpServerEnabled(server.config)"
-              :disabled="isServerLoading(server.id)"
-              :aria-label="`${isMcpServerEnabled(server.config) ? 'Disable' : 'Enable'} ${server.id}`"
-              @update:model-value="(checked: boolean) => handleEnabledChange(server.id, checked)"
-            />
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  :class="isServerRunning(server.id, server.config)
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-green-600 dark:text-green-400'"
+                  :disabled="isServerLoading(server.id)"
+                  :aria-label="`${isServerRunning(server.id, server.config) ? 'Stop' : 'Start'} ${server.id}`"
+                  @click="handleEnabledChange(server.id, !isServerRunning(server.id, server.config))"
+                >
+                  <Square v-if="isServerRunning(server.id, server.config)" class="h-4 w-4" />
+                  <Play v-else class="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {{
+                  isServerRunning(server.id, server.config)
+                    ? `Stop ${server.id}`
+                    : `Start ${server.id}`
+                }}
+              </TooltipContent>
+            </Tooltip>
             <Tooltip v-if="showAuthControl(server.config, server.id)">
               <TooltipTrigger as-child>
                 <Button
