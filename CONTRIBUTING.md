@@ -72,8 +72,9 @@ npm run vp:build
 5. Ensure `npm run ci` passes (and Rust audit when you touch `src-tauri`).
 6. Open a PR against `main` and fill out the [PR template](.github/pull_request_template.md).
 7. Wait for required checks (`CI`, `Rust audit`, `Tauri build`) and a [CODEOWNERS](.github/CODEOWNERS) review.
+8. Ensure every commit is **signed and verified** (GPG or SSH). Unsigned commits cannot land on `main`.
 
-Direct pushes to `main` are blocked for everyone except maintainers with ruleset bypass.
+Direct pushes to `main` are blocked for everyone except maintainers with ruleset bypass for PR/CI rules. **Signed commits are required for everyone**, including maintainers. See [About commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification).
 
 Breaking changes should be called out in the PR description.
 
@@ -97,6 +98,30 @@ required.
 ## Releases
 
 Maintainers handle releases. Contributors do not need to publish builds.
+
+1. Bump `version` in `src-tauri/tauri.conf.json` (and `src-tauri/Cargo.toml` to match).
+2. Merge the version bump to `main` (signed commits, CI green, review as usual).
+3. Tag and push, or run the **Release** workflow manually:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The [Release](.github/workflows/release.yml) workflow builds macOS (arm64 + x64), Linux x64, and Windows via [`tauri-action`](https://v2.tauri.app/distribute/pipelines/github/), uploads installers to a GitHub Release, then attaches `SHA256SUMS.txt` and `SHA512SUMS.txt` and publishes the release.
+
+Optional Apple signing/notarization: set `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` repository secrets.
+
+### Verify a download
+
+```bash
+# Download the installer(s) plus SHA256SUMS.txt from the GitHub Release, then:
+sha256sum -c SHA256SUMS.txt
+# or on macOS:
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+Only trust checksum files from the matching GitHub Release tag.
 
 ## Questions
 
