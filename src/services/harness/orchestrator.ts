@@ -50,6 +50,7 @@ import {
   clearTurnResponseMessages,
   getTurnResponseMessages,
   hasPendingBackgroundResume,
+  hasRunningSubagentsForChat,
   setTurnResponseMessages,
 } from '@/services/harness/subagent-registry'
 import {
@@ -928,13 +929,26 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     rejectPendingForChat(chatId)
     rejectPendingQuestionsForChat(chatId)
     setAgentShellEventEmitter(chatId, null)
+    // Parent turn is done locally (idle) so resume can flush, but keep the
+    // sidebar "running" while background subagents are still working.
+    const waitingOnBackground = hasRunningSubagentsForChat(chatId)
     onEvent({
       type: 'chat-status-changed',
       projectSlug,
       chatId,
       status: 'idle',
     })
-    await updateChatMeta(projectSlug, chatId, { status: 'idle' })
+    if (waitingOnBackground) {
+      await updateChatMeta(projectSlug, chatId, { status: 'running' })
+      onEvent({
+        type: 'chat-meta-changed',
+        projectSlug,
+        chatId,
+        patch: { status: 'running' },
+      })
+    } else {
+      await updateChatMeta(projectSlug, chatId, { status: 'idle' })
+    }
   }
 }
 

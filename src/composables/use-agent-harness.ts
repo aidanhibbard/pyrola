@@ -400,6 +400,16 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     if (action === 'clear') {
       clearPendingBackgroundResume(options.chatId)
       clearTurnResponseMessages(options.chatId)
+      updateChatMeta(options.projectSlug, options.chatId, { status: 'idle' })
+        .then(() => {
+          session.patchMeta({ status: 'idle' })
+          refreshSidebar()
+        })
+        .catch((err) => {
+          toast.error('Failed to update chat status', {
+            description: err instanceof Error ? err.message : 'Unknown error',
+          })
+        })
       return
     }
 
@@ -749,6 +759,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         ? { ...item, status: 'stopped', summary: 'Stopped' }
         : item,
     )
+    maybeFlushBackgroundSubagentResume()
   }
 
   const stop = async (): Promise<void> => {
@@ -771,6 +782,18 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     }
     status.value = 'ready'
     session.finishAgentTurn()
+    try {
+      await updateChatMeta(options.projectSlug, options.chatId, {
+        status: 'idle',
+      })
+      session.patchMeta({ status: 'idle' })
+      refreshSidebar()
+    } catch (metaError) {
+      toast.error('Failed to update chat status', {
+        description:
+          metaError instanceof Error ? metaError.message : 'Unknown error',
+      })
+    }
     try {
       await killShellsForChat(options.chatId)
     } catch (stopError) {
