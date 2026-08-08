@@ -315,6 +315,10 @@ export const fsWriteFile = (args: {
   content: string
 }): Promise<unknown> => call('fs_write_file', args)
 
+export const writeTempHandoff = (args: {
+  content: string
+}): Promise<{ path: string; filename: string }> => call('write_temp_handoff', args)
+
 export type FsEditReplacement = {
   oldString: string
   newString: string

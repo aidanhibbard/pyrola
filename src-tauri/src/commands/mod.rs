@@ -26,7 +26,7 @@ pub use config::{
 };
 pub use fs::{
   fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir,
-  fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file,
+  fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file, write_temp_handoff,
 };
 pub use git::{
   git_branch_create, git_checkout_branch, git_commit, git_diff, git_list_branches, git_log,

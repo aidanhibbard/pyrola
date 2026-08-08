@@ -893,7 +893,6 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
 
     try {
       await writeHandoff({
-        projectRoot,
         summary,
         chatId: options.chatId,
       })

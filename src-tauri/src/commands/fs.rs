@@ -1050,6 +1050,29 @@ pub fn fs_stage_preview(
   }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteTempHandoffResult {
+  pub path: String,
+  pub filename: String,
+}
+
+#[tauri::command]
+pub fn write_temp_handoff(content: String) -> Result<WriteTempHandoffResult, String> {
+  let timestamp = chrono::Utc::now()
+    .format("%Y-%m-%dT%H-%M-%S")
+    .to_string();
+  let filename = format!("handoff-{timestamp}.md");
+  let dir = std::env::temp_dir().join("pyrola").join("handoffs");
+  fs::create_dir_all(&dir).map_err(|error| format!("Failed to create temp handoffs dir: {error}"))?;
+  let absolute = dir.join(&filename);
+  fs::write(&absolute, content).map_err(|error| format!("Failed to write temp handoff: {error}"))?;
+  Ok(WriteTempHandoffResult {
+    path: absolute.to_string_lossy().to_string(),
+    filename,
+  })
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
