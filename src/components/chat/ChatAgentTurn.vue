@@ -28,6 +28,7 @@ import segmentStepTools from '@/utils/segment-step-tools'
 const props = defineProps<{
   turn: AgentTurn
   status?: ChatStatus
+  activityLabel?: string | null
   subagentsByToolCallId?: Map<string, SubagentTimelineItem>
   subagentsById?: Map<string, SubagentTimelineItem>
 }>()
@@ -41,25 +42,28 @@ const isStreaming = computed(
   () => props.status === 'streaming' || props.status === 'submitted',
 )
 
+const showActivity = computed(
+  () => typeof props.activityLabel === 'string' && props.activityLabel.length > 0,
+)
+
+const toolsForDisplay = (tools: ToolRun[]): ToolRun[] => {
+  // Sticky activity owns the live verb; skip the spinner tool row while running.
+  if (!showActivity.value) {
+    return tools
+  }
+  return tools.filter(
+    (tool) => tool.name === 'spawn_subagent' || tool.status !== 'running',
+  )
+}
+
 const stepEntries = computed(() =>
   props.turn.steps.map((step, index) => ({
     step,
     index,
-    segments: segmentStepTools(step.tools),
+    segments: segmentStepTools(toolsForDisplay(step.tools)),
     hasSpawnSubagent: step.tools.some((tool) => tool.name === 'spawn_subagent'),
   })),
 )
-
-const hasVisibleContent = computed(() =>
-  props.turn.steps.some(
-    (step) =>
-      step.reasoning.trim().length > 0 ||
-      step.text.trim().length > 0 ||
-      step.tools.length > 0,
-  ) || props.turn.text.trim().length > 0,
-)
-
-const isPendingAck = computed(() => isStreaming.value && !hasVisibleContent.value)
 
 const isStepStreaming = (index: number): boolean => {
   if (!isStreaming.value) {
@@ -93,15 +97,6 @@ const errorTitle = computed(() => {
 
 <template>
   <div class="flex w-full min-w-0 max-w-full flex-col gap-2">
-    <AiElementsShimmerShimmer
-      v-if="isPendingAck"
-      :duration="1.5"
-      as="p"
-      class="text-sm"
-    >
-      Processing…
-    </AiElementsShimmerShimmer>
-
     <!--
       AI SDK parts order per step: reasoning → text → tools.
       Sub-agents render inline at their tool call site so later
@@ -190,6 +185,15 @@ const errorTitle = computed(() => {
         class="chat-markdown text-sm"
       />
     </AiElementsMessageMessage>
+
+    <AiElementsShimmerShimmer
+      v-if="showActivity"
+      :duration="1.5"
+      as="p"
+      class="text-sm"
+    >
+      {{ activityLabel }}
+    </AiElementsShimmerShimmer>
 
     <Alert
       v-if="turn.error && turn.error.kind !== 'aborted'"

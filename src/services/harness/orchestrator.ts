@@ -813,6 +813,16 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
         continue
       }
 
+      if (part.type === 'tool-input-start') {
+        await ensureStepOpen()
+        onEvent({
+          type: 'tool-input-start',
+          toolCallId: part.id,
+          name: part.toolName,
+        })
+        continue
+      }
+
       if (part.type === 'tool-call') {
         await ensureStepOpen()
         await emitToolStart(part.toolCallId, part.toolName, part.input)

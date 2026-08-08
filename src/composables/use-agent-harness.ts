@@ -198,6 +198,25 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       session.appendLocalReasoningDelta(event.delta, event.messageId, event.stepId)
       status.value = 'streaming'
     }
+    if (event.type === 'tool-input-start') {
+      const existing = toolRuns.value.find(
+        (item) => item.toolCallId === event.toolCallId,
+      )
+      if (!existing || existing.status === 'running') {
+        const run: ToolRun = {
+          toolCallId: event.toolCallId,
+          name: event.name,
+          status: 'running',
+          args: existing?.args,
+        }
+        toolRuns.value = [
+          ...toolRuns.value.filter((item) => item.toolCallId !== event.toolCallId),
+          run,
+        ]
+        session.upsertLocalToolRun(run)
+        status.value = 'streaming'
+      }
+    }
     if (event.type === 'tool-start') {
       const run: ToolRun = {
         toolCallId: event.toolCallId,
@@ -210,6 +229,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         run,
       ]
       session.upsertLocalToolRun(run)
+      status.value = 'streaming'
     }
     if (event.type === 'tool-result') {
       const existing = toolRuns.value.find(

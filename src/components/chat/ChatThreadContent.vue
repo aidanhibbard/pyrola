@@ -6,6 +6,7 @@ import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-t
 import type { PendingQuestionState } from '@/types/chat/pending-question'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
+import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
 import ChatAgentTurn from '@/components/chat/ChatAgentTurn.vue'
 import ChatCompactionMarker from '@/components/chat/ChatCompactionMarker.vue'
 import ChatMessageTurn from '@/components/chat/ChatMessageTurn.vue'
@@ -20,6 +21,7 @@ import {
   useMessageScroller,
 } from '@/components/shadcn/ui/message-scroller'
 import { useMessageScrollerContext } from '@/components/shadcn/ui/message-scroller/useMessageScroller'
+import deriveAgentActivity from '@/utils/derive-agent-activity'
 
 const props = defineProps<{
   timeline: ChatTimelineItem[]
@@ -48,6 +50,33 @@ const approvalMap = computed(() => {
 })
 
 const isLive = computed(() => props.status === 'streaming' || props.status === 'submitted')
+
+const runningSubagents = computed(() =>
+  props.timeline.filter(
+    (item): item is SubagentTimelineItem =>
+      item.type === 'subagent' && item.status === 'running',
+  ),
+)
+
+const lastAgentTurn = computed(() => {
+  for (let index = props.timeline.length - 1; index >= 0; index -= 1) {
+    const item = props.timeline[index]
+    if (item?.type === 'agent-turn') {
+      return item.turn
+    }
+  }
+  return null
+})
+
+const activityLabel = computed(() =>
+  deriveAgentActivity({
+    status: props.status ?? 'ready',
+    turn: lastAgentTurn.value,
+    runningSubagents: runningSubagents.value,
+    hasPendingApproval: props.pendingApprovals.length > 0,
+    hasPendingQuestion: Boolean(props.pendingQuestion),
+  }),
+)
 
 const subagentsByToolCallId = computed(() => {
   const map = new Map<string, SubagentTimelineItem>()
@@ -192,8 +221,42 @@ const timelineItemId = (item: ChatTimelineItem, index: number): string => {
 
 const isLastItem = (index: number): boolean => index === visibleTimeline.value.length - 1
 
+const lastVisibleAgentTurnIndex = computed(() => {
+  let lastIndex = -1
+  for (let index = 0; index < visibleTimeline.value.length; index += 1) {
+    if (visibleTimeline.value[index]?.type === 'agent-turn') {
+      lastIndex = index
+    }
+  }
+  return lastIndex
+})
+
+const activityOnLastAgentTurn = computed(() => {
+  const lastIndex = visibleTimeline.value.length - 1
+  return (
+    lastIndex >= 0 &&
+    visibleTimeline.value[lastIndex]?.type === 'agent-turn'
+  )
+})
+
+const trailingActivityLabel = computed(() => {
+  if (!activityLabel.value || activityOnLastAgentTurn.value) {
+    return null
+  }
+  return activityLabel.value
+})
+
+const agentTurnActivityLabel = (index: number): string | null => {
+  if (!activityLabel.value || !activityOnLastAgentTurn.value) {
+    return null
+  }
+  if (index !== lastVisibleAgentTurnIndex.value) {
+    return null
+  }
+  return activityLabel.value
+}
 const followLiveOutput = async (): Promise<void> => {
-  if (!isLive.value) {
+  if (!isLive.value && !activityLabel.value) {
     return
   }
   try {
@@ -211,10 +274,14 @@ watch(streamRevision, () => {
   followLiveOutput()
 })
 
+watch(activityLabel, () => {
+  followLiveOutput()
+})
+
 watch(
   () => props.status,
   (status) => {
-    if (status === 'streaming' || status === 'submitted') {
+    if (status === 'streaming' || status === 'submitted' || activityLabel.value) {
       followLiveOutput()
     }
   },
@@ -231,7 +298,7 @@ watch(
           v-for="(item, index) in visibleTimeline"
           :key="timelineItemId(item, index)"
           :message-id="timelineItemId(item, index)"
-          :scroll-anchor="isLastItem(index)"
+          :scroll-anchor="isLastItem(index) && !trailingActivityLabel"
           class="min-w-0 max-w-full"
         >
           <ChatMessageTurn
@@ -253,11 +320,25 @@ watch(
             v-else-if="item.type === 'agent-turn'"
             :turn="item.turn"
             :status="isLastItem(index) ? status : 'ready'"
+            :activity-label="agentTurnActivityLabel(index)"
             :subagents-by-tool-call-id="subagentsByToolCallId"
             :subagents-by-id="subagentsById"
             @retry="emit('retry')"
             @stop-subagent="emit('stopSubagent', $event)"
-          />
+          />        </MessageScrollerItem>
+        <MessageScrollerItem
+          v-if="trailingActivityLabel"
+          message-id="live-activity"
+          :scroll-anchor="true"
+          class="min-w-0 max-w-full"
+        >
+          <AiElementsShimmerShimmer
+            :duration="1.5"
+            as="p"
+            class="text-sm"
+          >
+            {{ trailingActivityLabel }}
+          </AiElementsShimmerShimmer>
         </MessageScrollerItem>
         <ChatQuestionCard
           v-if="!readOnly && pendingQuestion"

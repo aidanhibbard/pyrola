@@ -123,6 +123,41 @@ describe('formatToolRunLabel', () => {
     ).toBe('Edited content/posts/building-durable-chats.md')
   })
 
+  it('uses present tense while running', () => {
+    expect(
+      formatToolRunLabel(
+        toolRun({
+          name: 'edit_file',
+          status: 'running',
+          args: { path: 'src/a.ts' },
+        }),
+      ),
+    ).toBe('Editing src/a.ts…')
+  })
+
+  it('labels create_plan as Writing plan while running', () => {
+    expect(
+      formatToolRunLabel(
+        toolRun({
+          name: 'create_plan',
+          status: 'running',
+        }),
+      ),
+    ).toBe('Writing plan…')
+  })
+
+  it('labels spawn_subagent as Starting while running', () => {
+    expect(
+      formatToolRunLabel(
+        toolRun({
+          name: 'spawn_subagent',
+          status: 'running',
+          args: { agentName: 'Reading auth' },
+        }),
+      ),
+    ).toBe('Starting Reading auth…')
+  })
+
   it('omits path when omitPathHint is set', () => {
     expect(
       formatToolRunLabel(

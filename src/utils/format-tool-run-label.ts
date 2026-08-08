@@ -1,6 +1,6 @@
 import type { ToolRun } from '@/types/harness/tool-run'
 
-const TOOL_LABELS: Record<string, string> = {
+const TOOL_LABELS_DONE: Record<string, string> = {
   read_file: 'Read',
   write_file: 'Edited',
   edit_file: 'Edited',
@@ -26,6 +26,34 @@ const TOOL_LABELS: Record<string, string> = {
   update_plan_todo: 'Updated plan',
   lsp: 'LSP lookup',
   diagnostics: 'Read diagnostics',
+}
+
+const TOOL_LABELS_RUNNING: Record<string, string> = {
+  read_file: 'Reading',
+  write_file: 'Editing',
+  edit_file: 'Editing',
+  apply_patch: 'Patching',
+  delete_file: 'Deleting',
+  move_file: 'Moving',
+  list_dir: 'Listing',
+  glob_files: 'Searching files',
+  grep: 'Searching',
+  git_status: 'Checking git status',
+  git_diff: 'Viewing diff',
+  git_log: 'Viewing git log',
+  git_branch: 'Checking branch',
+  git_checkout: 'Checking out branch',
+  git_branch_create: 'Creating branch',
+  git_commit: 'Committing changes',
+  run_terminal: 'Running command',
+  terminal_output: 'Reading shell output',
+  stop_terminal: 'Stopping shell',
+  call_mcp_tool: 'Calling MCP tool',
+  get_mcp_tools: 'Listing MCP tools',
+  create_plan: 'Writing plan',
+  update_plan_todo: 'Updating plan',
+  lsp: 'LSP lookup',
+  diagnostics: 'Reading diagnostics',
 }
 
 const formatArgsHint = (
@@ -70,13 +98,15 @@ const formatSpawnSubagentLabel = (run: ToolRun): string => {
   const hint = formatArgsHint(run.args)
   const name = hint?.trim() || 'Sub-agent'
   if (run.status === 'running') {
-    return `${name}…`
+    return `Starting ${name}…`
   }
   if (run.status === 'rejected') {
     return `${name} (rejected)`
   }
   return name
 }
+
+const humanizeToolName = (name: string): string => name.replaceAll('_', ' ')
 
 export default (
   run: ToolRun,
@@ -86,11 +116,19 @@ export default (
     return formatSpawnSubagentLabel(run)
   }
 
-  const prefix = TOOL_LABELS[run.name] ?? run.name.replaceAll('_', ' ')
+  const isRunning = run.status === 'running'
+  const mapped = isRunning
+    ? TOOL_LABELS_RUNNING[run.name]
+    : TOOL_LABELS_DONE[run.name]
+  const prefix =
+    mapped ??
+    (isRunning
+      ? `Calling ${humanizeToolName(run.name)}`
+      : humanizeToolName(run.name))
   const hint = formatArgsHint(run.args, options)
   const target = hint ? ` ${hint}` : ''
 
-  if (run.status === 'running') {
+  if (isRunning) {
     return `${prefix}${target}…`
   }
   if (run.status === 'rejected') {
