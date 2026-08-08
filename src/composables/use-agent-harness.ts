@@ -354,6 +354,12 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         cacheReadTokens: event.cacheReadTokens,
         cacheWriteTokens: event.cacheWriteTokens,
       })
+      // Recount from timeline so Conversation includes tool I/O from this step.
+      contextBudgetSync.refreshContextBudget().catch((error) => {
+        toast.error('Failed to refresh context usage', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
     }
     if (event.type === 'chat-status-changed') {
       status.value = mapMetaStatusToChatStatus(event.status, false)
@@ -465,6 +471,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         providerId: parsedModel.providerId,
         settings: cfg.effectiveSettings,
         messages: session.messages.value,
+        timeline: session.timeline.value,
         mentions: cfg.mentions,
         signal: controller.signal,
         onEvent: handleEvent,
@@ -608,6 +615,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         providerId: parsedModel.providerId,
         settings: config.effectiveSettings.value,
         messages: session.messages.value,
+        timeline: session.timeline.value,
         userText: args.text,
         mentions: args.mentions ?? [],
         signal: controller.signal,

@@ -36,7 +36,7 @@ const chatStore = useChatStore()
 const config = usePyrolaConfig()
 const contextActions = useChatContextActions()
 const workbench = useWorkbenchStore()
-useChatContextBudgetSync()
+const contextBudgetSync = useChatContextBudgetSync()
 
 const harness = ref<ReturnType<typeof useAgentHarness> | null>(null)
 const threadReady = ref(false)
@@ -208,6 +208,12 @@ const loadThread = async (): Promise<void> => {
   await fleetSidebar.refreshSlug(projectSlug.value)
   loadedThreadKey.value = threadKey
   threadReady.value = true
+
+  await contextBudgetSync.refreshContextBudget().catch((error) => {
+    toast.error('Failed to refresh context usage', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  })
 
   await flushPendingChatMessage()
 }

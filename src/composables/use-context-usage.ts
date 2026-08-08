@@ -3,6 +3,7 @@ import type { UIMessage } from 'ai'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ActiveContextSlice } from '@/services/context/filter-messages-for-active-context'
@@ -37,6 +38,7 @@ export type RefreshContextUsageInput = {
   projectRoot: string
   mentions?: ContextMention[]
   messages: UIMessage[]
+  timeline?: ChatTimelineItem[]
   settings?: PyrolaSettings
   standalone?: boolean
   frozenSnapshot?: PrefixSnapshot | null
@@ -49,11 +51,13 @@ export default () => {
     Math.max(0, limit.value - reservedOutput.value - safetyBuffer.value),
   )
 
-  const promptUsed = computed(() =>
-    lastStepUsage.value
-      ? lastStepUsage.value.promptTokens
-      : estimatedPromptUsed.value,
-  )
+  // Ring fill uses the local budget estimate. After a provider step, never show
+  // less than last-step inputTokens (ground truth for what was in the window).
+  const promptUsed = computed(() => {
+    const estimated = estimatedPromptUsed.value
+    const lastInput = lastStepUsage.value?.inputTokens ?? 0
+    return Math.max(estimated, lastInput)
+  })
 
   const free = computed(() =>
     Math.max(0, usablePrompt.value - promptUsed.value),
@@ -71,7 +75,7 @@ export default () => {
     buckets.value.filter((bucket) => bucket.tokens > 0),
   )
 
-  const fillFromProvider = computed(() => lastStepUsage.value !== null)
+  const hasLastStepUsage = computed(() => lastStepUsage.value !== null)
 
   const bindChat = (chatId: string | null): void => {
     if (boundChatId.value === chatId) {
@@ -121,6 +125,7 @@ export default () => {
         projectRoot: input.projectRoot,
         mentions: input.mentions ?? [],
         messages: input.messages,
+        timeline: input.timeline,
         standalone: input.standalone,
         frozenSnapshot: input.frozenSnapshot,
         activeContext: input.activeContext,
@@ -155,7 +160,7 @@ export default () => {
     percentUsed,
     visibleBuckets,
     lastStepUsage,
-    fillFromProvider,
+    hasLastStepUsage,
     bindChat,
     clearLastStepUsage,
     setBudget,

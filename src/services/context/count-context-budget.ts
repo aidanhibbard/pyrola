@@ -4,6 +4,7 @@ import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-setti
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { ContextBudget } from '@/types/harness/context-budget'
 import type { ContextBucket, ContextBucketId } from '@/types/harness/context-bucket'
+import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import { CONTEXT_BUCKET_META, CONTEXT_BUCKET_ORDER } from '@/types/harness/context-bucket-meta'
 import estimateTextTokens from '@/utils/estimate-text-tokens'
@@ -14,6 +15,7 @@ import assembleSystemPromptParts, {
 import filterMessagesForActiveContext, {
   type ActiveContextSlice,
 } from '@/services/context/filter-messages-for-active-context'
+import serializeTimelineForBudget from '@/services/context/serialize-timeline-for-budget'
 import estimateBuiltinToolDefinitionTokens from '@/services/context/estimate-builtin-tool-definition-tokens'
 import { partsFromFrozenPrefix } from '@/services/harness/prefix-contract'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
@@ -34,6 +36,7 @@ export type CountContextBudgetInput = {
   projectRoot: string
   mentions: ContextMention[]
   messages: UIMessage[]
+  timeline?: ChatTimelineItem[]
   agentCatalog?: Array<{ name: string; description: string }>
   standalone?: boolean
   parts?: SystemPromptParts
@@ -100,6 +103,23 @@ const serializeMessages = (messages: UIMessage[], checkpointText: string): strin
     return checkpointText
   }
   return `${checkpointText}\n\n${body}`
+}
+
+const serializeConversation = (input: CountContextBudgetInput): string => {
+  const { messages, checkpointText } = filterMessagesForActiveContext(
+    input.messages,
+    input.activeContext,
+  )
+
+  if (input.timeline && input.timeline.length > 0) {
+    return serializeTimelineForBudget({
+      timeline: input.timeline,
+      checkpointText,
+      includeFromCreatedAt: input.activeContext?.includeFromCreatedAt,
+    })
+  }
+
+  return serializeMessages(messages, checkpointText)
 }
 
 const estimateMcpToolSchemas = async (
@@ -176,10 +196,6 @@ const resolveMentionsTokens = (
 
 export default async (input: CountContextBudgetInput): Promise<ContextBudget> => {
   const parts = await resolveParts(input)
-  const { messages, checkpointText } = filterMessagesForActiveContext(
-    input.messages,
-    input.activeContext,
-  )
 
   const builtinToolSchemas = estimateBuiltinToolDefinitionTokens(
     input.mode,
@@ -192,6 +208,8 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
 
   // System includes tool-catalog prose that is part of instructions.
   // Tools / MCP buckets count real definition schemas (not that prose again).
+  // Conversation prefers timeline serialization so tool args/results count;
+  // chatStore.messages only keep assistant text/reasoning.
   const bucketTokens: Record<ContextBucketId, number> = {
     system: estimateTextTokens(parts.base) + estimateTextTokens(parts.tools),
     tools: builtinToolSchemas,
@@ -200,7 +218,7 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
     skills: estimateTextTokens(parts.skills),
     mentions: resolveMentionsTokens(parts, input.mentions),
     subagentDefinitions: estimateTextTokens(parts.subagents),
-    messages: estimateTextTokens(serializeMessages(messages, checkpointText)),
+    messages: estimateTextTokens(serializeConversation(input)),
   }
 
   const buckets = CONTEXT_BUCKET_ORDER.map((id) => buildBucket(id, bucketTokens[id]))

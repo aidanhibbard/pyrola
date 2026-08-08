@@ -25,7 +25,6 @@ const free = computed(() => contextUsage.free.value)
 const estimatedFree = computed(() => contextUsage.estimatedFree.value)
 const usablePrompt = computed(() => contextUsage.usablePrompt.value)
 const ratio = computed(() => contextUsage.ratio.value)
-const fillFromProvider = computed(() => contextUsage.fillFromProvider.value)
 const lastStepUsage = computed(() => contextUsage.lastStepUsage.value)
 const estimatedPromptUsed = computed(() => contextUsage.estimatedPromptUsed.value)
 
@@ -63,8 +62,6 @@ const bucketBarWidth = (bucket: ContextBucket): string => segmentWidth(bucket.to
 
 const reservedBarWidth = computed(() => segmentWidth(reservedOutput.value))
 const safetyBarWidth = computed(() => segmentWidth(safetyBuffer.value))
-// Bar uses estimated free so segments sum to the window; the status line may
-// use provider fill which can differ from the bucket estimate.
 const freeBarWidth = computed(() => segmentWidth(estimatedFree.value))
 const freeBarTokens = computed(() => estimatedFree.value)
 
@@ -94,7 +91,7 @@ const lastStepLabel = computed(() => {
     return ''
   }
   const parts = [
-    `${formatTokens(usage.promptTokens)} in`,
+    `${formatTokens(usage.inputTokens)} in`,
     `${formatTokens(usage.outputTokens)} out`,
   ]
   if (usage.cacheReadTokens > 0) {
@@ -180,12 +177,6 @@ const handleHandoff = (): void => {
             :class="statusClass"
           >
             {{ promptUsedLabel }} / {{ usablePromptLabel }} usable
-          </p>
-          <p
-            v-if="fillFromProvider"
-            class="text-muted-foreground"
-          >
-            from last step
           </p>
         </div>
 

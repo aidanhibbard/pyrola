@@ -2,6 +2,7 @@ import { ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import { getFrozenPrefix } from '@/services/harness/prefix-contract'
 import { normalizeStoredModelRef } from '@/schemas/pyrola-settings'
@@ -16,26 +17,62 @@ const draftMode = ref<PyrolaChatMode>('agent')
 const draftMentions = ref<ContextMention[]>([])
 
 let watchStarted = false
+let stopBudgetWatch: (() => void) | null = null
 
-const messagesContentKey = (messages: Array<{ parts: unknown[] }>): string =>
-  messages
-    .map((message) =>
-      message.parts
-        .map((part) => {
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    stopBudgetWatch?.()
+    stopBudgetWatch = null
+    watchStarted = false
+  })
+}
+
+const timelineBudgetKey = (timeline: ChatTimelineItem[]): string =>
+  timeline
+    .map((item) => {
+      if (item.type === 'user') {
+        const partChars = item.message.parts.reduce((sum, part) => {
           if (
             part &&
             typeof part === 'object' &&
-            'type' in part &&
-            ((part as { type: string }).type === 'text' ||
-              (part as { type: string }).type === 'reasoning') &&
-            'text' in part
+            'text' in part &&
+            typeof (part as { text: unknown }).text === 'string'
           ) {
-            return String((part as { text: string }).text)
+            return sum + (part as { text: string }).text.length
           }
-          return JSON.stringify(part)
-        })
-        .join('\0'),
-    )
+          return sum + 8
+        }, 0)
+        return `u:${item.message.id}:${item.message.parts.length}:${partChars}`
+      }
+      if (item.type === 'agent-turn') {
+        const turn = item.turn
+        const steps = turn.steps
+          .map((step) => {
+            const tools = step.tools
+              .map((tool) => {
+                const argChars =
+                  tool.args === undefined ? 0 : JSON.stringify(tool.args).length
+                const resultChars =
+                  tool.result === undefined ? 0 : JSON.stringify(tool.result).length
+                return `${tool.toolCallId}:${tool.status}:${argChars}:${resultChars}`
+              })
+              .join(',')
+            return `${step.id}:${step.text.length}:${step.reasoning.length}:${tools}`
+          })
+          .join('|')
+        return `a:${turn.id}:${turn.text.length}:${steps}`
+      }
+      if (item.type === 'compaction') {
+        return `c:${item.summary.length}:${item.focus ?? ''}`
+      }
+      if (item.type === 'subagent') {
+        return `s:${item.subagentId}:${item.status}:${item.summary?.length ?? 0}`
+      }
+      if (item.type === 'todo') {
+        return `t:${item.todos.length}`
+      }
+      return 'x'
+    })
     .join('\n')
 
 const mcpStatusKey = (states: Record<string, { status: string; tools: unknown[] }>): string =>
@@ -69,6 +106,10 @@ export default () => {
   }
 
   const refreshContextBudget = async (): Promise<void> => {
+    if (chatStore.loading.value) {
+      return
+    }
+
     const meta = chatStore.meta.value
     const modelId =
       draftModelRef.value ||
@@ -93,13 +134,16 @@ export default () => {
       : project?.name ?? meta?.projectSlug ?? 'Home'
 
     const frozenSnapshot = meta ? getFrozenPrefix(meta) : null
+    const timeline = chatStore.timeline.value
+    const messages = chatStore.messages.value
 
     await contextUsage.refresh({
       modelId,
       mode,
       projectName,
       projectRoot,
-      messages: chatStore.messages.value,
+      messages,
+      timeline,
       settings: config.effectiveSettings.value,
       standalone,
       frozenSnapshot,
@@ -111,13 +155,14 @@ export default () => {
 
   if (!watchStarted) {
     watchStarted = true
-    watch(
+    stopBudgetWatch = watch(
       [
         draftModelRef,
         draftMode,
         draftMentions,
+        () => chatStore.loading.value,
+        () => timelineBudgetKey(chatStore.timeline.value),
         () => chatStore.messages.value.length,
-        () => messagesContentKey(chatStore.messages.value),
         () => fleet.activeProject.value?.id,
         () => chatStore.meta.value?.model,
         () => chatStore.meta.value?.mode,

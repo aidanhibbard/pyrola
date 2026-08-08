@@ -3,6 +3,7 @@ import { convertToModelMessages, isLoopFinished, smoothStream, stepCountIs, stre
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { SubagentResult } from '@/types/harness/subagent-record'
 import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
@@ -73,6 +74,7 @@ export type OrchestratorInput = {
   providerId: string
   settings: PyrolaSettings
   messages: UIMessage[]
+  timeline?: ChatTimelineItem[]
   userText: string
   mentions: ContextMention[]
   signal: AbortSignal
@@ -411,6 +413,7 @@ type HarnessStreamInput = {
   settings: PyrolaSettings
   mentions: ContextMention[]
   messages: UIMessage[]
+  timeline?: ChatTimelineItem[]
   modelMessages: ModelMessage[]
   signal: AbortSignal
   onEvent: (event: HarnessEvent) => void
@@ -441,6 +444,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     settings,
     mentions,
     messages,
+    timeline,
     modelMessages,
     signal,
     onEvent,
@@ -532,6 +536,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     projectRoot,
     mentions,
     messages,
+    timeline,
     standalone: input.standalone,
     parts,
     frozenSnapshot,
@@ -782,7 +787,8 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
         const cacheReadTokens = usage?.inputTokenDetails?.cacheReadTokens ?? 0
         const cacheWriteTokens = usage?.inputTokenDetails?.cacheWriteTokens ?? 0
         const outputTokens = usage?.outputTokens ?? 0
-        // Claude Code-style fill: prompt tokens currently in the window (incl. cache).
+        // Last-step billing stats for the footer only. Ring fill uses the local
+        // budget estimate from context-budget, not these provider counts.
         const promptTokens = inputTokens > 0
           ? inputTokens
           : cacheReadTokens + cacheWriteTokens

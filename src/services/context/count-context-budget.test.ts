@@ -35,6 +35,7 @@ vi.mock('@/services/context/system-prompt-parts', async () => {
 })
 
 import countContextBudget from '@/services/context/count-context-budget'
+import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 
 const message = (id: string, createdAt: string, text: string): UIMessage => ({
   id,
@@ -79,5 +80,77 @@ describe('countContextBudget', () => {
     expect(messagesWith).toBeLessThan(messagesWithout)
     expect(withCutoff.buckets.some((b) => b.id === 'mcp')).toBe(true)
     expect(withCutoff.buckets.find((b) => b.id === 'tools')?.tokens).toBe(100)
+  })
+
+  it('counts tool results from timeline in the conversation bucket', async () => {
+    const toolPayload = 'z'.repeat(8000)
+    const timeline: ChatTimelineItem[] = [
+      {
+        type: 'user',
+        message: message('1', '2026-01-01T00:00:00.000Z', 'hi'),
+      },
+      {
+        type: 'agent-turn',
+        turn: {
+          id: 'a1',
+          text: 'ok',
+          steps: [
+            {
+              id: 's1',
+              text: '',
+              reasoning: '',
+              tools: [
+                {
+                  toolCallId: 't1',
+                  name: 'read_file',
+                  status: 'done',
+                  args: { path: '/big' },
+                  result: { content: toolPayload },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]
+
+    const withoutTimeline = await countContextBudget({
+      modelId: 'gpt-4.1',
+      mode: 'agent',
+      projectName: 'demo',
+      projectRoot: '/tmp/demo',
+      mentions: [],
+      messages: [
+        message('1', '2026-01-01T00:00:00.000Z', 'hi'),
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'ok' }],
+        },
+      ],
+    })
+    const withTimeline = await countContextBudget({
+      modelId: 'gpt-4.1',
+      mode: 'agent',
+      projectName: 'demo',
+      projectRoot: '/tmp/demo',
+      mentions: [],
+      messages: [
+        message('1', '2026-01-01T00:00:00.000Z', 'hi'),
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'ok' }],
+        },
+      ],
+      timeline,
+    })
+
+    const messagesWithout =
+      withoutTimeline.buckets.find((b) => b.id === 'messages')?.tokens ?? 0
+    const messagesWith =
+      withTimeline.buckets.find((b) => b.id === 'messages')?.tokens ?? 0
+    expect(messagesWith).toBeGreaterThan(messagesWithout)
+    expect(messagesWith).toBeGreaterThan(1000)
   })
 })

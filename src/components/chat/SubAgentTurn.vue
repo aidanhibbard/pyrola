@@ -108,7 +108,10 @@ const handleStop = (): void => {
           v-if="modelLabel"
           class="block truncate text-[10px] leading-tight text-muted-foreground/80"
         >{{ modelLabel }}</span>
-        <span class="block truncate text-foreground/90">{{ displayName }}</span>
+        <span
+          class="block truncate text-foreground/90"
+          :class="isRunning ? 'shimmer shimmer-duration-1500' : undefined"
+        >{{ displayName }}</span>
         <AiElementsShimmerShimmer
           v-if="activityLabel"
           :duration="1.5"
