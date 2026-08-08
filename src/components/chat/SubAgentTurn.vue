@@ -9,6 +9,7 @@ import {
   SquareIcon,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
 import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -19,6 +20,7 @@ import {
 import type { SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
+import deriveSubagentActivity from '@/utils/derive-subagent-activity'
 import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 
 const props = defineProps<{
@@ -34,10 +36,8 @@ const router = useRouter()
 
 const isRunning = computed(() => props.subagent.status === 'running')
 const modelLabel = computed(() => formatModelLabelFromRef(props.subagent.model))
-const displayName = computed(() => {
-  const name = props.subagent.name.trim() || 'Sub-agent'
-  return isRunning.value ? `${name}…` : name
-})
+const displayName = computed(() => props.subagent.name.trim() || 'Sub-agent')
+const activityLabel = computed(() => deriveSubagentActivity(props.subagent))
 
 const statusIcon = computed(() => {
   if (props.subagent.status === 'stopped') {
@@ -104,11 +104,19 @@ const handleStop = (): void => {
         :class="statusIconClass"
       />
       <span class="min-w-0 flex-1">
-        <span class="block truncate">{{ displayName }}</span>
         <span
           v-if="modelLabel"
           class="block truncate text-[10px] leading-tight text-muted-foreground/80"
         >{{ modelLabel }}</span>
+        <span class="block truncate text-foreground/90">{{ displayName }}</span>
+        <AiElementsShimmerShimmer
+          v-if="activityLabel"
+          :duration="1.5"
+          as="span"
+          class="block truncate text-[10px] leading-tight text-muted-foreground"
+        >
+          {{ activityLabel }}
+        </AiElementsShimmerShimmer>
       </span>
       <ChevronRightIcon class="size-3.5 shrink-0 opacity-60" />
     </button>

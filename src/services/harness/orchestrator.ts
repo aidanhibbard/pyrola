@@ -60,6 +60,7 @@ import { toast } from 'vue-sonner'
 import truncateToolResult from '@/utils/truncate-tool-result'
 import fleetCounter from '@/services/harness/fleet-counter'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
+import dropTrailingAssistantMessages from '@/utils/drop-trailing-assistant-messages'
 
 export type OrchestratorInput = {
   projectSlug: string
@@ -373,7 +374,7 @@ const patchSubagentToolResult = (
           ...part,
           output: {
             type: 'json' as const,
-            value: completedResult,
+            value: truncateToolResult(completedResult),
           },
         }
       }),
@@ -1103,11 +1104,17 @@ export const resumeOrchestrator = async (
     messages,
     activeContext,
   )
-  const recentModelMessages = await convertToModelMessages(contextMessages)
+  const priorMessages = dropTrailingAssistantMessages(contextMessages)
+  const recentModelMessages = await convertToModelMessages(priorMessages)
   const baseMessages: ModelMessage[] = checkpointText
     ? [{ role: 'user', content: checkpointText }, ...recentModelMessages]
     : recentModelMessages
-  const modelMessages = [...baseMessages, ...patchedTurnMessages]
+  const wakeNudge: ModelMessage = {
+    role: 'user',
+    content:
+      'All background subagents finished. Their completed summaries are in the spawn_subagent tool results above. Answer the user now using those results. Do not say the subagents are still running.',
+  }
+  const modelMessages = [...baseMessages, ...patchedTurnMessages, wakeNudge]
 
   clearTurnResponseMessages(chatId)
   clearPendingBackgroundResume(chatId)
