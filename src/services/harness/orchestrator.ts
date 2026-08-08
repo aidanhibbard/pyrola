@@ -371,11 +371,20 @@ const patchSubagentToolResult = (
         if (part.type !== 'tool-result' || part.toolCallId !== toolCallId) {
           return part
         }
+        const truncatedSummary = truncateToolResult(completedResult.summary)
+        const summary =
+          typeof truncatedSummary === 'string'
+            ? truncatedSummary
+            : completedResult.summary
         return {
           ...part,
           output: {
             type: 'json' as const,
-            value: truncateToolResult(completedResult),
+            value: {
+              subagentId: completedResult.subagentId,
+              name: completedResult.name,
+              summary,
+            },
           },
         }
       }),

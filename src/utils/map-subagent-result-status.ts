@@ -6,17 +6,27 @@ export type SubagentResultOutcome = Extract<
   'completed' | 'failed' | 'aborted'
 >
 
+const normalizeOutcome = (
+  outcome: unknown,
+): SubagentResultOutcome | undefined => {
+  if (outcome === 'completed' || outcome === 'failed' || outcome === 'aborted') {
+    return outcome
+  }
+  return undefined
+}
+
 export default (
-  outcome: SubagentResultOutcome | undefined,
+  outcome: unknown,
   summary?: string,
 ): Exclude<SubagentTimelineItem['status'], 'running'> => {
-  if (outcome === 'aborted') {
+  const normalized = normalizeOutcome(outcome)
+  if (normalized === 'aborted') {
     return 'stopped'
   }
-  if (outcome === 'failed') {
+  if (normalized === 'failed') {
     return 'error'
   }
-  if (outcome === 'completed') {
+  if (normalized === 'completed') {
     return 'done'
   }
 
