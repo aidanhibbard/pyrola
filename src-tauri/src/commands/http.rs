@@ -206,7 +206,26 @@ async fn validate_proxy_url(raw: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyResponse, String> {
+pub async fn http_proxy_request(
+  request: HttpProxyRequest,
+  registry: State<'_, HttpStreamRegistry>,
+) -> Result<HttpProxyResponse, String> {
+  let request_id = request
+    .request_id
+    .clone()
+    .unwrap_or_else(|| Uuid::new_v4().to_string());
+  let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+  registry.register(request_id.clone(), cancel_tx);
+
+  let result = run_proxy_request(request, &mut cancel_rx).await;
+  registry.take(&request_id);
+  result
+}
+
+async fn run_proxy_request(
+  request: HttpProxyRequest,
+  cancel_rx: &mut oneshot::Receiver<()>,
+) -> Result<HttpProxyResponse, String> {
   validate_proxy_url(&request.url).await?;
   let client = build_client(Some(BUFFERED_REQUEST_TIMEOUT))?;
   let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|e| e.to_string())?;
@@ -217,7 +236,12 @@ pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyRe
     builder = builder.body(body);
   }
 
-  let response = builder.send().await.map_err(|e| e.to_string())?;
+  let response = tokio::select! {
+    response = builder.send() => response.map_err(|e| e.to_string())?,
+    _ = &mut *cancel_rx => {
+      return Err("Request aborted".to_string());
+    }
+  };
   let status = response.status().as_u16();
 
   let mut response_headers = HashMap::new();
@@ -227,7 +251,12 @@ pub async fn http_proxy_request(request: HttpProxyRequest) -> Result<HttpProxyRe
     }
   }
 
-  let body = response.text().await.map_err(|e| e.to_string())?;
+  let body = tokio::select! {
+    body = response.text() => body.map_err(|e| e.to_string())?,
+    _ = &mut *cancel_rx => {
+      return Err("Request aborted".to_string());
+    }
+  };
 
   Ok(HttpProxyResponse {
     status,

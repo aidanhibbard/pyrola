@@ -201,6 +201,7 @@ export type HttpProxyRequest = {
   method: string
   headers?: Record<string, string>
   body?: string
+  requestId?: string
 }
 
 export const httpProxyRequest = (

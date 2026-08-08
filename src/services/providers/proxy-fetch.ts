@@ -205,16 +205,48 @@ const bufferedProxyFetch = async (
       : typeof init.body === 'string'
         ? init.body
         : await new Response(init.body).text()
+  const requestId = crypto.randomUUID()
+  let cancelled = false
+
+  const cancelUpstream = (): void => {
+    if (cancelled) {
+      return
+    }
+    cancelled = true
+    invoke('http_proxy_stream_cancel', { requestId }).catch((error) => {
+      toast.error('Failed to cancel proxy request', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    })
+  }
+
+  let rejectAborted: ((error: DOMException) => void) | null = null
+  const aborted = new Promise<never>((_, reject) => {
+    rejectAborted = reject
+  })
+  // Request may win the race; ignore a late abort rejection.
+  aborted.catch(() => undefined)
+
+  const onAbort = (): void => {
+    cancelUpstream()
+    rejectAborted?.(abortError())
+  }
+
+  signal?.addEventListener('abort', onAbort, { once: true })
 
   try {
-    const result = await httpProxyRequest({
-      url,
-      method,
-      headers,
-      body,
-    })
+    const result = await Promise.race([
+      httpProxyRequest({
+        url,
+        method,
+        headers,
+        body,
+        requestId,
+      }),
+      aborted,
+    ])
 
-    if (signal?.aborted) {
+    if (cancelled || signal?.aborted) {
       throw abortError()
     }
 
@@ -233,10 +265,16 @@ const bufferedProxyFetch = async (
       headers: responseHeaders,
     })
   } catch (error) {
-    if (signal?.aborted) {
+    if (cancelled || signal?.aborted) {
       throw abortError()
     }
-    throw toError(error)
+    const err = toError(error)
+    if (err.message === 'Request aborted') {
+      throw abortError()
+    }
+    throw err
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
   }
 }
 
