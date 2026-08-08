@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, unref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
@@ -30,6 +30,7 @@ import { killAgentShell, listShellsForChat } from '@/services/harness/agent-shel
 import buildSubagentTimeline from '@/utils/build-subagent-timeline'
 
 const route = useRoute()
+const router = useRouter()
 const fleet = useFleetRegistry()
 const fleetSidebar = useFleetSidebar()
 const chatStore = useChatStore()
@@ -78,6 +79,9 @@ const harnessStatus = computed((): ChatStatus => {
 })
 const harnessPendingApprovals = computed(
   () => unref(harness.value?.pendingApprovals) ?? [],
+)
+const harnessPendingMcpAuth = computed(
+  () => unref(harness.value?.pendingMcpAuth) ?? [],
 )
 const pendingQuestion = computed(() => chatStore.pendingQuestion.value)
 const timeline = computed(() => {
@@ -303,6 +307,36 @@ const handleSubmitAnswer = (toolCallId: string, answer: string): void => {
   harness.value?.submitAnswer(toolCallId, answer)
 }
 
+const handleAuthenticateMcp = async (toolCallId: string): Promise<void> => {
+  try {
+    await harness.value?.authenticatePendingMcpAuth(toolCallId)
+  } catch (error) {
+    toast.error('MCP authentication failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleSkipMcpAuth = (toolCallId: string): void => {
+  harness.value?.resolveMcpAuthDecision(toolCallId, { action: 'skipped' })
+}
+
+const handleOpenMcpSettings = async (serverId: string): Promise<void> => {
+  try {
+    await router.push({
+      path: '/settings',
+      query: {
+        section: 'mcp',
+        server: serverId,
+      },
+    })
+  } catch (error) {
+    toast.error('Navigation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleRetry = async (): Promise<void> => {
   if (isSubagentView.value) {
     return
@@ -460,9 +494,13 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       :status="harnessStatus"
       :pending-approvals="isSubagentView ? [] : harnessPendingApprovals"
       :pending-question="isSubagentView ? null : pendingQuestion"
+      :pending-mcp-auth="isSubagentView ? [] : harnessPendingMcpAuth"
       :read-only="isSubagentView"
       @resolve-approval="handleResolveApproval"
       @submit-answer="handleSubmitAnswer"
+      @authenticate-mcp="handleAuthenticateMcp"
+      @skip-mcp-auth="handleSkipMcpAuth"
+      @open-mcp-settings="handleOpenMcpSettings"
       @retry="handleRetry"
       @stop-subagent="handleStopSubagent"
     />

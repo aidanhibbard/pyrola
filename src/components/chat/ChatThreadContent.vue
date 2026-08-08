@@ -4,12 +4,14 @@ import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import type { ChatTimelineItem, SubagentTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PendingQuestionState } from '@/types/chat/pending-question'
+import type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
 import ChatAgentTurn from '@/components/chat/ChatAgentTurn.vue'
 import ChatCompactionMarker from '@/components/chat/ChatCompactionMarker.vue'
 import ChatMessageTurn from '@/components/chat/ChatMessageTurn.vue'
+import ChatMcpAuthCard from '@/components/chat/ChatMcpAuthCard.vue'
 import ChatQuestionCard from '@/components/chat/ChatQuestionCard.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
 import ChatToolCard from '@/components/chat/ChatToolCard.vue'
@@ -28,12 +30,16 @@ const props = defineProps<{
   status?: ChatStatus
   pendingApprovals: PendingApprovalView[]
   pendingQuestion?: PendingQuestionState | null
+  pendingMcpAuth?: PendingMcpAuthView[]
   readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
   resolveApproval: [toolCallId: string, resolution: ApprovalResolution]
   submitAnswer: [toolCallId: string, answer: string]
+  authenticateMcp: [toolCallId: string]
+  skipMcpAuth: [toolCallId: string]
+  openMcpSettings: [serverId: string]
   retry: []
   stopSubagent: [subagentId: string]
 }>()
@@ -75,8 +81,17 @@ const activityLabel = computed(() =>
     runningSubagents: runningSubagents.value,
     hasPendingApproval: props.pendingApprovals.length > 0,
     hasPendingQuestion: Boolean(props.pendingQuestion),
+    hasPendingMcpAuth: (props.pendingMcpAuth?.length ?? 0) > 0,
   }),
 )
+
+const activeMcpAuth = computed(() => {
+  if (props.pendingQuestion) {
+    return null
+  }
+  const queue = props.pendingMcpAuth ?? []
+  return queue[0] ?? null
+})
 
 const subagentsByToolCallId = computed(() => {
   const map = new Map<string, SubagentTimelineItem>()
@@ -344,6 +359,13 @@ watch(
           v-if="!readOnly && pendingQuestion"
           :question="pendingQuestion"
           @submit="(toolCallId, answer) => emit('submitAnswer', toolCallId, answer)"
+        />
+        <ChatMcpAuthCard
+          v-else-if="!readOnly && activeMcpAuth"
+          :auth="activeMcpAuth"
+          @authenticate="(toolCallId) => emit('authenticateMcp', toolCallId)"
+          @skip="(toolCallId) => emit('skipMcpAuth', toolCallId)"
+          @open-settings="(serverId) => emit('openMcpSettings', serverId)"
         />
         <ChatToolCard
           v-for="[toolCallId, approval] in readOnly ? [] : approvalMap"

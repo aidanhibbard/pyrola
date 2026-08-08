@@ -15,13 +15,14 @@ use commands::{
   list_pinned_chats, list_project_files, list_pyrola_files, lsp_ensure_server, lsp_install_server,
   lsp_prefetch_defaults, lsp_request, lsp_status, lsp_stop_server, mcp_call_tool, mcp_list_statuses,
   mcp_list_tools, mcp_logout,
-  mcp_refresh, mcp_start, mcp_status, mcp_stop, pin_chat, read_chat_meta, read_chat_messages,
+  mcp_refresh, mcp_start, mcp_status, mcp_stop, oauth_begin_loopback, oauth_cancel_loopback,
+  open_external_url, pin_chat, read_chat_meta, read_chat_messages,
   read_json_file, read_mcp_config, read_settings, registry_add_project, open_project_at_path,
   registry_list_projects, registry_remove_project, registry_set_active_project,
   registry_update_project_root, resolve_launch_path, reveal_in_folder, set_secret, shell_kill_pty,
   shell_kill_tracked, shell_resize_pty, shell_spawn_pty, shell_spawn_tracked,
   shell_write_pty, update_chat_meta, watch_pyrola_paths, workspace_glob, workspace_grep,
-  write_json_file, write_mcp_config, write_settings, WatchState,
+  write_json_file, write_mcp_config, write_settings, OAuthLoopbackState, WatchState,
 };
 use commands::http::HttpStreamRegistry;
 
@@ -41,6 +42,7 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
   builder
     .manage(WatchState::new())
     .manage(HttpStreamRegistry::default())
+    .manage(OAuthLoopbackState::new())
     .setup(move |app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -120,6 +122,9 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
       mcp_list_tools,
       mcp_list_statuses,
       mcp_status,
+      open_external_url,
+      oauth_begin_loopback,
+      oauth_cancel_loopback,
       watch_pyrola_paths,
       create_chat,
       list_chats,

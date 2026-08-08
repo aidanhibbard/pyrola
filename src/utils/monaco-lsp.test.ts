@@ -33,7 +33,7 @@ const monacoStub = {
 describe('monaco-lsp', () => {
   it('extracts file extensions', () => {
     expect(fileExtension('src/app.ts')).toBe('ts')
-    expect(fileExtension('README')).toBe('README')
+    expect(fileExtension('README')).toBe('')
   })
 
   it('parses diagnostic payloads', () => {

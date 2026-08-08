@@ -7,6 +7,7 @@ import {
   ChevronDownIcon,
   CircleIcon,
   Loader2Icon,
+  LogInIcon,
   ServerIcon,
   SettingsIcon,
   ShieldAlertIcon,
@@ -29,6 +30,7 @@ import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
 import type { EffectiveMcpServer } from '@/services/mcp/merge-mcp-config'
+import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 
 const {
@@ -36,7 +38,9 @@ const {
   projectMcp,
   serverStates,
   loadingServers,
+  authenticatingServers,
   setServerEnabled,
+  authenticateServer,
   refreshStates,
   listEffectiveMcpServers,
 } = useMcpServers()
@@ -67,11 +71,20 @@ const connectedCount = computed(
     ).length,
 )
 
+const hasAuthRequired = computed(() =>
+  effectiveServers.value.some(
+    (server) =>
+      isMcpServerEnabled(server.config) &&
+      serverStates.value[server.id]?.status === 'auth_required',
+  ),
+)
+
 const serverStatus = (serverId: string): string =>
   serverStates.value[serverId]?.status ?? 'stopped'
 
 const isServerLoading = (serverId: string): boolean =>
-  loadingServers.value[serverId] === true
+  loadingServers.value[serverId] === true ||
+  authenticatingServers.value[serverId] === true
 
 const isServerEnabled = (server: EffectiveMcpServer): boolean =>
   isMcpServerEnabled(server.config)
@@ -150,25 +163,6 @@ onMounted(async () => {
   }
 })
 
-const handleToggleChange = async (
-  server: EffectiveMcpServer,
-  checked: boolean,
-): Promise<void> => {
-  if (isServerLoading(server.id)) {
-    return
-  }
-  if (checked === isServerEnabled(server)) {
-    return
-  }
-  try {
-    await setServerEnabled(server.id, checked, config.activeRootPath.value)
-  } catch (error) {
-    toast.error('Failed to update MCP server', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
 const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> => {
   menuOpen.value = false
   try {
@@ -185,6 +179,55 @@ const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> =
     })
   }
 }
+
+const handleToggleChange = async (
+  server: EffectiveMcpServer,
+  checked: boolean,
+): Promise<void> => {
+  if (isServerLoading(server.id)) {
+    return
+  }
+  if (checked === isServerEnabled(server)) {
+    return
+  }
+
+  if (
+    checked &&
+    !isMcpTrusted(config.effectiveSettings.value, server.id, sessionTrusts)
+  ) {
+    toast.error('Trust this server in Settings first', {
+      description: `${server.id} must be trusted before it can be enabled.`,
+    })
+    await handleOpenInSettings(server)
+    return
+  }
+
+  try {
+    await setServerEnabled(server.id, checked, config.activeRootPath.value)
+  } catch (error) {
+    toast.error('Failed to update MCP server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleLogin = async (server: EffectiveMcpServer): Promise<void> => {
+  if (isServerLoading(server.id)) {
+    return
+  }
+  if (!isMcpTrusted(config.effectiveSettings.value, server.id, sessionTrusts)) {
+    toast.error('Trust this server in Settings first', {
+      description: `${server.id} must be trusted before authentication.`,
+    })
+    await handleOpenInSettings(server)
+    return
+  }
+  try {
+    await authenticateServer(server.id, server.config)
+  } catch {
+    // authenticateServer already toasts.
+  }
+}
 </script>
 
 <template>
@@ -193,7 +236,12 @@ const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> =
       <Button
         variant="ghost"
         size="sm"
-        class="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        class="h-7 gap-1.5 px-2 text-xs"
+        :class="
+          hasAuthRequired
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-muted-foreground'
+        "
         :title="`${connectedCount} of ${effectiveServers.length} MCP servers connected`"
       >
         <ServerIcon class="size-3.5 shrink-0" />
@@ -233,6 +281,23 @@ const handleOpenInSettings = async (server: EffectiveMcpServer): Promise<void> =
           <span class="min-w-0 flex-1 truncate px-1 text-sm font-medium">
             {{ server.id }}
           </span>
+
+          <Tooltip v-if="isServerEnabled(server) && serverStatus(server.id) === 'auth_required'">
+            <TooltipTrigger as-child>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="size-7 shrink-0 text-amber-600 dark:text-amber-400"
+                :disabled="isServerLoading(server.id)"
+                :aria-label="`Log in to ${server.id}`"
+                @click="handleLogin(server)"
+              >
+                <LogInIcon class="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Log in</TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger as-child>

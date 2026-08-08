@@ -35,6 +35,7 @@ import {
 } from '@/services/harness/plan-execution-session'
 import { rejectPendingForChat } from '@/services/harness/approval-gate'
 import { rejectPendingQuestionsForChat } from '@/services/harness/question-gate'
+import { rejectPendingMcpAuthForChat } from '@/services/mcp/mcp-auth-gate'
 import runSideTask from '@/services/harness/run-side-task'
 import enrichToolError from '@/services/harness/enrich-tool-error'
 import deriveToolArtifact from '@/services/harness/derive-tool-artifact'
@@ -747,6 +748,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
       onAbort: async () => {
         rejectPendingForChat(chatId)
         rejectPendingQuestionsForChat(chatId)
+        rejectPendingMcpAuthForChat(chatId)
         await killShellsForChat(chatId)
         abortSubagentsForChat(chatId)
         if (trailingText || assistantReasoning) {
@@ -940,6 +942,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   } finally {
     rejectPendingForChat(chatId)
     rejectPendingQuestionsForChat(chatId)
+    rejectPendingMcpAuthForChat(chatId)
     setAgentShellEventEmitter(chatId, null)
     // Parent turn is done locally (idle) so resume can flush, but keep the
     // sidebar "running" while background subagents are still working.

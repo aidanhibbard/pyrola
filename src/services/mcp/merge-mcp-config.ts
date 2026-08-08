@@ -1,4 +1,9 @@
-import type { McpConfig, McpServerConfig, McpServerScope } from '@/types/pyrola/mcp-config'
+import type {
+  McpConfig,
+  McpInputDefinition,
+  McpServerConfig,
+  McpServerScope,
+} from '@/types/pyrola/mcp-config'
 import { defaultMcpConfig } from '@/schemas/mcp-config'
 
 export type EffectiveMcpServer = {
@@ -7,19 +12,45 @@ export type EffectiveMcpServer = {
   scope: McpServerScope
 }
 
+const mergeInputs = (
+  personal: McpInputDefinition[] | undefined,
+  project: McpInputDefinition[] | undefined,
+): McpInputDefinition[] | undefined => {
+  if (!personal?.length && !project?.length) {
+    return undefined
+  }
+
+  const byId = new Map<string, McpInputDefinition>()
+  for (const input of personal ?? []) {
+    byId.set(input.id, input)
+  }
+  for (const input of project ?? []) {
+    byId.set(input.id, input)
+  }
+
+  const merged = [...byId.values()]
+  return merged.length > 0 ? merged : undefined
+}
+
 export const mergeMcpConfig = (
   personal: McpConfig,
   project: McpConfig | null,
 ): McpConfig => {
   if (!project) {
-    return { servers: { ...personal.servers } }
+    return {
+      servers: { ...personal.servers },
+      ...(personal.inputs ? { inputs: [...personal.inputs] } : {}),
+    }
   }
+
+  const inputs = mergeInputs(personal.inputs, project.inputs)
 
   return {
     servers: {
       ...personal.servers,
       ...project.servers,
     },
+    ...(inputs ? { inputs } : {}),
   }
 }
 

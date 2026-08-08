@@ -22,6 +22,15 @@ import {
   type ApprovalResolution,
 } from '@/services/harness/approval-gate'
 import { type PendingApprovalView } from '@/services/harness/gate-tool-permission'
+import {
+  listPendingMcpAuthForChat,
+  rejectPendingMcpAuthForChat,
+  resolveMcpAuth,
+  type McpAuthResolution,
+} from '@/services/mcp/mcp-auth-gate'
+import type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
+import useMcpServers from '@/composables/use-mcp-servers'
+import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 import { parsePermissionRecords } from '@/services/harness/permission-policy'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
@@ -58,6 +67,8 @@ export type { ToolRun } from '@/types/harness/tool-run'
 export type { SubagentEntry } from '@/types/harness/subagent-entry'
 export type { ApprovalResolution } from '@/services/harness/approval-gate'
 export type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
+export type { McpAuthResolution } from '@/services/mcp/mcp-auth-gate'
+export type { PendingMcpAuthView } from '@/types/chat/pending-mcp-auth'
 
 type AgentHarness = ReturnType<typeof createAgentHarness>
 
@@ -90,6 +101,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   const status = ref<ChatStatus>('ready')
   const error = ref<string | null>(null)
   const pendingApprovals = shallowRef<PendingApprovalView[]>([])
+  const pendingMcpAuth = shallowRef<PendingMcpAuthView[]>([])
   const toolRuns = shallowRef<ToolRun[]>([])
   const subagents = shallowRef<SubagentEntry[]>([])
   const abortController = ref<AbortController | null>(null)
@@ -102,6 +114,9 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     effectiveSettings: PyrolaSettings
   } | null>(null)
   const resumingBackgroundBatch = ref(false)
+  let mcpAuthPollTimer: ReturnType<typeof setInterval> | null = null
+
+  const mcpServers = useMcpServers()
 
   const refreshSidebar = (): void => {
     fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
@@ -128,10 +143,57 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     if (pendingApprovals.value.length > 0) {
       return
     }
+    if (pendingMcpAuth.value.length > 0) {
+      return
+    }
     if (session.pendingQuestion.value) {
       return
     }
     setChatAttention(null)
+  }
+
+  const syncPendingMcpAuth = (): void => {
+    const next = listPendingMcpAuthForChat(options.chatId).map((entry) => ({
+      chatId: entry.chatId,
+      toolCallId: entry.toolCallId,
+      serverId: entry.serverId,
+      kind: entry.kind,
+      title: entry.title,
+      detail: entry.detail,
+    }))
+    const hadPending = pendingMcpAuth.value.length > 0
+    pendingMcpAuth.value = next
+    if (next.length > 0) {
+      setChatAttention('needs_mcp_auth')
+      return
+    }
+    if (hadPending) {
+      maybeClearAttentionWhenGatesEmpty()
+    }
+  }
+
+  const stopMcpAuthPolling = (): void => {
+    if (!mcpAuthPollTimer) {
+      return
+    }
+    clearInterval(mcpAuthPollTimer)
+    mcpAuthPollTimer = null
+  }
+
+  const startMcpAuthPolling = (): void => {
+    if (mcpAuthPollTimer) {
+      return
+    }
+    mcpAuthPollTimer = setInterval(() => {
+      syncPendingMcpAuth()
+      const live =
+        status.value === 'streaming' ||
+        status.value === 'submitted' ||
+        pendingMcpAuth.value.length > 0
+      if (!live) {
+        stopMcpAuthPolling()
+      }
+    }, 250)
   }
 
   const applyTurnEndAttention = (outcome: 'success' | 'error'): void => {
@@ -174,6 +236,71 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     maybeClearAttentionWhenGatesEmpty()
   }
 
+  const resolveMcpAuthDecision = (
+    toolCallId: string,
+    resolution: McpAuthResolution,
+  ): void => {
+    resolveMcpAuth(toolCallId, resolution)
+    syncPendingMcpAuth()
+    maybeClearAttentionWhenGatesEmpty()
+  }
+
+  const authenticatePendingMcpAuth = async (toolCallId: string): Promise<void> => {
+    const entry =
+      pendingMcpAuth.value.find((item) => item.toolCallId === toolCallId) ??
+      listPendingMcpAuthForChat(options.chatId).find((item) => item.toolCallId === toolCallId)
+    if (!entry) {
+      toast.error('MCP authentication request expired')
+      return
+    }
+
+    if (entry.kind === 'inputs') {
+      toast.error('MCP inputs required', {
+        description: 'Open Settings to provide the required inputs, then authenticate again.',
+      })
+      return
+    }
+
+    const rootPath = options.standalone ? null : options.projectRoot
+    if (
+      Object.keys(mcpServers.personalMcp.value.servers).length === 0 &&
+      Object.keys(mcpServers.projectMcp.value.servers).length === 0
+    ) {
+      try {
+        await mcpServers.loadConfigs(rootPath)
+      } catch (error) {
+        toast.error('Failed to load MCP config', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+        return
+      }
+    }
+
+    const effective = listEffectiveMcpServers(
+      mcpServers.personalMcp.value,
+      mcpServers.projectMcp.value,
+    )
+    const server = effective.find((item) => item.id === entry.serverId)
+    if (!server) {
+      toast.error('MCP server not found', {
+        description: entry.serverId,
+      })
+      return
+    }
+
+    try {
+      await mcpServers.authenticateServer(entry.serverId, server.config)
+      resolveMcpAuthDecision(toolCallId, { action: 'authenticated' })
+    } catch (error) {
+      // authenticateServer already toasts Error failures; keep the request pending.
+      if (!(error instanceof Error)) {
+        toast.error('MCP authentication failed', {
+          description: String(error),
+        })
+      }
+    }
+  }
+
   const setPermissionLevel = (level: PermissionLevel | null): void => {
     sessionPermissionLevel.value = level
   }
@@ -189,6 +316,10 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       allowedScopes: entry.allowedScopes,
       diff: entry.diff,
     }))
+    syncPendingMcpAuth()
+    if (pendingMcpAuth.value.length > 0) {
+      startMcpAuthPolling()
+    }
   }
 
   const handleEvent = (event: HarnessEvent): void => {
@@ -233,8 +364,13 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       ]
       session.upsertLocalToolRun(run)
       status.value = 'streaming'
+      if (event.name === 'call_mcp_tool') {
+        startMcpAuthPolling()
+        syncPendingMcpAuth()
+      }
     }
     if (event.type === 'tool-result') {
+      syncPendingMcpAuth()
       const existing = toolRuns.value.find(
         (item) => item.toolCallId === event.toolCallId,
       )
@@ -754,6 +890,9 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
 
   const stop = async (): Promise<void> => {
     abortController.value?.abort()
+    rejectPendingMcpAuthForChat(options.chatId)
+    pendingMcpAuth.value = []
+    stopMcpAuthPolling()
     abortSubagentsForChat(options.chatId)
     const runningIds = new Set(
       subagents.value
@@ -933,6 +1072,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     status,
     error,
     pendingApprovals,
+    pendingMcpAuth,
     sessionPermissionLevel,
     toolRuns,
     subagents,
@@ -945,6 +1085,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     approve,
     reject,
     resolveApprovalDecision,
+    resolveMcpAuthDecision,
+    authenticatePendingMcpAuth,
     setPermissionLevel,
     submitAnswer,
     compactChat,

@@ -49,6 +49,17 @@ describe('deriveAgentActivity', () => {
     ).toBe('Waiting for approval')
   })
 
+  it('waits for MCP authentication', () => {
+    expect(
+      deriveAgentActivity({
+        status: 'streaming',
+        turn: turn({}),
+        runningSubagents: [],
+        hasPendingMcpAuth: true,
+      }),
+    ).toBe('Waiting for MCP authentication')
+  })
+
   it('waits for a blocking subagent', () => {
     expect(
       deriveAgentActivity({

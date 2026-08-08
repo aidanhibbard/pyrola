@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { CircleAlert, GitFork, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
+import { CircleAlert, GitFork, KeyRound, MessageCircleQuestion, Pencil, Pin, PinOff, ShieldAlert, Trash2 } from '@lucide/vue'
 import type { FleetSidebarChat } from '@/types/fleet/fleet-sidebar-chat'
 import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/left/ChatRunningDots.vue'
 import {
@@ -97,6 +97,9 @@ const statusLabel = computed((): string | null => {
   }
   if (displayAttention.value === 'needs_input') {
     return 'Needs input'
+  }
+  if (displayAttention.value === 'needs_mcp_auth') {
+    return 'Needs MCP auth'
   }
   if (displayAttention.value === 'completed') {
     return 'Done'
@@ -249,6 +252,11 @@ watch(
           v-else-if="displayAttention === 'needs_input'"
           class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
           aria-label="Needs input"
+        />
+        <KeyRound
+          v-else-if="displayAttention === 'needs_mcp_auth'"
+          class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-label="Needs MCP auth"
         />
         <span
           v-else-if="displayAttention === 'completed'"

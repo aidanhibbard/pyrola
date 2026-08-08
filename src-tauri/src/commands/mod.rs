@@ -10,6 +10,7 @@ pub mod lsp;
 pub mod lsp_install;
 pub mod lsp_registry;
 pub mod mcp;
+pub mod oauth;
 pub mod paths;
 pub mod registry;
 #[cfg(target_os = "macos")]
@@ -42,6 +43,7 @@ pub use mcp::{
   mcp_call_tool, mcp_list_statuses, mcp_list_tools, mcp_logout, mcp_refresh, mcp_start,
   mcp_status, mcp_stop,
 };
+pub use oauth::{oauth_begin_loopback, oauth_cancel_loopback, open_external_url, OAuthLoopbackState};
 pub use paths::{
   get_default_workspace_root, get_pyrola_dir, get_user_pyrola_dir, has_project_pyrola,
   list_project_files, list_pyrola_files,

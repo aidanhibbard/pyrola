@@ -3,21 +3,13 @@ import { toast } from 'vue-sonner'
 import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
+import mcpRuntime from '@/services/mcp/mcp-runtime'
 import {
-  mcpListStatuses,
-  mcpLogout,
-  mcpRefresh,
-  mcpStart,
-  mcpStop,
   readMcpConfig,
   writeMcpConfig,
   type McpServerState,
 } from '@/services/pyrola/pyrola-tauri'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
-
-const isStdioServer = (
-  config: McpServerConfig,
-): config is { command: string; args?: string[] } => 'command' in config
 
 const isActiveStatus = (status: string): boolean =>
   status === 'connected' || status === 'starting' || status === 'refreshing'
@@ -26,6 +18,7 @@ const personalMcp = ref<McpConfig>({ servers: {} })
 const projectMcp = ref<McpConfig>({ servers: {} })
 const serverStates = ref<Record<string, McpServerState>>({})
 const loadingServers = ref<Record<string, boolean>>({})
+const authenticatingServers = ref<Record<string, boolean>>({})
 let refreshGeneration = 0
 
 export default () => {
@@ -47,6 +40,7 @@ export default () => {
       setServerLoading(serverId, false)
     }
   }
+
   const loadConfigs = async (rootPath: string | null): Promise<void> => {
     const personalRaw = await readMcpConfig('personal')
     personalMcp.value = migrateMcpConfig(personalRaw)
@@ -91,7 +85,7 @@ export default () => {
 
     let bulkStatuses: Record<string, McpServerState> = {}
     try {
-      bulkStatuses = await mcpListStatuses()
+      bulkStatuses = await mcpRuntime.listStatuses()
     } catch (error) {
       if (generation !== refreshGeneration) {
         return
@@ -123,7 +117,7 @@ export default () => {
 
     for (const removedId of previousIds) {
       try {
-        await mcpStop(removedId)
+        await mcpRuntime.stop(removedId)
       } catch (error) {
         toast.error('Failed to stop MCP server', {
           description: error instanceof Error ? error.message : 'Unknown error',
@@ -161,14 +155,9 @@ export default () => {
     config: McpServerConfig,
     options?: { quiet?: boolean; manageLoading?: boolean },
   ): Promise<void> => {
-    if (!isStdioServer(config)) {
-      toast.error('Only stdio MCP servers are supported in this build')
-      return
-    }
-
     const run = async (): Promise<void> => {
       try {
-        const state = await mcpStart(serverId, config.command, config.args ?? [])
+        const state = await mcpRuntime.start(serverId, config)
         serverStates.value = {
           ...serverStates.value,
           [serverId]: state,
@@ -199,13 +188,133 @@ export default () => {
     await withServerLoading(serverId, run)
   }
 
+  const refreshServer = async (
+    serverId: string,
+    config?: McpServerConfig,
+    options?: { quiet?: boolean },
+  ): Promise<void> => {
+    await withServerLoading(serverId, async () => {
+      try {
+        const resolvedConfig =
+          config ??
+          listEffectiveMcpServers(personalMcp.value, projectMcp.value).find(
+            (server) => server.id === serverId,
+          )?.config
+        const state = await mcpRuntime.refresh(serverId, resolvedConfig)
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: state,
+        }
+        if (!options?.quiet) {
+          toast.success(`${serverId} refreshed (${state.tools.length} tools)`)
+        }
+      } catch (error) {
+        toast.error('Refresh failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    })
+  }
+
+  const refreshOrStartServer = async (
+    serverId: string,
+    config: McpServerConfig,
+    options?: { quiet?: boolean },
+  ): Promise<void> => {
+    const status = serverStates.value[serverId]?.status ?? 'stopped'
+    if (status === 'connected' || status === 'error' || status === 'refreshing') {
+      await refreshServer(serverId, config, options)
+      return
+    }
+    await startServer(serverId, config, options)
+  }
+
+  const refreshAllServers = async (
+    servers: Array<{ id: string; config: McpServerConfig }>,
+  ): Promise<void> => {
+    for (const server of servers) {
+      await refreshOrStartServer(server.id, server.config, { quiet: true })
+    }
+    toast.success('All servers refreshed')
+  }
+
+  const authenticateServer = async (
+    serverId: string,
+    config: McpServerConfig,
+  ): Promise<void> => {
+    authenticatingServers.value = {
+      ...authenticatingServers.value,
+      [serverId]: true,
+    }
+    await withServerLoading(serverId, async () => {
+      try {
+        const state = await mcpRuntime.authenticate(serverId, config)
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: state,
+        }
+        toast.success(`${serverId} authenticated`)
+      } catch (error) {
+        serverStates.value = {
+          ...serverStates.value,
+          [serverId]: {
+            serverId,
+            status: 'auth_required',
+            tools: [],
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }
+        toast.error('Authentication failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+        throw error
+      } finally {
+        authenticatingServers.value = {
+          ...authenticatingServers.value,
+          [serverId]: false,
+        }
+      }
+    })
+  }
+
+  const logoutServer = async (
+    serverId: string,
+    config?: McpServerConfig,
+  ): Promise<void> => {
+    try {
+      const resolvedConfig =
+        config ??
+        listEffectiveMcpServers(personalMcp.value, projectMcp.value).find(
+          (server) => server.id === serverId,
+        )?.config
+      await mcpRuntime.logout(serverId, resolvedConfig)
+      serverStates.value = {
+        ...serverStates.value,
+        [serverId]: {
+          serverId,
+          status: 'auth_required',
+          tools: [],
+        },
+      }
+    } catch (error) {
+      toast.error('Failed to log out', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  }
+
   const stopServer = async (
     serverId: string,
-    options?: { quiet?: boolean; manageLoading?: boolean },
+    options?: { quiet?: boolean; manageLoading?: boolean; config?: McpServerConfig },
   ): Promise<void> => {
     const run = async (): Promise<void> => {
       try {
-        await mcpStop(serverId)
+        const resolvedConfig =
+          options?.config ??
+          listEffectiveMcpServers(personalMcp.value, projectMcp.value).find(
+            (server) => server.id === serverId,
+          )?.config
+        await mcpRuntime.stop(serverId, resolvedConfig)
         serverStates.value = {
           ...serverStates.value,
           [serverId]: {
@@ -229,68 +338,6 @@ export default () => {
       return
     }
     await withServerLoading(serverId, run)
-  }
-
-  const refreshServer = async (
-    serverId: string,
-    options?: { quiet?: boolean },
-  ): Promise<void> => {
-    await withServerLoading(serverId, async () => {
-      try {
-        const state = await mcpRefresh(serverId)
-        serverStates.value = {
-          ...serverStates.value,
-          [serverId]: state,
-        }
-        if (!options?.quiet) {
-          toast.success(`${serverId} refreshed (${state.tools.length} tools)`)
-        }
-      } catch (error) {
-        toast.error('Refresh failed', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-    })
-  }
-
-  const refreshOrStartServer = async (
-    serverId: string,
-    config: McpServerConfig,
-    options?: { quiet?: boolean },
-  ): Promise<void> => {
-    const status = serverStates.value[serverId]?.status ?? 'stopped'
-    if (status === 'connected' || status === 'error' || status === 'refreshing') {
-      await refreshServer(serverId, options)
-      return
-    }
-    await startServer(serverId, config, options)
-  }
-
-  const refreshAllServers = async (
-    servers: Array<{ id: string; config: McpServerConfig }>,
-  ): Promise<void> => {
-    for (const server of servers) {
-      await refreshOrStartServer(server.id, server.config, { quiet: true })
-    }
-    toast.success('All servers refreshed')
-  }
-
-  const logoutServer = async (serverId: string): Promise<void> => {
-    try {
-      await mcpLogout(serverId)
-      serverStates.value = {
-        ...serverStates.value,
-        [serverId]: {
-          serverId,
-          status: 'auth_required',
-          tools: [],
-        },
-      }
-    } catch (error) {
-      toast.error('Failed to log out', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
   }
 
   const addServer = async (
@@ -318,7 +365,7 @@ export default () => {
     const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
     const { [serverId]: _removed, ...rest } = scoped.servers
     await saveScopedConfig(tab, { servers: rest }, rootPath)
-    await mcpStop(serverId)
+    await mcpRuntime.stop(serverId)
     await refreshStates()
   }
 
@@ -394,6 +441,7 @@ export default () => {
     projectMcp,
     serverStates,
     loadingServers,
+    authenticatingServers,
     loadConfigs,
     refreshStates,
     startServer,
@@ -401,6 +449,7 @@ export default () => {
     refreshServer,
     refreshOrStartServer,
     refreshAllServers,
+    authenticateServer,
     logoutServer,
     addServer,
     deleteServer,

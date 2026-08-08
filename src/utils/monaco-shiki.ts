@@ -144,7 +144,7 @@ const hardenPyrolaMonacoThemes = (monacoApi: MonacoApi, highlighter: PyrolaHighl
       inherit: true,
       rules: converted.rules,
       colors: {
-        ...(converted.colors ?? {}),
+        ...converted.colors,
         'editor.background':
           themeId === PYROLA_CODE_THEME_DARK ? '#252525' : '#ffffff',
         'editor.foreground':

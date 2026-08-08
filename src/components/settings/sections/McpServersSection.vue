@@ -31,6 +31,7 @@ import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useMcpServers from '@/composables/use-mcp-servers'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import type { McpServerConfig } from '@/types/pyrola/mcp-config'
+import { isMcpHttpServer } from '@/types/pyrola/mcp-config'
 import type { McpTrustScope } from '@/types/harness/permission'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
 import {
@@ -49,9 +50,11 @@ const {
   projectMcp,
   serverStates,
   loadingServers,
+  authenticatingServers,
   startServer,
   refreshServer,
   refreshAllServers,
+  authenticateServer,
   logoutServer,
   addServer,
   deleteServer,
@@ -83,20 +86,23 @@ const toggleExpanded = (id: string): void => {
 }
 
 const isAuthCapableServer = (serverConfig: McpServerConfig): boolean =>
-  !('command' in serverConfig)
+  isMcpHttpServer(serverConfig)
 
 const serverStatus = (id: string): string =>
   serverStates.value[id]?.status ?? 'stopped'
 
 const isServerLoading = (id: string): boolean =>
-  loadingServers.value[id] === true
+  loadingServers.value[id] === true || authenticatingServers.value[id] === true
 
 const showAuthControl = (serverConfig: McpServerConfig, id: string): boolean => {
-  if (!isAuthCapableServer(serverConfig)) {
-    return false
-  }
   const status = serverStatus(id)
-  return status === 'auth_required' || status === 'connected'
+  if (status === 'auth_required') {
+    return true
+  }
+  if (isAuthCapableServer(serverConfig) && status === 'connected') {
+    return true
+  }
+  return false
 }
 
 const requireTrust = async (id: string, action: () => Promise<void>): Promise<void> => {
@@ -201,7 +207,7 @@ const handleRefreshServer = async (
   }
   const status = serverStatus(id)
   if (status === 'connected' || status === 'error' || status === 'refreshing') {
-    await refreshServer(id)
+    await refreshServer(id, serverConfig)
     return
   }
   await requireTrust(id, () => startServer(id, serverConfig))
@@ -212,7 +218,13 @@ const handleAuthAction = async (
   serverConfig: McpServerConfig,
 ): Promise<void> => {
   if (serverStatus(id) === 'auth_required') {
-    await requireTrust(id, () => startServer(id, serverConfig))
+    await requireTrust(id, async () => {
+      try {
+        await authenticateServer(id, serverConfig)
+      } catch {
+        // authenticateServer already toasts.
+      }
+    })
     return
   }
   await logoutServer(id)

@@ -29,8 +29,6 @@ import {
   gitStatus,
   lspEnsureServer,
   lspRequest,
-  mcpCallTool,
-  mcpStatus,
   readMcpConfig,
   updateChatMeta,
   workspaceGlob,
@@ -53,6 +51,10 @@ import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
+import mcpRuntime from '@/services/mcp/mcp-runtime'
+import { requestMcpAuth } from '@/services/mcp/mcp-auth-gate'
+import { setMcpElicitationHandler } from '@/services/mcp/mcp-http-client'
+import { UnauthorizedError } from '@ai-sdk/mcp'
 import createPlan from '@/services/plans/write-plan'
 import parsePlan from '@/services/plans/parse-plan'
 import { updatePlanTodos } from '@/services/plans/write-plan'
@@ -241,6 +243,36 @@ const SUBAGENT_READ_ONLY_TOOLS = [
 
 const isSandboxSpawnError = (message: string): boolean =>
   message.startsWith('SANDBOX_FAILED:') || message.startsWith('SANDBOX_UNAVAILABLE:')
+
+const mcpAuthErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+  if (typeof error === 'string') {
+    return error
+  }
+  return String(error)
+}
+
+const isMcpAuthError = (error: unknown): boolean => {
+  if (error instanceof UnauthorizedError) {
+    return true
+  }
+  const message = mcpAuthErrorMessage(error).toLowerCase()
+  return (
+    message.includes('unauthorized') ||
+    message.includes('auth_required') ||
+    message.includes('401')
+  )
+}
+
+const mcpAuthKindForError = (error: unknown): 'oauth' | 'inputs' => {
+  const message = mcpAuthErrorMessage(error).toLowerCase()
+  if (message.includes('inputs') || message.includes('auth_required:inputs')) {
+    return 'inputs'
+  }
+  return 'oauth'
+}
 
 const runTerminalCommand = async (
   ctx: HarnessToolContext,
@@ -722,7 +754,60 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       if (!allowed) {
         return { rejected: true, error: 'MCP call denied' }
       }
-      return mcpCallTool(serverId, toolName, args as Record<string, unknown>)
+
+      const invokeTool = async (): Promise<unknown> => {
+        const previous = setMcpElicitationHandler(async (request) => {
+          const answer = await requestQuestion(
+            ctx.chatId,
+            `${toolCallId}:elicit`,
+            request.params.message,
+          )
+          return {
+            action: 'accept' as const,
+            content: { answer },
+          }
+        })
+        try {
+          return await mcpRuntime.callTool(
+            serverId,
+            toolName,
+            args as Record<string, unknown>,
+          )
+        } finally {
+          setMcpElicitationHandler(previous)
+        }
+      }
+
+      try {
+        return await invokeTool()
+      } catch (error) {
+        if (!isMcpAuthError(error)) {
+          throw error
+        }
+
+        const kind = mcpAuthKindForError(error)
+        const resolution = await requestMcpAuth({
+          chatId: ctx.chatId,
+          toolCallId,
+          serverId,
+          kind,
+          title: `Authenticate ${serverId}`,
+          detail: mcpAuthErrorMessage(error),
+        })
+
+        if (resolution.action !== 'authenticated') {
+          return { error: 'auth_required', serverId }
+        }
+
+        try {
+          return await invokeTool()
+        } catch (retryError) {
+          if (isMcpAuthError(retryError)) {
+            return { error: 'auth_required', serverId }
+          }
+          throw retryError
+        }
+      }
     },
   }),
   get_mcp_tools: tool({
@@ -738,11 +823,13 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       const catalog = await Promise.all(
         servers.map(async (server) => {
           try {
-            const state = await mcpStatus(server.id)
+            const state = await mcpRuntime.getStatus(server.id)
             return {
               serverId: server.id,
               scope: server.scope,
               status: state.status,
+              trusted: isMcpTrusted(ctx.settings, server.id, sessionTrusts),
+              authRequired: state.status === 'auth_required',
               error: state.error ?? null,
               tools: state.tools.map((item) => {
                 const meta = item.meta ?? null
@@ -765,6 +852,8 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
               serverId: server.id,
               scope: server.scope,
               status: 'error',
+              trusted: isMcpTrusted(ctx.settings, server.id, sessionTrusts),
+              authRequired: false,
               error: error instanceof Error ? error.message : String(error),
               tools: [],
             }
@@ -773,6 +862,89 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       )
 
       return { servers: catalog }
+    },
+  }),
+  list_mcp_resources: tool({
+    description:
+      'List resources from a connected HTTP or SSE MCP server. Requires trust. Use get_mcp_tools to confirm the server is connected.',
+    inputSchema: z.object({
+      serverId: z.string().describe('MCP server id'),
+    }),
+    execute: async ({ serverId }, { toolCallId }) => {
+      if (!isMcpTrusted(ctx.settings, serverId, sessionTrusts)) {
+        return {
+          error: `MCP server "${serverId}" has not been granted trust.`,
+        }
+      }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'list_mcp_resources',
+        kind: 'mcp',
+        action: 'mcp.call',
+        capability: mcpCapability(serverId, 'resources/list'),
+        title: `${serverId}/resources`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'MCP resources denied' }
+      }
+      return mcpRuntime.listResources(serverId)
+    },
+  }),
+  read_mcp_resource: tool({
+    description: 'Read a resource URI from a connected HTTP or SSE MCP server.',
+    inputSchema: z.object({
+      serverId: z.string(),
+      uri: z.string().describe('Resource URI from list_mcp_resources'),
+    }),
+    execute: async ({ serverId, uri }, { toolCallId }) => {
+      if (!isMcpTrusted(ctx.settings, serverId, sessionTrusts)) {
+        return {
+          error: `MCP server "${serverId}" has not been granted trust.`,
+        }
+      }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'read_mcp_resource',
+        kind: 'mcp',
+        action: 'mcp.call',
+        capability: mcpCapability(serverId, 'resources/read'),
+        title: `${serverId}/read ${uri}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'MCP resource read denied' }
+      }
+      return mcpRuntime.readResource(serverId, uri)
+    },
+  }),
+  get_mcp_prompt: tool({
+    description:
+      'Retrieve a prompt template from a connected HTTP or SSE MCP server (experimental MCP prompts).',
+    inputSchema: z.object({
+      serverId: z.string(),
+      name: z.string().describe('Prompt name'),
+      args: z.record(z.unknown()).optional().describe('Prompt arguments'),
+    }),
+    execute: async ({ serverId, name, args }, { toolCallId }) => {
+      if (!isMcpTrusted(ctx.settings, serverId, sessionTrusts)) {
+        return {
+          error: `MCP server "${serverId}" has not been granted trust.`,
+        }
+      }
+      const allowed = await gateToolPermission({
+        ctx: toPermCtx(ctx),
+        toolCallId,
+        name: 'get_mcp_prompt',
+        kind: 'mcp',
+        action: 'mcp.call',
+        capability: mcpCapability(serverId, `prompts/${name}`),
+        title: `${serverId}/prompt ${name}`,
+      })
+      if (!allowed) {
+        return { rejected: true, error: 'MCP prompt denied' }
+      }
+      return mcpRuntime.getPrompt(serverId, name, args as Record<string, unknown> | undefined)
     },
   }),
   ask_user: tool({

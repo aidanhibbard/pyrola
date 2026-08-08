@@ -1,22 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const httpProxyRequest = vi.fn()
-const invoke = vi.fn()
-const isTauri = vi.fn(() => true)
+type ProxyRequest = { requestId?: string }
+
+const httpProxyRequest = vi.fn<(request: ProxyRequest) => Promise<unknown>>()
+const invoke = vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>()
+const isTauri = vi.fn<() => boolean>(() => true)
 
 vi.mock('@tauri-apps/api/core', () => ({
-  Channel: vi.fn(),
-  invoke: (...args: unknown[]) => invoke(...args),
+  Channel: vi.fn<() => unknown>(),
+  invoke: (...args: unknown[]) =>
+    invoke(args[0] as string, args[1] as Record<string, unknown> | undefined),
 }))
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
-  httpProxyRequest: (...args: unknown[]) => httpProxyRequest(...args),
+  httpProxyRequest: (request: ProxyRequest) => httpProxyRequest(request),
   isTauri: () => isTauri(),
 }))
 
 vi.mock('vue-sonner', () => ({
   toast: {
-    error: vi.fn(),
+    error: vi.fn<() => void>(),
   },
 }))
 
@@ -32,7 +35,7 @@ describe('proxyFetch buffered abort', () => {
   it('cancels in-flight buffered requests and rejects with AbortError', async () => {
     const controller = new AbortController()
 
-    httpProxyRequest.mockImplementation((request: { requestId?: string }) => {
+    httpProxyRequest.mockImplementation((request) => {
       expect(request.requestId).toEqual(expect.any(String))
       return new Promise(() => {
         // Stay pending until cancelled; upstream cancel is what matters.

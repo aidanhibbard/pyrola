@@ -18,6 +18,12 @@ export type ConfigScope = 'personal' | 'project'
 
 export const getUserPyrolaDir = (): Promise<string> => call('get_user_pyrola_dir')
 
+export const readJsonFile = (path: string): Promise<unknown> =>
+  call('read_json_file', { path })
+
+export const writeJsonFile = (path: string, value: unknown): Promise<void> =>
+  call('write_json_file', { path, value })
+
 export const hasProjectPyrola = (rootPath: string): Promise<boolean> =>
   call('has_project_pyrola', { rootPath })
 
@@ -57,6 +63,24 @@ export const setSecret = (key: string, value: string): Promise<void> =>
   call('set_secret', { key, value })
 
 export const deleteSecret = (key: string): Promise<void> => call('delete_secret', { key })
+
+export const configExists = (
+  scope: ConfigScope,
+  rootPath?: string | null,
+): Promise<boolean> => call('config_exists', { scope, rootPath: rootPath ?? null })
+
+export type OAuthLoopbackStart = {
+  port: number
+  redirectUrl: string
+}
+
+export const openExternalUrl = (url: string): Promise<void> =>
+  call('open_external_url', { url })
+
+export const oauthBeginLoopback = (): Promise<OAuthLoopbackStart> =>
+  call('oauth_begin_loopback')
+
+export const oauthCancelLoopback = (): Promise<void> => call('oauth_cancel_loopback')
 
 export type FleetProjectRecord = {
   id: string
@@ -217,7 +241,14 @@ export type ChatMetaRecord = {
   mode: string
   model: string
   status: 'idle' | 'running'
-  attention?: 'needs_approval' | 'needs_input' | 'completed' | 'error' | null
+  attention?:
+    | 'needs_approval'
+    | 'needs_input'
+    | 'needs_mcp_auth'
+    | 'completed'
+    | 'error'
+    | null
+
   createdAt: string
   updatedAt: string
   forkedFrom: string | null

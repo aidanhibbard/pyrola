@@ -10,6 +10,7 @@ type DeriveAgentActivityArgs = {
   runningSubagents: SubagentTimelineItem[]
   hasPendingApproval?: boolean
   hasPendingQuestion?: boolean
+  hasPendingMcpAuth?: boolean
 }
 
 const waitForSubagentsLabel = (subagents: SubagentTimelineItem[]): string => {
@@ -46,6 +47,9 @@ export default (args: DeriveAgentActivityArgs): string | null => {
   }
   if (args.hasPendingQuestion) {
     return 'Waiting for your answer'
+  }
+  if (args.hasPendingMcpAuth) {
+    return 'Waiting for MCP authentication'
   }
 
   const isLive = args.status === 'streaming' || args.status === 'submitted'

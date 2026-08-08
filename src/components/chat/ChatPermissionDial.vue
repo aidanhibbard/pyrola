@@ -97,9 +97,9 @@ const cancelBypass = (): void => {
       <AlertDialogHeader>
         <AlertDialogTitle>Enable bypass mode?</AlertDialogTitle>
         <AlertDialogDescription>
-          Bypass mode skips all permission prompts. The agent will be able to write files,
-          run shell commands, and call MCP tools without asking for confirmation.
-          Only enable this if you trust the current task fully.
+          Bypass mode skips permission prompts for file writes, deletes, and git
+          writes. MCP tool calls still require approval. Only enable this if you
+          trust the current task fully.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>

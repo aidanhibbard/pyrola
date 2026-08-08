@@ -1,6 +1,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { FleetProject } from '@/types/fleet/fleet-project'
+import useMcpServers from '@/composables/use-mcp-servers'
+import { sessionTrusts } from '@/services/mcp/mcp-trust'
 import {
   getActiveProjectId,
   hasProjectPyrola,
@@ -56,6 +58,25 @@ export default () => {
   }
 
   const setActiveProject = async (projectId: string | null): Promise<void> => {
+    // Tear down project-scoped MCP before switching so tools do not keep the old cwd/env.
+    const mcp = useMcpServers()
+    const effective = mcp.listEffectiveMcpServers(
+      mcp.personalMcp.value,
+      mcp.projectMcp.value,
+    )
+    for (const server of effective) {
+      if (server.scope === 'project' || server.scope === 'overridden') {
+        try {
+          await mcp.stopServer(server.id, { quiet: true })
+        } catch (error) {
+          toast.error('Failed to stop project MCP server', {
+            description: error instanceof Error ? error.message : 'Unknown error',
+          })
+        }
+      }
+    }
+    sessionTrusts.clear()
+
     await registrySetActiveProject(projectId)
     activeProjectId.value = projectId
     await refreshHasPyrola()
