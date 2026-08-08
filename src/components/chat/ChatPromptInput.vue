@@ -334,7 +334,7 @@ watch(
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl flex-col">
+  <div class="mx-auto flex w-full max-w-xl flex-col">
     <DropdownMenu v-if="showProjectSelect">
       <DropdownMenuTrigger as-child>
         <Button
