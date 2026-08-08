@@ -38,6 +38,7 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 
-# Vitepress
-docs/.vitepress/dist
-docs/.vitepress/cache
+# VuePress
+docs/.vuepress/.temp
+docs/.vuepress/.cache
+docs/.vuepress/dist
