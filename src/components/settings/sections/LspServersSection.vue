@@ -29,7 +29,6 @@ import {
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
-import type { SettingsTab } from '@/composables/use-pyrola-config'
 import {
   isTauri,
   lspCatalog,
@@ -50,10 +49,6 @@ type LspStatusBadge = {
   className: string
 }
 
-const props = defineProps<{
-  tab: SettingsTab
-}>()
-
 const config = usePyrolaConfig()
 const fleet = useFleetRegistry()
 const catalog = ref<LspCatalogEntry[]>([])
@@ -63,7 +58,7 @@ const prefetching = ref(false)
 let unlistenInstall: (() => void) | null = null
 
 const autoDownload = computed(
-  () => config.getScopeSettings(props.tab)['lsp.autoDownload'] ?? true,
+  () => config.personalSettings.value['lsp.autoDownload'] ?? true,
 )
 
 const activeRoot = computed(() => fleet.activeProject.value?.rootPath ?? null)
@@ -104,7 +99,7 @@ const refreshCatalog = async (): Promise<void> => {
 
 const updateAutoDownload = async (value: boolean): Promise<void> => {
   try {
-    await config.updateSetting(props.tab, 'lsp.autoDownload', value)
+    await config.updateSetting('personal', 'lsp.autoDownload', value)
   } catch (error) {
     toast.error('Failed to save auto-download setting', {
       description: formatUnknownError(error),
@@ -261,12 +256,7 @@ const uninstallServer = async (serverId: string): Promise<void> => {
 const setDisabled = async (serverId: string, disabled: boolean): Promise<void> => {
   setBusy(serverId, true)
   try {
-    const rootPath = props.tab === 'project' ? activeRoot.value : null
-    if (props.tab === 'project' && !rootPath) {
-      toast.error('Open a project to change project language servers')
-      return
-    }
-    await lspSetServerDisabled(props.tab, serverId, disabled, rootPath)
+    await lspSetServerDisabled(serverId, disabled)
     await refreshCatalog()
     toast.success(disabled ? `Disabled ${serverId}` : `Enabled ${serverId}`)
   } catch (error) {
@@ -400,7 +390,7 @@ onUnmounted(() => {
         v-else
         class="text-sm text-muted-foreground"
       >
-        Language servers are always available. Install managed ones below, or disable a server for this scope.
+        Language servers are always available. Install managed ones below, or disable a server globally.
       </p>
 
       <div class="space-y-2">

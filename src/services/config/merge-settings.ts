@@ -75,7 +75,7 @@ export const removeSettingsKeys = (
   return next
 }
 
-export const PERSONAL_ONLY_PROJECT_KEY_PREFIXES = ['providers.', 'models.'] as const
+export const PERSONAL_ONLY_PROJECT_KEY_PREFIXES = ['providers.', 'models.', 'lsp.'] as const
 
 export const isPersonalOnlyProjectKey = (key: string): boolean =>
   PERSONAL_ONLY_PROJECT_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))

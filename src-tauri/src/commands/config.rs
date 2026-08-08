@@ -157,58 +157,31 @@ fn mcp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<P
   base_path(app, scope, root_path).map(|p| p.join("mcp.json"))
 }
 
-fn lsp_path(app: &AppHandle, scope: &str, root_path: Option<String>) -> Result<PathBuf, String> {
-  base_path(app, scope, root_path).map(|p| p.join("lsp.json"))
+fn lsp_path(app: &AppHandle) -> Result<PathBuf, String> {
+  user_pyrola_dir(app).map(|p| p.join("lsp.json"))
 }
 
-pub(crate) fn load_lsp_config(
-  app: &AppHandle,
-  scope: &str,
-  root_path: Option<String>,
-) -> Result<serde_json::Value, String> {
-  let path = lsp_path(app, scope, root_path)?;
+pub(crate) fn load_lsp_config(app: &AppHandle) -> Result<serde_json::Value, String> {
+  let path = lsp_path(app)?;
   read_json(&path)
 }
 
 pub(crate) fn write_lsp_config_internal(
   app: &AppHandle,
-  scope: &str,
-  root_path: Option<String>,
   config: serde_json::Value,
 ) -> Result<(), String> {
-  let path = lsp_path(app, scope, root_path)?;
+  let path = lsp_path(app)?;
   write_json(&path, config)
 }
 
 #[tauri::command]
-pub fn read_lsp_config(
-  app: AppHandle,
-  scope: String,
-  root_path: Option<String>,
-) -> Result<serde_json::Value, String> {
-  load_lsp_config(&app, &scope, root_path)
+pub fn read_lsp_config(app: AppHandle) -> Result<serde_json::Value, String> {
+  load_lsp_config(&app)
 }
 
 #[tauri::command]
-pub fn write_lsp_config(
-  app: AppHandle,
-  scope: String,
-  root_path: Option<String>,
-  config: serde_json::Value,
-) -> Result<(), String> {
-  write_lsp_config_internal(&app, &scope, root_path, config)
-}
-
-pub(crate) fn read_lsp_scope_configs(
-  app: &AppHandle,
-  project_root: Option<String>,
-) -> Result<(serde_json::Value, serde_json::Value), String> {
-  let personal = load_lsp_config(app, "personal", None)?;
-  let project = match project_root {
-    Some(root) => load_lsp_config(app, "project", Some(root))?,
-    None => serde_json::json!({}),
-  };
-  Ok((personal, project))
+pub fn write_lsp_config(app: AppHandle, config: serde_json::Value) -> Result<(), String> {
+  write_lsp_config_internal(&app, config)
 }
 
 pub(crate) fn read_settings_for_lsp(app: &AppHandle) -> Result<serde_json::Value, String> {

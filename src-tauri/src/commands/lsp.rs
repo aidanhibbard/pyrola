@@ -10,7 +10,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 
-use super::config::{read_lsp_scope_configs, workspace_is_trusted};
+use super::config::{load_lsp_config, workspace_is_trusted};
 use super::fs::{canonical_project_root, resolve_workspace_path};
 use super::lsp_install::{
   ensure_portable_node, ensure_server_installed, find_node_bin, install_source_label,
@@ -302,18 +302,6 @@ fn resolve_lsp_servers(raw: &serde_json::Value, base: Option<HashMap<String, Lsp
   base
 }
 
-fn merge_lsp_servers(
-  personal: &serde_json::Value,
-  project: &serde_json::Value,
-) -> Option<HashMap<String, LspServerEntry>> {
-  let personal_resolved = resolve_lsp_servers(personal, None)?;
-  if project.is_null() || project.as_object().is_some_and(|object| object.is_empty()) {
-    return Some(personal_resolved);
-  }
-
-  resolve_lsp_servers(project, Some(personal_resolved))
-}
-
 fn normalize_extension(extension: &str) -> String {
   let trimmed = extension.trim();
   if trimmed.is_empty() {
@@ -415,27 +403,14 @@ fn active_project_root(app: &AppHandle) -> Option<String> {
 }
 
 async fn load_effective_servers(app: &AppHandle) -> Result<HashMap<String, LspServerEntry>, String> {
-  let project_root = active_project_root(app);
-  let (personal, project) = read_lsp_scope_configs(app, project_root.clone())?;
+  let personal = load_lsp_config(app)?;
   let personal_effective = if personal.is_null() || personal.as_object().is_some_and(|o| o.is_empty()) {
     serde_json::json!(true)
   } else {
     personal
   };
 
-  let mut project_effective = project;
-  if !workspace_is_trusted(app, project_root.as_deref()) {
-    // Strip project-local command overrides until the workspace is trusted.
-    if let Some(object) = project_effective.as_object_mut() {
-      for value in object.values_mut() {
-        if let Some(entry) = value.as_object_mut() {
-          entry.remove("command");
-        }
-      }
-    }
-  }
-
-  merge_lsp_servers(&personal_effective, &project_effective).ok_or_else(|| {
+  resolve_lsp_servers(&personal_effective, None).ok_or_else(|| {
     "LSP disabled via lsp.json (set to false). Remove that override or enable individual servers."
       .to_string()
   })
@@ -1705,19 +1680,10 @@ fn apply_server_disabled_flag(
 #[tauri::command]
 pub async fn lsp_set_server_disabled(
   app: AppHandle,
-  scope: String,
-  root_path: Option<String>,
   server_id: String,
   disabled: bool,
 ) -> Result<(), String> {
-  if scope != "personal" && scope != "project" {
-    return Err("scope must be personal or project".to_string());
-  }
-  if scope == "project" && root_path.is_none() {
-    return Err("project scope requires rootPath".to_string());
-  }
-
-  let mut config = super::config::load_lsp_config(&app, &scope, root_path.clone())?;
+  let mut config = load_lsp_config(&app)?;
   if config.is_null() || config.is_boolean() {
     config = serde_json::json!({});
   }
@@ -1727,7 +1693,7 @@ pub async fn lsp_set_server_disabled(
 
   apply_server_disabled_flag(object, &server_id, disabled);
 
-  super::config::write_lsp_config_internal(&app, &scope, root_path, config)?;
+  super::config::write_lsp_config_internal(&app, config)?;
 
   if disabled {
     stop_server_internal(&server_id).await.ok();

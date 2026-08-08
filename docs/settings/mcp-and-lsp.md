@@ -16,12 +16,12 @@ Guide: [MCP](../guide/mcp.md).
 
 ## LSP
 
-Available under Personal and Project.
+Available under Personal only.
 
-- Open Settings, Personal or Project, LSP.
-- Language servers are always on. Install managed servers from the catalog, or disable individual servers for the current scope.
+- Open Settings, Personal, LSP.
+- Language servers are always on. Install managed servers from the catalog, or disable individual servers globally.
 - Auto-download installs default language support on project open (disable for airgapped machines).
-- Prefer project `lsp.json` overrides when a workspace needs different commands or disabled servers.
+- Config lives in the personal app-data `.pyrola/lsp.json`.
 
 Guide: [Workbench](../guide/workbench.md).
 

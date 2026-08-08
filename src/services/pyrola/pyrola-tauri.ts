@@ -54,11 +54,8 @@ export const writeMcpConfig = (
 ): Promise<void> =>
   call('write_mcp_config', { scope, config, rootPath: rootPath ?? null })
 
-export const readLspConfig = async (
-  scope: ConfigScope,
-  rootPath?: string | null,
-): Promise<Record<string, unknown> | boolean> => {
-  const raw = await call<unknown>('read_lsp_config', { scope, rootPath: rootPath ?? null })
+export const readLspConfig = async (): Promise<Record<string, unknown> | boolean> => {
+  const raw = await call<unknown>('read_lsp_config')
   const parsed = lspConfigSchema.safeParse(raw)
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid lsp.json')
@@ -67,15 +64,13 @@ export const readLspConfig = async (
 }
 
 export const writeLspConfig = async (
-  scope: ConfigScope,
   config: Record<string, unknown> | boolean,
-  rootPath?: string | null,
 ): Promise<void> => {
   const parsed = lspConfigSchema.safeParse(config)
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Invalid lsp.json')
   }
-  await call('write_lsp_config', { scope, config: parsed.data, rootPath: rootPath ?? null })
+  await call('write_lsp_config', { config: parsed.data })
 }
 
 export const watchPyrolaPaths = (projectRoot?: string | null): Promise<void> =>
@@ -666,14 +661,10 @@ export const lspUninstallServer = (serverId: string): Promise<void> =>
   call('lsp_uninstall_server', { serverId })
 
 export const lspSetServerDisabled = (
-  scope: ConfigScope,
   serverId: string,
   disabled: boolean,
-  rootPath?: string | null,
 ): Promise<void> =>
   call('lsp_set_server_disabled', {
-    scope,
     serverId,
     disabled,
-    rootPath: rootPath ?? null,
   })

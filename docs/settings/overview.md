@@ -8,13 +8,13 @@ General, Appearance, MCP, Providers, Models, LSP, Permissions, Plans, Skills, Ag
 
 ## Project sections
 
-MCP, LSP, Plans, Studio, Skills, Agents, Rules.
+MCP, Plans, Studio, Skills, Agents, Rules.
 
-Project values override or extend personal config for the active workspace. Personal-only keys (providers and similar) stay personal.
+Project values override or extend personal config for the active workspace. Personal-only keys (providers, models, LSP, and similar) stay personal.
 
 ## Where settings live
 
-- Personal config lives under the Pyrola app-data `.pyrola/` directory.
+- Personal config lives under the Pyrola app-data `.pyrola/` directory (including `lsp.json`).
 - Project config lives under `<project>/.pyrola/` (for example `settings.json`, `mcp.json`).
 - Provider secrets live in the OS keychain, not in plain settings JSON.
 
