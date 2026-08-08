@@ -129,7 +129,20 @@ const activeProjectName = computed(() => {
 
 const submitStatus = computed((): ChatStatus => props.status)
 
+const isWaitingOnReply = computed(
+  () => props.status === 'submitted' || props.status === 'streaming',
+)
+
 const isEditing = computed(() => chatStore.editingMessageId.value !== null)
+
+const promptInputClass = computed(() => {
+  const base =
+    'w-full [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:shadow-sm'
+  if (isWaitingOnReply.value) {
+    return base
+  }
+  return `${base} [&_[data-slot=input-group]]:border-border/50 [&_[data-slot=input-group]]:bg-background`
+})
 
 const promptWorkspaceRoot = computed((): string | null | undefined => {
   if (props.showProjectSelect) {
@@ -365,67 +378,69 @@ watch(
       </Button>
     </div>
 
-    <PromptInput
-      accept="image/*"
-      class="w-full [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-border/50 [&_[data-slot=input-group]]:bg-background [&_[data-slot=input-group]]:shadow-sm"
-      multiple
-      @submit="handleSubmit"
-    >
-      <PromptInputBody>
-        <ChatPromptEditSync />
-        <ChatPromptMentionSync />
-        <ChatPromptSkillSync />
-        <PromptInputTextarea
-          class="max-h-28 min-h-10 resize-none py-2.5"
-          placeholder="Plan, build, / for skills, @ for context"
-        />
-      </PromptInputBody>
-      <PromptInputFooter class="px-1 pb-1">
-        <PromptInputTools class="min-w-0 flex-1 gap-1">
-          <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger />
-            <PromptInputActionMenuContent>
-              <PromptInputActionAddAttachments label="Upload photos or files" />
-            </PromptInputActionMenuContent>
-          </PromptInputActionMenu>
-          <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger
-              size="sm"
-              class="shrink-0"
-              :title="`${selectedModeMeta.label} mode`"
-            >
-              <component :is="selectedModeMeta.icon" class="size-4 shrink-0" />
-              <span class="text-sm">{{ selectedModeMeta.label }}</span>
-            </PromptInputActionMenuTrigger>
-            <PromptInputActionMenuContent>
-              <PromptInputActionMenuItem
-                v-for="mode in CHAT_MODES"
-                :key="mode.value"
-                class="gap-2"
-                @select="handleModeSelect(mode.value)"
+    <div :class="isWaitingOnReply ? 'chat-prompt-aurora' : undefined">
+      <PromptInput
+        accept="image/*"
+        :class="promptInputClass"
+        multiple
+        @submit="handleSubmit"
+      >
+        <PromptInputBody>
+          <ChatPromptEditSync />
+          <ChatPromptMentionSync />
+          <ChatPromptSkillSync />
+          <PromptInputTextarea
+            class="max-h-28 min-h-10 resize-none py-2.5"
+            placeholder="Plan, build, / for skills, @ for context"
+          />
+        </PromptInputBody>
+        <PromptInputFooter class="px-1 pb-1">
+          <PromptInputTools class="min-w-0 flex-1 gap-1">
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger />
+              <PromptInputActionMenuContent>
+                <PromptInputActionAddAttachments label="Upload photos or files" />
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger
+                size="sm"
+                class="shrink-0"
+                :title="`${selectedModeMeta.label} mode`"
               >
-                <component :is="mode.icon" class="size-4 shrink-0" />
-                {{ mode.label }}
-              </PromptInputActionMenuItem>
-            </PromptInputActionMenuContent>
-          </PromptInputActionMenu>
-        </PromptInputTools>
-        <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
-          <ModelsSearchModelSearchPicker
-            :model-value="session.selectedModelRef"
-            compact
-            :disabled="!hasProviders || disabled"
-            placeholder="Select model"
-            @update:model-value="handleModelChange"
-          />
-          <PromptInputSubmit
-            class="ml-1 shrink-0"
-            :status="submitStatus"
-            :disabled="disabled && status !== 'streaming' && status !== 'submitted'"
-          />
-        </PromptInputTools>
-      </PromptInputFooter>
-    </PromptInput>
+                <component :is="selectedModeMeta.icon" class="size-4 shrink-0" />
+                <span class="text-sm">{{ selectedModeMeta.label }}</span>
+              </PromptInputActionMenuTrigger>
+              <PromptInputActionMenuContent>
+                <PromptInputActionMenuItem
+                  v-for="mode in CHAT_MODES"
+                  :key="mode.value"
+                  class="gap-2"
+                  @select="handleModeSelect(mode.value)"
+                >
+                  <component :is="mode.icon" class="size-4 shrink-0" />
+                  {{ mode.label }}
+                </PromptInputActionMenuItem>
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+          </PromptInputTools>
+          <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
+            <ModelsSearchModelSearchPicker
+              :model-value="session.selectedModelRef"
+              compact
+              :disabled="!hasProviders || disabled"
+              placeholder="Select model"
+              @update:model-value="handleModelChange"
+            />
+            <PromptInputSubmit
+              class="ml-1 shrink-0"
+              :status="submitStatus"
+              :disabled="disabled && status !== 'streaming' && status !== 'submitted'"
+            />
+          </PromptInputTools>
+        </PromptInputFooter>
+      </PromptInput>
+    </div>
     <div class="mt-1 flex items-center gap-2 px-1">
       <ChatPermissionDial
         :model-value="localPermissionLevel"

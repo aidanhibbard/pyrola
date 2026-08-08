@@ -46,21 +46,11 @@ const showActivity = computed(
   () => typeof props.activityLabel === 'string' && props.activityLabel.length > 0,
 )
 
-const toolsForDisplay = (tools: ToolRun[]): ToolRun[] => {
-  // Sticky activity owns the live verb; skip the spinner tool row while running.
-  if (!showActivity.value) {
-    return tools
-  }
-  return tools.filter(
-    (tool) => tool.name === 'spawn_subagent' || tool.status !== 'running',
-  )
-}
-
 const stepEntries = computed(() =>
   props.turn.steps.map((step, index) => ({
     step,
     index,
-    segments: segmentStepTools(toolsForDisplay(step.tools)),
+    segments: segmentStepTools(step.tools),
     hasSpawnSubagent: step.tools.some((tool) => tool.name === 'spawn_subagent'),
   })),
 )

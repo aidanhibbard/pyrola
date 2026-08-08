@@ -67,36 +67,14 @@ export default (args: DeriveAgentActivityArgs): string | null => {
     return waitForSubagentsLabel(blockingSubagents)
   }
 
+  // Tool rows own the live verb once a call exists. Only spawn needs a
+  // preamble before the sub-agent card appears.
   if (nonSpawnRunning.length > 0) {
-    return formatToolRunLabel(nonSpawnRunning[nonSpawnRunning.length - 1]!)
+    return null
   }
 
   if (spawnRunning.length > 0 && runningSubagents.length === 0) {
     return formatToolRunLabel(spawnRunning[spawnRunning.length - 1]!)
-  }
-
-  if (isLive && args.turn) {
-    const lastStep = args.turn.steps.at(-1)
-    if (lastStep) {
-      const hasText =
-        lastStep.text.trim().length > 0 || args.turn.text.trim().length > 0
-      const hasReasoning = lastStep.reasoning.trim().length > 0
-      if (
-        hasText &&
-        lastStep.tools.length === 0 &&
-        backgroundSubagents.length === 0
-      ) {
-        return 'Writing'
-      }
-      if (
-        hasReasoning &&
-        !hasText &&
-        lastStep.tools.length === 0 &&
-        backgroundSubagents.length === 0
-      ) {
-        return 'Thinking'
-      }
-    }
   }
 
   if (backgroundSubagents.length > 0) {
@@ -112,20 +90,19 @@ export default (args: DeriveAgentActivityArgs): string | null => {
   }
 
   const lastStep = args.turn.steps.at(-1)
-  if (
-    lastStep &&
-    lastStep.reasoning.trim().length > 0 &&
-    lastStep.text.trim().length === 0 &&
-    lastStep.tools.length === 0
-  ) {
-    return 'Thinking'
+  if (!lastStep) {
+    return 'Working'
   }
-  if (
-    lastStep &&
-    (lastStep.text.trim().length > 0 || args.turn.text.trim().length > 0) &&
-    lastStep.tools.length === 0
-  ) {
-    return 'Writing'
+
+  const hasText =
+    lastStep.text.trim().length > 0 || args.turn.text.trim().length > 0
+  const hasReasoning = lastStep.reasoning.trim().length > 0
+  const hasTools = lastStep.tools.length > 0
+
+  // Preamble only: once text, reasoning, or tools are visible, drop the label.
+  if (hasText || hasReasoning || hasTools) {
+    return null
   }
-  return 'Thinking'
+
+  return 'Writing'
 }

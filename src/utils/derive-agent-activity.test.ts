@@ -82,7 +82,7 @@ describe('deriveAgentActivity', () => {
     ).toBe('Waiting for Reading auth')
   })
 
-  it('prefers a parent tool over background subagent wait', () => {
+  it('hides sticky activity while a parent tool is running', () => {
     expect(
       deriveAgentActivity({
         status: 'streaming',
@@ -111,7 +111,7 @@ describe('deriveAgentActivity', () => {
           }),
         ],
       }),
-    ).toBe('Editing src/a.ts…')
+    ).toBeNull()
   })
 
   it('waits for background subagents when parent is ready', () => {
@@ -147,7 +147,7 @@ describe('deriveAgentActivity', () => {
     ).toBe('Waiting for Scanning permissions')
   })
 
-  it('shows Writing plan while create_plan is running', () => {
+  it('hides sticky activity while create_plan is running', () => {
     expect(
       deriveAgentActivity({
         status: 'streaming',
@@ -170,7 +170,7 @@ describe('deriveAgentActivity', () => {
         }),
         runningSubagents: [],
       }),
-    ).toBe('Writing plan…')
+    ).toBeNull()
   })
 
   it('shows Working before first content', () => {
@@ -181,6 +181,92 @@ describe('deriveAgentActivity', () => {
         runningSubagents: [],
       }),
     ).toBe('Working')
+  })
+
+  it('shows Writing only before the first text tokens', () => {
+    expect(
+      deriveAgentActivity({
+        status: 'streaming',
+        turn: turn({
+          steps: [
+            {
+              id: 'step-1',
+              text: '',
+              reasoning: '',
+              tools: [],
+            },
+          ],
+          text: '',
+        }),
+        runningSubagents: [],
+      }),
+    ).toBe('Working')
+
+    expect(
+      deriveAgentActivity({
+        status: 'streaming',
+        turn: turn({
+          steps: [
+            {
+              id: 'step-1',
+              text: '',
+              reasoning: '',
+              tools: [
+                {
+                  toolCallId: 't0',
+                  name: 'read_file',
+                  status: 'done',
+                  args: { path: 'a.ts' },
+                },
+              ],
+            },
+            {
+              id: 'step-2',
+              text: '',
+              reasoning: '',
+              tools: [],
+            },
+          ],
+        }),
+        runningSubagents: [],
+      }),
+    ).toBe('Writing')
+
+    expect(
+      deriveAgentActivity({
+        status: 'streaming',
+        turn: turn({
+          steps: [
+            {
+              id: 'step-1',
+              text: 'The backend manages a',
+              reasoning: '',
+              tools: [],
+            },
+          ],
+        }),
+        runningSubagents: [],
+      }),
+    ).toBeNull()
+  })
+
+  it('hides sticky activity once reasoning is visible', () => {
+    expect(
+      deriveAgentActivity({
+        status: 'streaming',
+        turn: turn({
+          steps: [
+            {
+              id: 'step-1',
+              text: '',
+              reasoning: 'Considering the request…',
+              tools: [],
+            },
+          ],
+        }),
+        runningSubagents: [],
+      }),
+    ).toBeNull()
   })
 
   it('shows Starting while spawn is running before subagent-start', () => {
