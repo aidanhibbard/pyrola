@@ -7,6 +7,7 @@ import * as monaco from 'monaco-editor'
 import {
   fsReadFile,
   fsWriteFile,
+  gitShowFile,
   isTauri,
   lspEnsureServer,
   lspRequest,
@@ -58,6 +59,7 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
 
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
+let diffEditor: monaco.editor.IStandaloneDiffEditor | null = null
 let editorInitializing = false
 let resizeObserver: ResizeObserver | null = null
 let contentChangeDisposable: monaco.IDisposable | null = null
@@ -66,6 +68,7 @@ let unlistenDiagnostics: (() => void) | null = null
 let stopThemeObserver: (() => void) | null = null
 let lspProvidersRegistered = false
 const models = new Map<string, monaco.editor.ITextModel>()
+const originalModels = new Map<string, monaco.editor.ITextModel>()
 const pathByModel = new Map<monaco.editor.ITextModel, string>()
 const lspServerByPath = new Map<string, string>()
 const dirtyByPath = new Map<string, boolean>()
@@ -80,6 +83,12 @@ const wordWrapOption = computed((): 'on' | 'off' =>
   props.wordWrap === true ? 'on' : 'off',
 )
 
+const projectRoot = computed(
+  () => workbench.getProject(props.projectId)?.rootPath ?? null,
+)
+
+const hasActiveEditor = (): boolean => editor !== null || diffEditor !== null
+
 const formatError = (error: unknown): string => {
   if (error instanceof Error) {
     return error.message
@@ -92,14 +101,236 @@ const formatError = (error: unknown): string => {
 
 const layoutEditor = (): void => {
   editor?.layout()
+  diffEditor?.layout()
 }
 
 const hasEditorDimensions = (element: HTMLElement): boolean =>
   element.clientWidth > 0 && element.clientHeight > 0
 
-const initializeEditor = async (): Promise<boolean> => {
-  if (!containerRef.value || editor || editorInitializing) {
+const ensureLanguageRegistered = (languageId: string): void => {
+  if (
+    languageId !== 'plaintext' &&
+    !monaco.languages.getLanguages().some((language) => language.id === languageId)
+  ) {
+    monaco.languages.register({ id: languageId })
+  }
+}
+
+const prepareMonacoEnvironment = (): void => {
+  ensureMonacoBaseThemes(monaco)
+  applyMonacoTheme(monaco)
+
+  stopThemeObserver?.()
+  stopThemeObserver = observeMonacoTheme(monaco, layoutEditor)
+
+  // Silence Monaco's built-in TypeScript worker diagnostics. The bundled
+  // tsserver worker does not understand Vue SFC or Vite CSS module imports,
+  // so it produces false positives (e.g. "Cannot find module './App.vue'")
+  // that Cursor/Volar do not show. Accurate diagnostics come from the
+  // external LSP (Volar) when `lsp.enabled` is on.
+  const tsLang = monaco.languages.typescript as unknown as {
+    typescriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
+    javascriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
+  }
+  tsLang.typescriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+  })
+  tsLang.javascriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+  })
+}
+
+const disposeCodeEditor = (): void => {
+  contentChangeDisposable?.dispose()
+  contentChangeDisposable = null
+  editor?.dispose()
+  editor = null
+}
+
+const disposeDiffEditorInstance = (): void => {
+  diffEditor?.setModel(null)
+  diffEditor?.dispose()
+  diffEditor = null
+}
+
+const disposeOriginalModels = (): void => {
+  for (const model of originalModels.values()) {
+    model.dispose()
+  }
+  originalModels.clear()
+}
+
+const getOrCreateOriginalModel = async (
+  path: string,
+): Promise<monaco.editor.ITextModel> => {
+  const root = projectRoot.value
+  if (!root) {
+    throw new Error('Project not found')
+  }
+
+  let content = ''
+  try {
+    const result = await gitShowFile({ projectRoot: root, path })
+    content = result.content
+  } catch (error) {
+    toast.error('Failed to load HEAD version', {
+      description: formatError(error),
+    })
+  }
+
+  const existing = originalModels.get(path)
+  if (existing) {
+    if (existing.getValue() !== content) {
+      existing.setValue(content)
+    }
+    return existing
+  }
+
+  const languageId = detectMonacoLanguage(path)
+  ensureLanguageRegistered(languageId)
+  const uri = monaco.Uri.parse(`pyrola-git-head://${encodeURIComponent(path)}`)
+  const model = monaco.editor.createModel(content, languageId, uri)
+  originalModels.set(path, model)
+  ensureMonacoLanguage(monaco, languageId).catch(() => {
+    // Highlighting is best-effort; the model already has content.
+  })
+  return model
+}
+
+const attachDiffModels = async (path: string): Promise<void> => {
+  const activeDiff = diffEditor
+  if (!activeDiff) {
+    return
+  }
+
+  const [original, modified] = await Promise.all([
+    getOrCreateOriginalModel(path),
+    getOrCreateModel(path, { allowMissing: true }),
+  ])
+
+  if (diffEditor !== activeDiff) {
+    return
+  }
+
+  activeDiff.setModel({ original, modified })
+  layoutEditor()
+}
+
+const createCodeEditorInstance = async (): Promise<boolean> => {
+  if (!containerRef.value || editor || diffEditor) {
     return editor !== null
+  }
+
+  const created = monaco.editor.create(containerRef.value, {
+    ...resolveMonacoEditorOptions(),
+    automaticLayout: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    lineNumbers: lineNumbersOption.value,
+    wordWrap: wordWrapOption.value,
+  })
+  editor = created
+
+  created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    save().catch((error) => {
+      toast.error('Failed to save file', {
+        description: formatError(error),
+      })
+    })
+  })
+
+  if (props.path) {
+    await attachModel(props.path)
+  }
+
+  return editor === created
+}
+
+const createDiffEditorInstance = async (): Promise<boolean> => {
+  if (!containerRef.value || editor || diffEditor) {
+    return diffEditor !== null
+  }
+
+  const created = monaco.editor.createDiffEditor(containerRef.value, {
+    ...resolveMonacoEditorOptions(),
+    automaticLayout: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    lineNumbers: lineNumbersOption.value,
+    wordWrap: wordWrapOption.value,
+    readOnly: true,
+    originalEditable: false,
+    renderSideBySide: true,
+  })
+  diffEditor = created
+
+  if (props.path) {
+    await attachDiffModels(props.path)
+  }
+
+  return diffEditor === created
+}
+
+const switchToDiffView = async (): Promise<void> => {
+  if (diffEditor) {
+    if (props.path) {
+      await attachDiffModels(props.path)
+    }
+    return
+  }
+
+  disposeCodeEditor()
+  prepareMonacoEnvironment()
+  const created = await createDiffEditorInstance()
+  if (!created) {
+    return
+  }
+
+  try {
+    await ensureMonacoShiki(monaco)
+    if (diffEditor) {
+      applyMonacoTheme(monaco)
+    }
+  } catch (error) {
+    toast.error('Syntax highlighting unavailable', {
+      description: formatError(error),
+    })
+  }
+}
+
+const switchToCodeView = async (): Promise<void> => {
+  if (editor) {
+    if (props.path) {
+      await attachModel(props.path)
+    }
+    return
+  }
+
+  disposeDiffEditorInstance()
+  disposeOriginalModels()
+  prepareMonacoEnvironment()
+  const created = await createCodeEditorInstance()
+  if (!created) {
+    return
+  }
+
+  try {
+    await ensureMonacoShiki(monaco)
+    if (editor) {
+      applyMonacoTheme(monaco)
+    }
+  } catch (error) {
+    toast.error('Syntax highlighting unavailable', {
+      description: formatError(error),
+    })
+  }
+}
+
+const initializeEditor = async (): Promise<boolean> => {
+  if (!containerRef.value || hasActiveEditor() || editorInitializing) {
+    return hasActiveEditor()
   }
 
   if (!hasEditorDimensions(containerRef.value)) {
@@ -108,61 +339,21 @@ const initializeEditor = async (): Promise<boolean> => {
 
   editorInitializing = true
   try {
-    ensureMonacoBaseThemes(monaco)
-    applyMonacoTheme(monaco)
-
-    stopThemeObserver?.()
-    stopThemeObserver = observeMonacoTheme(monaco, layoutEditor)
-
-    // Silence Monaco's built-in TypeScript worker diagnostics. The bundled
-    // tsserver worker does not understand Vue SFC or Vite CSS module imports,
-    // so it produces false positives (e.g. "Cannot find module './App.vue'")
-    // that Cursor/Volar do not show. Accurate diagnostics come from the
-    // external LSP (Volar) when `lsp.enabled` is on.
-    const tsLang = monaco.languages.typescript as unknown as {
-      typescriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
-      javascriptDefaults: { setDiagnosticsOptions(opts: { noSemanticValidation: boolean; noSyntaxValidation: boolean }): void }
-    }
-    tsLang.typescriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: true,
-    })
-    tsLang.javascriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: true,
-    })
+    prepareMonacoEnvironment()
 
     // Create the editor synchronously first so opening a file never waits on
     // Shiki and cannot race setModel against a null editor.
-    const created = monaco.editor.create(containerRef.value, {
-      ...resolveMonacoEditorOptions(),
-      automaticLayout: true,
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      lineNumbers: lineNumbersOption.value,
-      wordWrap: wordWrapOption.value,
-    })
-    editor = created
+    const created = props.diffView
+      ? await createDiffEditorInstance()
+      : await createCodeEditorInstance()
 
-    created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      save().catch((error) => {
-        toast.error('Failed to save file', {
-          description: formatError(error),
-        })
-      })
-    })
-
-    if (props.path) {
-      await attachModel(props.path)
-    }
-
-    if (editor !== created) {
+    if (!created) {
       return false
     }
 
     try {
       await ensureMonacoShiki(monaco)
-      if (editor === created) {
+      if (hasActiveEditor()) {
         applyMonacoTheme(monaco)
       }
     } catch (error) {
@@ -171,7 +362,7 @@ const initializeEditor = async (): Promise<boolean> => {
       })
     }
 
-    return editor === created
+    return hasActiveEditor()
   } catch (error) {
     toast.error('Failed to initialize editor', {
       description: formatError(error),
@@ -191,15 +382,13 @@ const tryInitializeEditor = (): void => {
 }
 
 const syncEditorViewOptions = (): void => {
-  editor?.updateOptions({
+  const options = {
     lineNumbers: lineNumbersOption.value,
     wordWrap: wordWrapOption.value,
-  })
+  }
+  editor?.updateOptions(options)
+  diffEditor?.updateOptions(options)
 }
-
-const projectRoot = computed(
-  () => workbench.getProject(props.projectId)?.rootPath ?? null,
-)
 
 const setPathDirty = (path: string, dirty: boolean): void => {
   const wasDirty = dirtyByPath.get(path) ?? false
@@ -509,26 +698,45 @@ const registerLspProviders = (): void => {
   )
 }
 
-const getOrCreateModel = async (path: string): Promise<monaco.editor.ITextModel> => {
+const getOrCreateModel = async (
+  path: string,
+  options?: { allowMissing?: boolean },
+): Promise<monaco.editor.ITextModel> => {
   const existing = models.get(path)
-  if (existing) {
-    return existing
-  }
-
   const root = projectRoot.value
   if (!root) {
     throw new Error('Project not found')
   }
 
-  const result = await fsReadFile({ projectRoot: root, path })
-  const languageId = detectMonacoLanguage(path)
-  if (
-    languageId !== 'plaintext' &&
-    !monaco.languages.getLanguages().some((language) => language.id === languageId)
-  ) {
-    monaco.languages.register({ id: languageId })
+  if (existing) {
+    if (options?.allowMissing && !isPathDirty(path)) {
+      try {
+        const result = await fsReadFile({ projectRoot: root, path })
+        if (existing.getValue() !== result.content) {
+          existing.setValue(result.content)
+        }
+      } catch {
+        if (existing.getValue() !== '') {
+          existing.setValue('')
+        }
+      }
+    }
+    return existing
   }
-  const model = monaco.editor.createModel(result.content, languageId)
+
+  let content = ''
+  try {
+    const result = await fsReadFile({ projectRoot: root, path })
+    content = result.content
+  } catch (error) {
+    if (!options?.allowMissing) {
+      throw error
+    }
+  }
+
+  const languageId = detectMonacoLanguage(path)
+  ensureLanguageRegistered(languageId)
+  const model = monaco.editor.createModel(content, languageId)
   models.set(path, model)
   pathByModel.set(model, path)
 
@@ -584,6 +792,17 @@ const disposeModel = (path: string): void => {
     editor.setModel(null)
   }
 
+  const diffModel = diffEditor?.getModel()
+  if (diffModel?.modified === model) {
+    diffEditor?.setModel(null)
+  }
+
+  const original = originalModels.get(path)
+  if (original) {
+    original.dispose()
+    originalModels.delete(path)
+  }
+
   pathByModel.delete(model)
   model.dispose()
   models.delete(path)
@@ -601,7 +820,7 @@ const syncOpenModels = (openPaths: string[]): void => {
 const save = async (targetPath?: string): Promise<boolean> => {
   const root = projectRoot.value
   const path = targetPath ?? props.path
-  if (!root || !path || !editor || saving.value) {
+  if (!root || !path || !editor || props.diffView || saving.value) {
     return false
   }
 
@@ -660,7 +879,7 @@ onMounted(() => {
 
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
-      if (!editor) {
+      if (!hasActiveEditor()) {
         tryInitializeEditor()
         return
       }
@@ -671,9 +890,29 @@ onMounted(() => {
 })
 
 watch(
+  () => props.diffView === true,
+  (enabled) => {
+    const switchView = enabled ? switchToDiffView : switchToCodeView
+    switchView().catch((error) => {
+      toast.error(enabled ? 'Failed to open diff view' : 'Failed to open editor', {
+        description: formatError(error),
+      })
+    })
+  },
+)
+
+watch(
   () => props.path,
   (path, previousPath) => {
     if (!path || path === previousPath) {
+      return
+    }
+    if (props.diffView) {
+      attachDiffModels(path).catch((error) => {
+        toast.error('Failed to load diff', {
+          description: formatError(error),
+        })
+      })
       return
     }
     attachModel(path).catch((error) => {
@@ -744,8 +983,9 @@ onBeforeUnmount(() => {
   dirtyByPath.clear()
   resizeObserver?.disconnect()
   resizeObserver = null
-  editor?.dispose()
-  editor = null
+  disposeDiffEditorInstance()
+  disposeOriginalModels()
+  disposeCodeEditor()
 })
 
 defineExpose({

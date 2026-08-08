@@ -8,6 +8,7 @@ export type WorkbenchTabType =
 export type EditorPayload = {
   path: string
   openPaths: string[]
+  diffView?: boolean
 }
 
 export type TerminalPayload = {

@@ -88,7 +88,6 @@ const isNavigatingHistory = ref(false)
 const pathHistory = ref<string[]>([])
 const historyIndex = ref(-1)
 
-const diffView = ref(false)
 const lspEnabled = computed({
   get: () => config.effectiveSettings.value['lsp.enabled'] ?? false,
   set: (value: boolean) => {
@@ -105,6 +104,12 @@ const autoSave = ref(false)
 const formatOnSave = ref(false)
 
 const editorPayload = computed(() => props.tab.payload as EditorPayload)
+
+const diffView = computed(() => editorPayload.value.diffView === true)
+
+const handleToggleDiffView = (): void => {
+  workbench.setEditorDiffView(props.tab.id, !diffView.value)
+}
 
 const openPaths = computed(() => {
   const payload = editorPayload.value
@@ -658,7 +663,7 @@ watch(
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel>View</DropdownMenuLabel>
-                      <DropdownMenuItem @click="diffView = !diffView">
+                      <DropdownMenuItem @click="handleToggleDiffView">
                         <GitCompareArrows class="mr-2 h-4 w-4" />
                         Diff View
                         <Check v-if="diffView" class="ml-auto h-4 w-4" />

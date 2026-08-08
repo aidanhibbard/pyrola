@@ -195,6 +195,13 @@ pub struct GitDiffResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitShowFileResult {
+  pub content: String,
+  pub exists: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitLogEntry {
   pub hash: String,
   pub subject: String,
@@ -326,6 +333,63 @@ pub async fn git_diff(
 
   let diff = run_git_async(&project_root, &args).await?;
   Ok(GitDiffResult { diff })
+}
+
+#[tauri::command]
+pub async fn git_show_file(
+  project_root: String,
+  path: String,
+) -> Result<GitShowFileResult, String> {
+  if !is_git_repo(&project_root) {
+    return Err("Not a git repository".to_string());
+  }
+
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("Path is required".to_string());
+  }
+  if trimmed.contains('\0') || trimmed.starts_with('-') {
+    return Err("Invalid path".to_string());
+  }
+
+  // Do not trim file content: trailing newlines matter for accurate diffs.
+  let spec = format!("HEAD:{trimmed}");
+  let output = AsyncCommand::new("git")
+    .arg("-C")
+    .arg(&project_root)
+    .args(["show", &spec])
+    .output()
+    .await
+    .map_err(|error| format!("Failed to run git: {error}"))?;
+
+  if output.status.success() {
+    return Ok(GitShowFileResult {
+      content: String::from_utf8_lossy(&output.stdout).to_string(),
+      exists: true,
+    });
+  }
+
+  let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+  if stderr.contains("does not exist")
+    || stderr.contains("exists on disk")
+    || stderr.contains("bad revision")
+    || stderr.contains("invalid object name")
+  {
+    return Ok(GitShowFileResult {
+      content: String::new(),
+      exists: false,
+    });
+  }
+
+  let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+  if message.is_empty() {
+    Err(format!(
+      "git show failed with status {}",
+      output.status
+    ))
+  } else {
+    Err(message)
+  }
 }
 
 #[tauri::command]

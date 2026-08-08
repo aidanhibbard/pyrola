@@ -1,104 +1,152 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { Input } from '@/components/shadcn/ui/input'
+import WorkbenchFileTreeGitLetter from '@/components/workbench/FileTreeGitLetter.vue'
+import useGitStatus from '@/composables/use-git-status'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import { gitStatus } from '@/services/pyrola/pyrola-tauri'
+import { cn } from '@/lib/utils'
+import type { GitFileDecoration } from '@/types/git/git-file-decoration'
 import type { GitStatusEntry } from '@/types/git/git-status-entry'
 import type { WorkbenchTab } from '@/types/workbench/workbench-tab'
+import {
+  decorationFromEntry,
+  decorationLabel,
+  decorationNameClass,
+} from '@/utils/git-file-decoration'
+
+type ChangeRow = {
+  entry: GitStatusEntry
+  decoration: GitFileDecoration
+}
 
 const props = defineProps<{
   tab: WorkbenchTab
 }>()
 
 const workbench = useWorkbenchStore()
-const branch = ref<string | null>(null)
-const entries = ref<GitStatusEntry[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
+const query = ref('')
 
 const projectRoot = computed(() => workbench.getProject(props.tab.projectId)?.rootPath ?? null)
+const isActive = computed(() => workbench.activeTabId.value === props.tab.id)
 
-const loadStatus = async (): Promise<void> => {
-  const root = projectRoot.value
-  if (!root) {
-    entries.value = []
-    branch.value = null
+const {
+  entries,
+  branch,
+  pending,
+  error,
+  refresh,
+} = useGitStatus(projectRoot)
+
+const changeEntries = computed((): ChangeRow[] => {
+  const rows: ChangeRow[] = []
+  for (const entry of entries.value) {
+    if (entry.isIgnored) {
+      continue
+    }
+    const decoration = decorationFromEntry(entry)
+    if (!decoration) {
+      continue
+    }
+    rows.push({ entry, decoration })
+  }
+  return rows
+})
+
+const filteredEntries = computed(() => {
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) {
+    return changeEntries.value
+  }
+  return changeEntries.value.filter((row) =>
+    row.entry.path.toLowerCase().includes(needle),
+  )
+})
+
+const handleOpenDiff = async (path: string): Promise<void> => {
+  try {
+    await workbench.openDiff(props.tab.projectId, path)
+  } catch (err) {
+    toast.error('Failed to open diff', {
+      description: err instanceof Error ? err.message : 'Unknown error',
+    })
+  }
+}
+
+const refreshWhenActive = async (): Promise<void> => {
+  if (!isActive.value) {
     return
   }
-
-  loading.value = true
-  error.value = null
   try {
-    const result = await gitStatus(root)
-    branch.value = result.branch
-    entries.value = (result.entries ?? []).filter((entry) => !entry.isIgnored)
+    await refresh()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load git status'
-    entries.value = []
-    branch.value = null
-  } finally {
-    loading.value = false
-  }
-}
-
-const formatStatus = (entry: GitStatusEntry): string => {
-  if (entry.isIgnored) {
-    return '!!'
-  }
-  if (entry.isUntracked) {
-    return '??'
-  }
-  const staged = entry.stagedStatus ?? ' '
-  const unstaged = entry.unstagedStatus ?? ' '
-  return `${staged}${unstaged}`
-}
-
-const handleOpenDiff = (path: string): void => {
-  workbench.openEditor(props.tab.projectId, path)
-}
-
-onMounted(() => {
-  loadStatus().catch((err) => {
     toast.error('Failed to load changes', {
       description: err instanceof Error ? err.message : 'Unknown error',
     })
-  })
-})
+  }
+}
 
-watch(projectRoot, () => {
-  loadStatus().catch((err) => {
-    toast.error('Failed to load changes', {
-      description: err instanceof Error ? err.message : 'Unknown error',
+watch(
+  isActive,
+  (active) => {
+    if (!active) {
+      return
+    }
+    refreshWhenActive().catch((err) => {
+      toast.error('Failed to load changes', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
     })
-  })
-})
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-y-auto p-4 text-sm">
-    <div class="mb-4 flex items-center justify-between gap-2">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden p-4 text-sm">
+    <div class="mb-3 flex items-center justify-between gap-2">
       <div>
         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Local</p>
         <p class="font-medium">{{ branch ?? 'No branch' }}</p>
       </div>
     </div>
 
-    <p v-if="loading" class="text-muted-foreground">Loading git status…</p>
-    <p v-else-if="error" class="text-destructive">{{ error }}</p>
-    <p v-else-if="entries.length === 0" class="text-muted-foreground">No uncommitted changes</p>
+    <Input
+      v-model="query"
+      type="search"
+      placeholder="Search changes…"
+      class="mb-3 h-8"
+      aria-label="Search changed files"
+    />
 
-    <ul v-else class="space-y-1">
-      <li
-        v-for="entry in entries"
-        :key="entry.path"
-        class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/50"
-        @click="handleOpenDiff(entry.path)"
-      >
-        <span class="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-          {{ formatStatus(entry) }}
-        </span>
-        <span class="truncate">{{ entry.path }}</span>
-      </li>
-    </ul>
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <p v-if="pending && changeEntries.length === 0" class="text-muted-foreground">
+        Loading git status…
+      </p>
+      <p v-else-if="error" class="text-destructive">{{ error }}</p>
+      <p v-else-if="changeEntries.length === 0" class="text-muted-foreground">
+        No uncommitted changes
+      </p>
+      <p v-else-if="filteredEntries.length === 0" class="text-muted-foreground">
+        No matching changes
+      </p>
+
+      <ul v-else class="space-y-1">
+        <li
+          v-for="row in filteredEntries"
+          :key="row.entry.path"
+          class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-accent/50"
+          :title="decorationLabel(row.decoration)"
+          @click="handleOpenDiff(row.entry.path)"
+        >
+          <WorkbenchFileTreeGitLetter :status="row.decoration" />
+          <span
+            :class="cn('min-w-0 flex-1 truncate', decorationNameClass(row.decoration))"
+          >
+            {{ row.entry.path }}
+          </span>
+        </li>
+      </ul>
+    </div>
   </div>
 </template>

@@ -478,6 +478,12 @@ export const gitDiff = (args: {
   staged?: boolean
 }): Promise<{ diff: string }> => call('git_diff', args)
 
+export const gitShowFile = (args: {
+  projectRoot: string
+  path: string
+}): Promise<{ content: string; exists: boolean }> =>
+  call('git_show_file', args)
+
 export const gitLog = (
   projectRoot: string,
   limit?: number,

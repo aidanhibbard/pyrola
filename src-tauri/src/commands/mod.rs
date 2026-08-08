@@ -30,7 +30,7 @@ pub use fs::{
 };
 pub use git::{
   git_branch_create, git_checkout_branch, git_commit, git_diff, git_list_branches, git_log,
-  git_repo_info, git_status,
+  git_repo_info, git_show_file, git_status,
 };
 pub use glob::workspace_glob;
 pub use grep::workspace_grep;

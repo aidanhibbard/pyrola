@@ -121,10 +121,14 @@ const normalizeEditorPayload = (payload: EditorPayload): EditorPayload => {
         ? [payload.path]
         : []
   const path = openPaths.includes(payload.path) ? payload.path : (openPaths[0] ?? '')
-  return { path, openPaths }
+  return {
+    path,
+    openPaths,
+    ...(payload.diffView === true ? { diffView: true } : {}),
+  }
 }
 
-const addEditorFile = (tabId: string, path: string): void => {
+const addEditorFile = (tabId: string, path: string, diffView?: boolean): void => {
   const tab = tabs.value.find((item) => item.id === tabId)
   if (!tab || tab.type !== 'editor') {
     return
@@ -133,10 +137,15 @@ const addEditorFile = (tabId: string, path: string): void => {
   const payload = normalizeEditorPayload(tab.payload as EditorPayload)
   const openPaths = payload.openPaths.includes(path) ? payload.openPaths : [...payload.openPaths, path]
   const fileName = path.split('/').pop() ?? path
+  const nextDiffView = diffView === true
 
   updateTab(tabId, {
     label: fileName,
-    payload: { path, openPaths } satisfies EditorPayload,
+    payload: {
+      path,
+      openPaths,
+      ...(nextDiffView ? { diffView: true } : {}),
+    } satisfies EditorPayload,
   })
 }
 
@@ -154,7 +163,27 @@ const setEditorActivePath = (tabId: string, path: string): void => {
   const fileName = path.split('/').pop() ?? path
   updateTab(tabId, {
     label: fileName,
-    payload: { path, openPaths: payload.openPaths } satisfies EditorPayload,
+    payload: {
+      path,
+      openPaths: payload.openPaths,
+      ...(payload.diffView === true ? { diffView: true } : {}),
+    } satisfies EditorPayload,
+  })
+}
+
+const setEditorDiffView = (tabId: string, diffView: boolean): void => {
+  const tab = tabs.value.find((item) => item.id === tabId)
+  if (!tab || tab.type !== 'editor') {
+    return
+  }
+
+  const payload = normalizeEditorPayload(tab.payload as EditorPayload)
+  updateTab(tabId, {
+    payload: {
+      path: payload.path,
+      openPaths: payload.openPaths,
+      ...(diffView ? { diffView: true } : {}),
+    } satisfies EditorPayload,
   })
 }
 
@@ -182,7 +211,11 @@ const closeEditorFile = async (tabId: string, path: string): Promise<void> => {
 
   updateTab(tabId, {
     label: fileName,
-    payload: { path: nextPath, openPaths } satisfies EditorPayload,
+    payload: {
+      path: nextPath,
+      openPaths,
+      ...(payload.diffView === true ? { diffView: true } : {}),
+    } satisfies EditorPayload,
   })
 }
 
@@ -273,7 +306,7 @@ const openEditor = async (projectId: string, path = ''): Promise<void> => {
 
   if (existing) {
     if (path) {
-      addEditorFile(existing.id, path)
+      addEditorFile(existing.id, path, false)
     }
     focusTab(existing.id)
     return
@@ -287,6 +320,35 @@ const openEditor = async (projectId: string, path = ''): Promise<void> => {
     projectId,
     label: fileName,
     payload: { path: path || '', openPaths } satisfies EditorPayload,
+  }
+  tabs.value.push(tab)
+  focusTab(tab.id)
+}
+
+const openDiff = async (projectId: string, path: string): Promise<void> => {
+  if (!path) {
+    return
+  }
+
+  if (isHomeChatSlug(projectId)) {
+    await ensureHomeRoot()
+  }
+
+  const predicate = (tab: WorkbenchTab) => tab.type === 'editor' && tab.projectId === projectId
+  const existing = findTab(predicate)
+
+  if (existing) {
+    addEditorFile(existing.id, path, true)
+    focusTab(existing.id)
+    return
+  }
+
+  const tab: WorkbenchTab = {
+    id: createId(),
+    type: 'editor',
+    projectId,
+    label: path.split('/').pop() ?? path,
+    payload: { path, openPaths: [path], diffView: true } satisfies EditorPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)
@@ -535,6 +597,7 @@ export default () => ({
   duplicateDialogTabType,
   focusTab,
   openEditor,
+  openDiff,
   openTerminal,
   openPlan,
   openStudio,
@@ -558,6 +621,7 @@ export default () => ({
   cancelDuplicateTabDialog,
   addEditorFile,
   setEditorActivePath,
+  setEditorDiffView,
   closeEditorFile,
   setEditorTabDirty,
 })
