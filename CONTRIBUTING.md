@@ -76,6 +76,18 @@ npm run vp:build
 
 Direct pushes to `main` are blocked for everyone except maintainers with ruleset bypass for PR/CI rules. **Signed commits are required for everyone**, including maintainers. See [About commit signature verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification).
 
+### Signing commits (SSH)
+
+```bash
+# Add your public key as a signing key at:
+# https://github.com/settings/keys  (SSH signing keys)
+
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+ssh-add ~/.ssh/id_ed25519   # unlock once per session if the key is passphrase-protected
+```
+
 Breaking changes should be called out in the PR description.
 
 ## Project layout
