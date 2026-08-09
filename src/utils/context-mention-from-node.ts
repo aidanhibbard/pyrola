@@ -93,6 +93,16 @@ const toAttrs = (mention: ContextMention): ChatMentionNodeAttrs => {
 }
 
 const fromAttrs = (attrs: Partial<ChatMentionNodeAttrs>): ContextMention | null => {
+  // Slash suggestions always insert skills; prefer the trigger char over the
+  // default mentionType ('file') when attrs were partially applied.
+  if (attrs.mentionSuggestionChar === '/' || attrs.mentionType === 'skill') {
+    const name = attrs.name?.trim() || attrs.label?.trim()
+    if (!name) {
+      return null
+    }
+    return { type: 'skill', name }
+  }
+
   const mentionType = asType(attrs.mentionType)
   if (!mentionType) {
     return null
@@ -153,7 +163,7 @@ const fromAttrs = (attrs: Partial<ChatMentionNodeAttrs>): ContextMention | null 
   if (!name) {
     return null
   }
-  return mentionType === 'rule' ? { type: 'rule', name } : { type: 'skill', name }
+  return { type: 'rule', name }
 }
 
 const collectFromEditor = (editor: Editor): ContextMention[] => {

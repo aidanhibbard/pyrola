@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { MentionHighlight } from '@/types/chat/mention-highlight'
 import splitChatMentionText from '@/utils/split-chat-mention-text'
 
 const props = defineProps<{
   text: string
+  highlights?: MentionHighlight[]
 }>()
 
-const segments = computed(() => splitChatMentionText(props.text))
+const segments = computed(() =>
+  splitChatMentionText(props.text, props.highlights ?? []),
+)
 </script>
 
 <template>

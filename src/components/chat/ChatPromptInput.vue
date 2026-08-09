@@ -37,6 +37,7 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
 import useChatStore from '@/composables/use-chat-store'
 import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
+import useChatPromptEditor from '@/composables/use-chat-prompt-editor'
 import useContextUsage from '@/composables/use-context-usage'
 import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
@@ -52,6 +53,7 @@ import type { ContextMention } from '@/types/harness/context-mention'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { FileUIPart } from 'ai'
+import contextMentionFromNode from '@/utils/context-mention-from-node'
 
 const PREFETCH_MIN_FREE_TOKENS = 4000
 const PREFETCH_MAX_CONTENT_CHARS = 12_000
@@ -95,6 +97,7 @@ const config = usePyrolaConfig()
 const git = useGitBranches()
 const chatStore = useChatStore()
 const contextBudgetSync = useChatContextBudgetSync()
+const chatPromptEditor = useChatPromptEditor()
 const contextUsage = useContextUsage()
 const mcpServers = useMcpServers()
 
@@ -310,7 +313,13 @@ const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
     return
   }
 
-  let mentions = [...draftMentions.value]
+  let mentions = (() => {
+    const editor = chatPromptEditor.editorRef.value
+    if (editor) {
+      return contextMentionFromNode.collectFromEditor(editor)
+    }
+    return [...draftMentions.value]
+  })()
   try {
     mentions = await enrichMentionsBeforeSend(mentions)
   } catch (error) {

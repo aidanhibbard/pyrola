@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { mentionHighlightSchema } from '@/schemas/mention-highlight'
 
 export const chatMessageLineSchema = z.object({
   id: z.string(),
@@ -6,5 +7,6 @@ export const chatMessageLineSchema = z.object({
   parts: z.array(z.record(z.unknown())),
   createdAt: z.string(),
   model: z.string().optional(),
+  mentionHighlights: z.array(mentionHighlightSchema).optional(),
   harnessEvent: z.record(z.unknown()).optional(),
 })

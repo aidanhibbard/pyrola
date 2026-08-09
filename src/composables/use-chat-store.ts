@@ -930,6 +930,9 @@ const hydrateSessionFromDisk = async (session: ChatSession): Promise<void> => {
           ...(typeof parsed.model === 'string' && parsed.model.length > 0
             ? { model: parsed.model }
             : {}),
+          ...(parsed.mentionHighlights && parsed.mentionHighlights.length > 0
+            ? { mentionHighlights: parsed.mentionHighlights }
+            : {}),
         },
       }
       nextMessages.push(message)

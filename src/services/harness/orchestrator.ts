@@ -3,6 +3,8 @@ import { convertToModelMessages, isLoopFinished, smoothStream, stepCountIs, stre
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { MentionHighlight } from '@/types/chat/mention-highlight'
+import { mentionHighlightSchema } from '@/schemas/mention-highlight'
 import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
@@ -1013,17 +1015,29 @@ export default async (input: OrchestratorInput): Promise<void> => {
         ),
     )
 
+  const existingUserMeta =
+    existingUser?.metadata && typeof existingUser.metadata === 'object'
+      ? (existingUser.metadata as Record<string, unknown>)
+      : null
+
+  const mentionHighlightsParsed = mentionHighlightSchema
+    .array()
+    .safeParse(existingUserMeta?.mentionHighlights)
+  const mentionHighlights: MentionHighlight[] | undefined =
+    mentionHighlightsParsed.success && mentionHighlightsParsed.data.length > 0
+      ? mentionHighlightsParsed.data
+      : undefined
+
   const userLine = {
     id: existingUser?.id ?? crypto.randomUUID(),
     role: 'user' as const,
     parts: existingUser?.parts ?? [{ type: 'text' as const, text: userText }],
     createdAt: nowIso(),
     model:
-      typeof existingUser?.metadata === 'object' &&
-      existingUser.metadata &&
-      typeof (existingUser.metadata as Record<string, unknown>).model === 'string'
-        ? ((existingUser.metadata as Record<string, unknown>).model as string)
+      typeof existingUserMeta?.model === 'string'
+        ? existingUserMeta.model
         : `${input.providerId}::${input.modelId}`,
+    ...(mentionHighlights ? { mentionHighlights } : {}),
   }
 
   if (!skipUserPersist) {

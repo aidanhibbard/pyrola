@@ -53,6 +53,8 @@ import { killShellsForChat } from '@/services/harness/agent-shell-registry'
 import compactSession from '@/services/harness/compact-session'
 import writeHandoff from '@/services/harness/write-handoff'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
+import { listSlashSkillIndex } from '@/services/skills/skill-registry'
+import buildMentionHighlights from '@/utils/build-mention-highlights'
 import chatRouteFor from '@/utils/chat-route-for'
 import formatUnknownError from '@/utils/format-unknown-error'
 import shouldFlushBackgroundSubagentResume from '@/utils/should-flush-background-subagent-resume'
@@ -738,6 +740,18 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         }
       }
 
+      const skillNames = (
+        await listSlashSkillIndex(
+          options.standalone ? null : options.projectRoot,
+        ).catch(() => [])
+      ).map((skill) => skill.name)
+
+      const mentionHighlights = buildMentionHighlights(
+        args.text,
+        args.mentions ?? [],
+        skillNames,
+      )
+
       session.appendLocalMessage({
         id: crypto.randomUUID(),
         role: 'user',
@@ -745,6 +759,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         metadata: {
           createdAt: new Date().toISOString(),
           model: args.model,
+          ...(mentionHighlights.length > 0 ? { mentionHighlights } : {}),
         },
       })
     }

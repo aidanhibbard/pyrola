@@ -195,7 +195,6 @@ export function usePromptInputProvider(props: {
     const submittedText = textInput.value
     const submittedFiles = [...files.value]
     const submittedIds = new Set(submittedFiles.map(file => file.id))
-    clearInput()
 
     try {
       isLoading.value = true
@@ -215,15 +214,14 @@ export function usePromptInputProvider(props: {
         files: processedFiles,
       }
 
+      // Clear only after onSubmit so listeners can still read editor mentions
+      // (clearing textInput earlier wipes TipTap nodes and draftMentions).
       await props.onSubmit(message)
 
+      clearInput()
       clearSubmittedFiles(submittedIds)
     }
     catch (e) {
-      if (textInput.value === '') {
-        setTextInput(submittedText)
-      }
-
       if (props.onError) {
         const errorMessage = e instanceof Error
           ? e.message

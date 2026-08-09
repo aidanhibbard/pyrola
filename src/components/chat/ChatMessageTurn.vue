@@ -25,6 +25,8 @@ import {
 } from '@/components/shadcn/ui/alert-dialog'
 import useChatStore from '@/composables/use-chat-store'
 import type { UserMessageMetadata } from '@/types/chat/user-message-metadata'
+import type { MentionHighlight } from '@/types/chat/mention-highlight'
+import { mentionHighlightSchema } from '@/schemas/mention-highlight'
 import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 import formatRelativeTime from '@/utils/format-relative-time'
 
@@ -67,11 +69,22 @@ const metadata = computed((): UserMessageMetadata => {
     return {}
   }
   const record = value as Record<string, unknown>
+  const highlightsParsed = mentionHighlightSchema
+    .array()
+    .safeParse(record.mentionHighlights)
   return {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : undefined,
     model: typeof record.model === 'string' ? record.model : undefined,
+    mentionHighlights:
+      highlightsParsed.success && highlightsParsed.data.length > 0
+        ? highlightsParsed.data
+        : undefined,
   }
 })
+
+const mentionHighlights = computed(
+  (): MentionHighlight[] => metadata.value.mentionHighlights ?? [],
+)
 
 const modelLabel = computed(() => {
   const fromMeta = formatModelLabelFromRef(metadata.value.model)
@@ -144,7 +157,7 @@ const handleConfirmOpenChange = (open: boolean): void => {
         ]"
         @click="handleEditClick"
       >
-        <ChatMentionText :text="text" />
+        <ChatMentionText :text="text" :highlights="mentionHighlights" />
       </AiElementsMessageMessageContent>
     </AiElementsMessageMessage>
 
