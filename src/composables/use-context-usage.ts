@@ -77,6 +77,10 @@ export default () => {
 
   const hasLastStepUsage = computed(() => lastStepUsage.value !== null)
 
+  const providerInputTokens = computed(
+    () => lastStepUsage.value?.inputTokens ?? null,
+  )
+
   const bindChat = (chatId: string | null): void => {
     if (boundChatId.value === chatId) {
       return
@@ -161,6 +165,7 @@ export default () => {
     visibleBuckets,
     lastStepUsage,
     hasLastStepUsage,
+    providerInputTokens,
     bindChat,
     clearLastStepUsage,
     setBudget,

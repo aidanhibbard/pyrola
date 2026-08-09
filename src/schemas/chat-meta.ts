@@ -59,4 +59,14 @@ export const chatMetaSchema = z.object({
   subagentModel: z.string().nullable().optional(),
   reasoning: z.string().nullable().optional(),
   subagentReasoning: z.string().nullable().optional(),
+  usageTotals: z
+    .object({
+      inputTokens: z.number(),
+      outputTokens: z.number(),
+      cacheReadTokens: z.number(),
+      cacheWriteTokens: z.number(),
+      costUSD: z.number().nullable(),
+      pricingComplete: z.boolean(),
+    })
+    .optional(),
 })

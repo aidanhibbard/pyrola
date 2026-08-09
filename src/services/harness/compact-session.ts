@@ -1,7 +1,9 @@
 import { generateText } from 'ai'
 import type { UIMessage } from 'ai'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { HarnessEvent } from '@/types/harness/harness-event'
 import createModel from '@/services/providers/create-model'
+import captureBillableUsage from '@/services/billing/capture-billable-usage'
 import loadPrompt from '@/services/prompts/load-prompt'
 import { appendChatLine, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
@@ -19,6 +21,9 @@ export type CompactSessionInput = {
   signal?: AbortSignal
   frozenSystem?: string
   chatModel?: string
+  /** Prefer AgentTurn.id when compacting mid-turn; else session sentinel. */
+  turnId?: string
+  onEvent?: (event: HarnessEvent) => void
 }
 
 export type CompactSessionResult = {
@@ -160,6 +165,22 @@ export default async (input: CompactSessionInput): Promise<CompactSessionResult>
       providerOptions: callOptions.providerOptions,
       abortSignal: signal,
     })
+
+    if (input.onEvent) {
+      await captureBillableUsage({
+        projectSlug,
+        chatId,
+        turnId: input.turnId ?? `session:${chatId}`,
+        source: 'compaction',
+        providerId: modelRef.providerId,
+        modelId: modelRef.modelId,
+        usage: result.usage,
+        providerMetadata: result.providerMetadata,
+        responseId: result.response?.id,
+        settings,
+        onEvent: input.onEvent,
+      })
+    }
 
     const summary = result.text.trim()
     if (!summary) {

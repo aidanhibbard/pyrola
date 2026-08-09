@@ -5,6 +5,16 @@ import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 
 export type ChatStatus = 'idle' | 'running'
 
+/** Rollup from the usage ledger; ledger rows remain the source of truth. */
+export type ChatUsageTotals = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  costUSD: number | null
+  pricingComplete: boolean
+}
+
 export type ChatMeta = {
   id: string
   title: string
@@ -29,4 +39,5 @@ export type ChatMeta = {
   subagentModel?: string | null
   reasoning?: string | null
   subagentReasoning?: string | null
+  usageTotals?: ChatUsageTotals
 }

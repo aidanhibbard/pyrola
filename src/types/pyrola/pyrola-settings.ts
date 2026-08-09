@@ -4,6 +4,7 @@ import type {
   PermissionRecord,
 } from '@/types/harness/permission'
 import type { ModelCatalogOptionsMap } from '@/types/models/model-catalog-option'
+import type { ModelPricingRates } from '@/types/billing/model-pricing-rates'
 
 export type PyrolaTheme = 'light' | 'dark' | 'system'
 
@@ -31,6 +32,7 @@ export type PyrolaCustomProviderModel = {
   seed?: number
   headers?: Record<string, string>
   modelOptions?: Record<string, unknown>
+  pricing?: ModelPricingRates
 }
 
 export type PyrolaCustomProvider = {

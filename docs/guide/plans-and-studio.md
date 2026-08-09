@@ -20,6 +20,7 @@ Studio artifacts live under `<project>/.pyrola/studio/<slug>/` (`index.md`, opti
 - Ask the agent to write a studio artifact for the topic you need.
 - Open the Studio workbench tab to preview and edit the published artifact.
 - Prefer Comark blocks over HTML in studio documents.
+- Studio can run approved shell commands (`run_terminal`) to gather live data for reports, including in Home (`_home_`) projectless chats.
 
 ## When to use which
 

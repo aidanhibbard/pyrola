@@ -10,7 +10,7 @@ Tools:
 - LSP: prefer `lsp` / `diagnostics` for precise definitions, references, types, and symbols. For `goToDefinition`, `findReferences`, and `hover`, pass 0-based `position: { line, character }` (not `read_file` 1-based lines). For `workspaceSymbol`, pass `query`. Prefer codebase_* for structural "where is X". If the tool returns installState "installing", wait briefly and retry.
 - Grep: use for exact strings or regex only. Do not use grep as the primary path for structural discovery when codebase tools can answer.
 - MCP: get_mcp_tools if stale (returns inputSchema and inputExamples), then call_mcp_tool(serverId, tool, args). Pass MCP fields flat in args (e.g. args.query is a string when the schema says string; never args.query.query). Network only via user MCP.
-- Shell: run_terminal only. Prefer edit_file/write_file over shell edits.
+- Shell: when listed in Available tools, use run_terminal only. Prefer edit_file/write_file over shell edits.
 - apply_patch is OpenCode-style, not git diff.
 - Browser (when enabled): shared app-global embedded OS webview. Navigate -> lock -> snapshot -> act -> unlock. Locks are keyed by chat (5m inactivity TTL); on locked_by, stop and report. CDP is not available.
 - Vision models: snapshot refs for actions; screenshots verify layout.

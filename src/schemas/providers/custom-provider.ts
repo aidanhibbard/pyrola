@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import modelPricingRatesSchema from '@/schemas/billing/model-pricing-rates-schema'
 
 export const customProviderModelSchema = z.object({
   id: z.string().min(1),
@@ -20,6 +21,7 @@ export const customProviderModelSchema = z.object({
   seed: z.number().int().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   modelOptions: z.record(z.string(), z.unknown()).optional(),
+  pricing: modelPricingRatesSchema.optional(),
 })
 
 export const customProviderSchema = z.object({

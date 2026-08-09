@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronDown, Loader2, Plus, Trash2 } from '@lucide/vue'
+import { AlertTriangle, ChevronDown, Loader2, Plus, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import { Checkbox } from '@/components/shadcn/ui/checkbox'
 import { Input } from '@/components/shadcn/ui/input'
 import { Label } from '@/components/shadcn/ui/label'
 import { Switch } from '@/components/shadcn/ui/switch'
@@ -19,11 +20,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/shadcn/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import SettingsInputPasswordInput from '@/components/settings/input/PasswordInput.vue'
 import type {
   PyrolaCustomProvider,
   PyrolaCustomProviderModel,
 } from '@/types/pyrola/pyrola-settings'
+import type { ModelPricingRates } from '@/types/billing/model-pricing-rates'
 import {
   customProviderSchema,
   formatCustomProviderSchemaError,
@@ -34,6 +42,14 @@ import { listProviderModels } from '@/services/providers/list-provider-models'
 type KeyValueRow = {
   key: string
   value: string
+}
+
+type PricingDraft = {
+  inputPerMillion: string
+  outputPerMillion: string
+  cacheReadPerMillion: string
+  cacheWritePerMillion: string
+  reasoningPerMillion: string
 }
 
 type ModelDraft = {
@@ -56,6 +72,7 @@ type ModelDraft = {
   seed: string
   headers: KeyValueRow[]
   modelOptionsJson: string
+  pricing: PricingDraft
   advancedOpen: boolean
 }
 
@@ -107,6 +124,14 @@ const configuredModelCount = computed(
   () => models.value.filter((model) => model.id.trim().length > 0).length,
 )
 
+const createEmptyPricing = (): PricingDraft => ({
+  inputPerMillion: '',
+  outputPerMillion: '',
+  cacheReadPerMillion: '',
+  cacheWritePerMillion: '',
+  reasoningPerMillion: '',
+})
+
 const createEmptyModel = (): ModelDraft => ({
   id: '',
   name: '',
@@ -127,8 +152,77 @@ const createEmptyModel = (): ModelDraft => ({
   seed: '',
   headers: [],
   modelOptionsJson: '',
+  pricing: createEmptyPricing(),
   advancedOpen: false,
 })
+
+/** Custom openai-compatible providers have no gateway/OpenRouter cost path. */
+const hasProviderCostPath = false
+
+const modelHasPricingConfigured = (draft: ModelDraft): boolean => {
+  const pricing = draft.pricing
+  return (
+    pricing.inputPerMillion.trim().length > 0 ||
+    pricing.outputPerMillion.trim().length > 0 ||
+    pricing.cacheReadPerMillion.trim().length > 0 ||
+    pricing.cacheWritePerMillion.trim().length > 0 ||
+    pricing.reasoningPerMillion.trim().length > 0
+  )
+}
+
+const showPricingWarning = (draft: ModelDraft): boolean =>
+  !hasProviderCostPath && !modelHasPricingConfigured(draft)
+
+const pricingToDraft = (pricing?: ModelPricingRates): PricingDraft => {
+  if (!pricing) {
+    return createEmptyPricing()
+  }
+  return {
+    inputPerMillion: pricing.inputPerMillion.toString(),
+    outputPerMillion: pricing.outputPerMillion.toString(),
+    cacheReadPerMillion: pricing.cacheReadPerMillion?.toString() ?? '',
+    cacheWritePerMillion: pricing.cacheWritePerMillion?.toString() ?? '',
+    reasoningPerMillion: pricing.reasoningPerMillion?.toString() ?? '',
+  }
+}
+
+const draftToPricing = (draft: PricingDraft): ModelPricingRates | undefined => {
+  if (
+    !draft.inputPerMillion.trim() &&
+    !draft.outputPerMillion.trim() &&
+    !draft.cacheReadPerMillion.trim() &&
+    !draft.cacheWritePerMillion.trim() &&
+    !draft.reasoningPerMillion.trim()
+  ) {
+    return undefined
+  }
+
+  const inputPerMillion = parseOptionalNumber(draft.inputPerMillion)
+  const outputPerMillion = parseOptionalNumber(draft.outputPerMillion)
+  if (inputPerMillion === undefined || outputPerMillion === undefined) {
+    throw new Error(
+      'Pricing requires both Input $/1M and Output $/1M when any pricing field is set',
+    )
+  }
+
+  const rates: ModelPricingRates = {
+    inputPerMillion,
+    outputPerMillion,
+  }
+  const cacheReadPerMillion = parseOptionalNumber(draft.cacheReadPerMillion)
+  if (cacheReadPerMillion !== undefined) {
+    rates.cacheReadPerMillion = cacheReadPerMillion
+  }
+  const cacheWritePerMillion = parseOptionalNumber(draft.cacheWritePerMillion)
+  if (cacheWritePerMillion !== undefined) {
+    rates.cacheWritePerMillion = cacheWritePerMillion
+  }
+  const reasoningPerMillion = parseOptionalNumber(draft.reasoningPerMillion)
+  if (reasoningPerMillion !== undefined) {
+    rates.reasoningPerMillion = reasoningPerMillion
+  }
+  return rates
+}
 
 const recordToRows = (record?: Record<string, string>): KeyValueRow[] => {
   if (!record) {
@@ -181,6 +275,7 @@ const modelToDraft = (model: PyrolaCustomProviderModel): ModelDraft => ({
   seed: model.seed?.toString() ?? '',
   headers: recordToRows(model.headers),
   modelOptionsJson: model.modelOptions ? JSON.stringify(model.modelOptions, null, 2) : '',
+  pricing: pricingToDraft(model.pricing),
   advancedOpen: false,
 })
 
@@ -251,6 +346,10 @@ const draftToModel = (draft: ModelDraft): PyrolaCustomProviderModel => {
       throw new Error(`Model ${draft.id || '(unnamed)'}: modelOptions must be a JSON object`)
     }
     model.modelOptions = parsed as Record<string, unknown>
+  }
+  const pricing = draftToPricing(draft.pricing)
+  if (pricing) {
+    model.pricing = pricing
   }
   return model
 }
@@ -632,7 +731,25 @@ const handleSave = (): void => {
             class="min-w-0 space-y-3 rounded-lg border border-border/50 p-3"
           >
             <div class="flex items-center justify-between gap-2">
-              <p class="text-sm font-medium">Model {{ index + 1 }}</p>
+              <div class="flex min-w-0 items-center gap-2">
+                <p class="text-sm font-medium">Model {{ index + 1 }}</p>
+                <TooltipProvider v-if="showPricingWarning(model)">
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <button
+                        type="button"
+                        class="inline-flex text-amber-500 hover:text-amber-400"
+                        aria-label="No pricing configured for this model"
+                      >
+                        <AlertTriangle class="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-xs">
+                      No pricing configured for this model. Token usage is tracked; cost is unknown.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -693,40 +810,110 @@ const handleSave = (): void => {
               </div>
               <div class="flex min-w-0 flex-wrap items-end gap-x-3 gap-y-2 pb-1">
                 <div class="flex items-center gap-1.5">
-                  <Switch
+                  <Checkbox
                     :id="`model-tools-${index}`"
-                    :checked="model.toolCalling"
-                    @update:checked="model.toolCalling = $event"
+                    v-model:checked="model.toolCalling"
                   />
                   <Label :for="`model-tools-${index}`" class="text-xs font-normal">Tools</Label>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <Switch
+                  <Checkbox
                     :id="`model-vision-${index}`"
-                    :checked="model.vision"
-                    @update:checked="model.vision = $event"
+                    v-model:checked="model.vision"
                   />
                   <Label :for="`model-vision-${index}`" class="text-xs font-normal">Vision</Label>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <Switch
+                  <Checkbox
                     :id="`model-thinking-${index}`"
-                    :checked="model.thinking"
-                    @update:checked="model.thinking = $event"
+                    v-model:checked="model.thinking"
                   />
                   <Label :for="`model-thinking-${index}`" class="text-xs font-normal">
                     Thinking
                   </Label>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <Switch
+                  <Checkbox
                     :id="`model-streaming-${index}`"
-                    :checked="model.streaming"
-                    @update:checked="model.streaming = $event"
+                    v-model:checked="model.streaming"
                   />
                   <Label :for="`model-streaming-${index}`" class="text-xs font-normal">
                     Stream
                   </Label>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="min-w-0">
+                <p class="text-sm font-medium">Pricing</p>
+                <p class="text-xs text-muted-foreground">USD per 1M tokens</p>
+              </div>
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div class="min-w-0 space-y-1.5">
+                  <Label :for="`model-price-input-${index}`">Input $/1M</Label>
+                  <Input
+                    :id="`model-price-input-${index}`"
+                    v-model="model.pricing.inputPerMillion"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    :class="fieldClass"
+                  />
+                </div>
+                <div class="min-w-0 space-y-1.5">
+                  <Label :for="`model-price-output-${index}`">Output $/1M</Label>
+                  <Input
+                    :id="`model-price-output-${index}`"
+                    v-model="model.pricing.outputPerMillion"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    :class="fieldClass"
+                  />
+                </div>
+                <div class="min-w-0 space-y-1.5">
+                  <Label :for="`model-price-cache-read-${index}`">Cache read $/1M</Label>
+                  <Input
+                    :id="`model-price-cache-read-${index}`"
+                    v-model="model.pricing.cacheReadPerMillion"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="Optional"
+                    :class="fieldClass"
+                  />
+                </div>
+                <div class="min-w-0 space-y-1.5">
+                  <Label :for="`model-price-cache-write-${index}`">Cache write $/1M</Label>
+                  <Input
+                    :id="`model-price-cache-write-${index}`"
+                    v-model="model.pricing.cacheWritePerMillion"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="Optional"
+                    :class="fieldClass"
+                  />
+                </div>
+                <div class="min-w-0 space-y-1.5">
+                  <Label :for="`model-price-reasoning-${index}`">Reasoning $/1M</Label>
+                  <Input
+                    :id="`model-price-reasoning-${index}`"
+                    v-model="model.pricing.reasoningPerMillion"
+                    type="number"
+                    inputmode="decimal"
+                    min="0"
+                    step="0.01"
+                    placeholder="Optional"
+                    :class="fieldClass"
+                  />
                 </div>
               </div>
             </div>

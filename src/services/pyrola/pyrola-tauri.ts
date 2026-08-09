@@ -314,6 +314,14 @@ export type ChatMetaRecord = {
   subagentModel?: string | null
   reasoning?: string | null
   subagentReasoning?: string | null
+  usageTotals?: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    costUSD: number | null
+    pricingComplete: boolean
+  }
 }
 
 export const createChat = (args: {

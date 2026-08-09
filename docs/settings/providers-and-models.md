@@ -25,6 +25,38 @@ Guide: [Providers and BYOK](../guide/providers-and-byok.md).
 - Start a chat and confirm the mode uses the model you selected.
 - Local and custom OpenAI-compatible models only show reasoning effort when you list levels under `supportsReasoningEffort` on the model. A `thinking` flag alone enables thinking tokens, not portable effort levels.
 
+## Cost tracking
+
+Pyrola records per-call token usage and optional USD cost into a chat usage ledger. Totals roll up per turn and per chat.
+
+### Pricing on custom models
+
+- On a custom OpenAI-compatible model, you can set USD rates per 1M tokens: input and output (required together when any pricing field is set).
+- Optional: cache read, cache write, and reasoning rates per 1M tokens.
+- When rates are used, cache tokens are billed exclusively (uncached input, cache read, and cache write are not double-counted as input).
+
+### Confidence levels
+
+Cost confidence is labeled by source:
+
+- `provider_reported`: OpenRouter-style `raw.cost`, or AI Gateway after `getGenerationInfo` enrich.
+- `user_configured`: your custom or direct model rates.
+- `catalog_estimate`: a catalog price estimate (shown as an estimate, not a bill).
+- `none`: no cost available. The UI shows a warning icon instead of inventing `$0`.
+
+Provider-reported cost always wins over rate math when both are available.
+
+### Per-turn aggregates
+
+- A turn aggregate includes the main agent steps and any subagents that share the same `turnId`.
+- If any part of the turn has a null cost, the turn `costUSD` is null (not treated as zero).
+- Missing usage on any part sets `usageMissing` on the turn aggregate.
+
+### Context window vs API usage
+
+- The context window bar is an estimate of prompt size. It is never used for billing.
+- Billed usage comes only from API-reported tokens (and provider cost or configured rates). Treat those as separate signals.
+
 ## Related
 
 - [Settings overview](./overview.md)

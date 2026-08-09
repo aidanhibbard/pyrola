@@ -58,6 +58,7 @@ type SessionMutations = {
   timeline: ComputedRef<ChatTimelineItem[]>
   pendingQuestion: ComputedRef<PendingQuestionState | null>
   todos: ComputedRef<TodoItem[]>
+  activeTurnId: Ref<string | null>
   patchMeta: (patch: Partial<ChatMeta>) => void
   reloadMeta: (projectSlug: string, chatId: string) => Promise<void>
   appendLocalMessage: (message: UIMessage) => void
@@ -360,6 +361,7 @@ const mapMeta = (record: {
   subagentModel?: ChatMeta['subagentModel']
   reasoning?: ChatMeta['reasoning']
   subagentReasoning?: ChatMeta['subagentReasoning']
+  usageTotals?: ChatMeta['usageTotals']
 }): ChatMeta =>
   chatMetaSchema.parse({
     id: record.id,
@@ -381,6 +383,7 @@ const mapMeta = (record: {
     subagentModel: record.subagentModel,
     reasoning: record.reasoning,
     subagentReasoning: record.subagentReasoning,
+    usageTotals: record.usageTotals,
   })
 
 const parsePart = (part: Record<string, unknown>): MessagePart => {
@@ -1433,6 +1436,7 @@ const createSessionMutations = (session: ChatSession): SessionMutations => {
       }
       session.meta.value = { ...session.meta.value, activeContext }
     },
+    activeTurnId: session.activeTurnId,
   }
 }
 

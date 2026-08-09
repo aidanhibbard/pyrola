@@ -33,6 +33,12 @@ pub struct ChatMeta {
   pub awaiting_plan_go: Option<serde_json::Value>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub subagent_model: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub reasoning: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub subagent_reasoning: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub usage_totals: Option<serde_json::Value>,
 }
 
 fn chats_dir(app: &AppHandle, project_slug: &str) -> Result<PathBuf, String> {
@@ -89,6 +95,9 @@ pub fn create_chat(
     active_context: None,
     awaiting_plan_go: None,
     subagent_model: None,
+    reasoning: None,
+    subagent_reasoning: None,
+    usage_totals: None,
   };
 
   let dir = chat_dir(&app, &project_slug, &id)?;

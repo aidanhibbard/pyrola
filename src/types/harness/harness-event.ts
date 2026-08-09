@@ -4,6 +4,8 @@ import type { FileDiff } from '@/types/harness/file-diff'
 import type { ApprovalKind, PermissionScope } from '@/types/harness/permission'
 import type { SideTaskKind } from '@/types/harness/side-task-kind'
 import type { ChatMeta } from '@/types/chat/chat-meta'
+import type { BillableUsageRecord } from '@/types/billing/billable-usage-record'
+import type { TurnUsageAggregate } from '@/types/billing/turn-usage-aggregate'
 
 export type TodoItem = {
   id: string
@@ -82,6 +84,8 @@ export type HarnessEvent =
       cacheReadTokens: number
       cacheWriteTokens: number
     }
+  | { type: 'billable-usage'; record: BillableUsageRecord }
+  | { type: 'turn-usage'; aggregate: TurnUsageAggregate }
   | { type: 'terminal-output'; shellId: string; stream: 'stdout' | 'stderr'; data: string }
   | { type: 'shell-complete'; shellId: string; exitCode: number }
   | { type: 'chat-status-changed'; projectSlug: string; chatId: string; status: 'idle' | 'running' }

@@ -14,6 +14,7 @@ import AiElementsReasoningReasoning from '@/components/ai-elements/reasoning/Rea
 import AiElementsReasoningReasoningContent from '@/components/ai-elements/reasoning/ReasoningContent.vue'
 import AiElementsReasoningReasoningTrigger from '@/components/ai-elements/reasoning/ReasoningTrigger.vue'
 import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
+import ChatAgentTurnUsage from '@/components/chat/ChatAgentTurnUsage.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
 import ChatToolRun from '@/components/chat/ChatToolRun.vue'
 import ChatTurnFilesChanged from '@/components/chat/ChatTurnFilesChanged.vue'
@@ -202,6 +203,11 @@ const errorTitle = computed(() => {
       :changes="fileChanges"
       :restore-enabled="restoreEnabled === true"
       @restore="emit('restoreFiles')"
+    />
+
+    <ChatAgentTurnUsage
+      v-if="!isStreaming"
+      :turn-id="turn.id"
     />
 
     <Alert

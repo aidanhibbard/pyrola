@@ -1,6 +1,7 @@
 import { generateText, isLoopFinished, stepCountIs, tool } from 'ai'
 import { z } from 'zod'
 import createModel from '@/services/providers/create-model'
+import captureBillableUsage from '@/services/billing/capture-billable-usage'
 import resolveModelForRole, {
   resolveParsedModelForRole,
 } from '@/services/models/resolve-model-for-role'
@@ -118,6 +119,8 @@ export type HarnessToolContext = {
   chatId: string
   /** User message that started this agent turn; required for file checkpoints. */
   userMessageId?: string
+  /** AgentTurn.id for the parent turn (billable usage attribution). */
+  turnId?: string
   settings: PyrolaSettings
   permissionLevel: PermissionLevel
   sessionAllows: Set<string>
@@ -1989,6 +1992,26 @@ const runSubagentGenerate = async (args: {
   if (signal.aborted) {
     throw new Error('Subagent aborted')
   }
+
+  const parentTurnId = ctx.turnId ?? `session:${ctx.chatId}`
+  await captureBillableUsage({
+    projectSlug: ctx.projectSlug,
+    chatId: ctx.chatId,
+    turnId: parentTurnId,
+    source: 'subagent',
+    providerId: callModel.createRef.providerId,
+    modelId: callModel.createRef.modelId,
+    usage: result.usage,
+    providerMetadata: result.providerMetadata,
+    responseId: result.response?.id,
+    subagentId,
+    settings: ctx.settings,
+    // Emit on the parent harness channel (not nested) so chat-meta / turn-usage
+    // reach the session without a subagent-event wrapper.
+    onEvent: (event) => {
+      ctx.onHarnessEvent?.(event)
+    },
+  })
 
   return result.text
 }

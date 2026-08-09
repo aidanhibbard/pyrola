@@ -6,6 +6,8 @@ import type { HarnessEvent } from '@/types/harness/harness-event'
 import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { ToolRun } from '@/types/harness/tool-run'
+import type { BillableUsageRecord } from '@/types/billing/billable-usage-record'
+import type { TurnUsageAggregate } from '@/types/billing/turn-usage-aggregate'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type { PermissionCapabilityKey, PermissionLevel, PermissionRecord } from '@/types/harness/permission'
@@ -131,6 +133,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     effectiveSettings: PyrolaSettings
   } | null>(null)
   const resumingBackgroundBatch = ref(false)
+  const billableUsageRecords = shallowRef<BillableUsageRecord[]>([])
+  const turnUsageByTurnId = shallowRef<Record<string, TurnUsageAggregate>>({})
   let mcpAuthPollTimer: ReturnType<typeof setInterval> | null = null
 
   const mcpServers = useMcpServers()
@@ -534,6 +538,17 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
       })
+    }
+    if (event.type === 'billable-usage') {
+      const existing = billableUsageRecords.value
+      const without = existing.filter((entry) => entry.id !== event.record.id)
+      billableUsageRecords.value = [...without, event.record]
+    }
+    if (event.type === 'turn-usage') {
+      turnUsageByTurnId.value = {
+        ...turnUsageByTurnId.value,
+        [event.aggregate.turnId]: event.aggregate,
+      }
     }
     if (event.type === 'chat-status-changed') {
       status.value = mapMetaStatusToChatStatus(event.status, false)
@@ -1150,6 +1165,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         focus,
         frozenSystem: undefined,
         chatModel: meta.model,
+        turnId: session.activeTurnId.value ?? `session:${options.chatId}`,
+        onEvent: handleEvent,
       })
       session.appendLocalCompaction(result.summary, focus ?? null)
       session.patchMetaActiveContext({
@@ -1194,6 +1211,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
           settings: config.effectiveSettings.value,
           messages: session.messages.value,
           chatModel: meta.model,
+          turnId: session.activeTurnId.value ?? `session:${options.chatId}`,
+          onEvent: handleEvent,
         })
         summary = compactResult.summary
         session.appendLocalCompaction(compactResult.summary, null)
@@ -1322,6 +1341,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     toolRuns,
     subagents,
     liveEvents,
+    billableUsageRecords,
+    turnUsageByTurnId,
     queuedMessages: messageQueue.items,
     isWaitingOnBackground,
     send,

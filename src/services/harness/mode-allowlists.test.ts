@@ -19,3 +19,11 @@ describe('mode allowlists codebase tools', () => {
     }
   })
 })
+
+describe('mode allowlists studio shell tools', () => {
+  it('includes run_terminal, terminal_output, and stop_terminal in studio', () => {
+    expect(MODE_TOOL_ALLOWLIST.studio).toContain('run_terminal')
+    expect(MODE_TOOL_ALLOWLIST.studio).toContain('terminal_output')
+    expect(MODE_TOOL_ALLOWLIST.studio).toContain('stop_terminal')
+  })
+})

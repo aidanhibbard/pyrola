@@ -1,12 +1,15 @@
 import { generateText } from 'ai'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { HarnessEvent } from '@/types/harness/harness-event'
 import createModel from '@/services/providers/create-model'
+import captureBillableUsage from '@/services/billing/capture-billable-usage'
 import loadPrompt from '@/services/prompts/load-prompt'
 import { updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
 import { resolveSideTaskCallOptions } from '@/services/models/resolve-model-call-options'
 import { isDefaultChatTitle, isPromptEchoTitle } from '@/utils/derive-chat-title'
+import { toast } from 'vue-sonner'
 
 /** Cap title-model input so huge pastes are not fully re-sent for naming. */
 const TITLE_PROMPT_MAX_CHARS = 2000
@@ -22,6 +25,9 @@ export type ChatTitleTaskInput = {
   /** Used when models.title and models.default are unset (per-chat model pick). */
   fallbackProviderId?: string
   fallbackModelId?: string
+  /** AgentTurn.id when naming runs during a turn; else session sentinel. */
+  turnId?: string
+  onEvent?: (event: HarnessEvent) => void
 }
 
 const truncateTitlePrompt = (prompt: string): string => {
@@ -92,6 +98,23 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
       }),
     })
 
+    const turnId = input.turnId ?? `session:${input.chatId}`
+    if (input.onEvent) {
+      await captureBillableUsage({
+        projectSlug: input.projectSlug,
+        chatId: input.chatId,
+        turnId,
+        source: 'title',
+        providerId: modelRef.providerId,
+        modelId: modelRef.modelId,
+        usage: result.usage,
+        providerMetadata: result.providerMetadata,
+        responseId: result.response?.id,
+        settings: input.settings,
+        onEvent: input.onEvent,
+      })
+    }
+
     const title = cleanGeneratedTitle(result.text)
     if (!title || isDefaultChatTitle(title) || isPromptEchoTitle(title, input.prompt)) {
       return null
@@ -101,7 +124,9 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
     await refreshFleetSidebar()
     return title
   } catch (error) {
-    console.warn('[pyrola] chat title generation failed', error)
+    toast.error('Failed to generate chat title', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
     return null
   }
 }

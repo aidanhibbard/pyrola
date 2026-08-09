@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { AlertTriangle } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/shadcn/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import { CONTEXT_BUCKET_META } from '@/types/harness/context-bucket-meta'
+import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
 import useChatContextActions from '@/composables/use-chat-context-actions'
 
 const contextUsage = useContextUsage()
 const contextActions = useChatContextActions()
+const chatStore = useChatStore()
 const open = ref(false)
 
 const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact' })
@@ -27,6 +35,29 @@ const usablePrompt = computed(() => contextUsage.usablePrompt.value)
 const ratio = computed(() => contextUsage.ratio.value)
 const lastStepUsage = computed(() => contextUsage.lastStepUsage.value)
 const estimatedPromptUsed = computed(() => contextUsage.estimatedPromptUsed.value)
+
+const usageTotals = computed(() => chatStore.meta.value?.usageTotals ?? null)
+
+const sessionCostLabel = computed(() => {
+  const totals = usageTotals.value
+  if (!totals || totals.costUSD === null) {
+    return 'Cost unknown'
+  }
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(totals.costUSD)
+})
+
+const sessionPricingIncomplete = computed(() => {
+  const totals = usageTotals.value
+  if (!totals) {
+    return false
+  }
+  return !totals.pricingComplete
+})
 
 const statusClass = computed(() => {
   if (ratio.value >= 0.95) {
@@ -165,7 +196,7 @@ const handleHandoff = (): void => {
       <div class="space-y-2 p-3">
         <div class="flex items-center justify-between gap-3 text-xs">
           <p class="font-medium">
-            Context usage
+            Estimated context window
           </p>
           <p class="text-muted-foreground">
             {{ limitLabel }} limit
@@ -178,6 +209,24 @@ const handleHandoff = (): void => {
           >
             {{ promptUsedLabel }} / {{ usablePromptLabel }} usable
           </p>
+        </div>
+
+        <div
+          v-if="usageTotals"
+          class="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <span class="tabular-nums">Session {{ sessionCostLabel }}</span>
+          <Tooltip v-if="sessionPricingIncomplete">
+            <TooltipTrigger as-child>
+              <span class="inline-flex shrink-0">
+                <AlertTriangle
+                  class="size-3 text-amber-600 dark:text-amber-400"
+                  aria-hidden="true"
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Cost unknown</TooltipContent>
+          </Tooltip>
         </div>
 
         <div
@@ -275,7 +324,7 @@ const handleHandoff = (): void => {
           v-if="lastStepLabel"
           class="text-xs text-muted-foreground"
         >
-          Last step: {{ lastStepLabel }}
+          Last API step (provider-reported): {{ lastStepLabel }}
         </p>
 
         <p

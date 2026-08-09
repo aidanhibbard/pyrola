@@ -14,6 +14,7 @@ import type { SubagentResult } from '@/types/harness/subagent-record'
 import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
 import type { SystemPromptParts } from '@/services/context/system-prompt-parts'
 import createModel from '@/services/providers/create-model'
+import captureBillableUsage from '@/services/billing/capture-billable-usage'
 import {
   appendChatLine,
   readChatMeta,
@@ -609,6 +610,8 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     projectSlug,
     chatId,
     userMessageId,
+    // AgentTurn.id is passed as assistantId from use-agent-harness.
+    turnId: assistantId,
     settings,
     permissionLevel: input.permissionLevel ?? settings['agent.permissionLevel'] ?? 'allowlist',
     sessionAllows,
@@ -824,6 +827,19 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
           outputTokens,
           cacheReadTokens,
           cacheWriteTokens,
+        })
+        await captureBillableUsage({
+          projectSlug,
+          chatId,
+          turnId: assistantId,
+          source: 'main',
+          providerId: callModel.createRef.providerId,
+          modelId: callModel.createRef.modelId,
+          usage,
+          providerMetadata: part.providerMetadata,
+          responseId: part.response?.id,
+          settings,
+          onEvent,
         })
         await finishStep()
         continue
@@ -1042,6 +1058,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
   const isFirstUserMessage =
     messages.filter((message) => message.role === 'user').length === 1
 
+  const assistantId = inputAssistantId ?? crypto.randomUUID()
+
   const emitTitleChange = (title: string): void => {
     input.onEvent({
       type: 'chat-meta-changed',
@@ -1061,6 +1079,8 @@ export default async (input: OrchestratorInput): Promise<void> => {
       settings: input.settings,
       fallbackProviderId: input.providerId,
       fallbackModelId: input.modelId,
+      turnId: assistantId,
+      onEvent: input.onEvent,
     }).then((generatedTitle) => {
       if (generatedTitle && !isDefaultChatTitle(generatedTitle)) {
         emitTitleChange(generatedTitle)
@@ -1105,7 +1125,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     messages,
     modelMessages: effectiveModelMessages,
     userMessageId: userLine.id,
-    assistantId: inputAssistantId ?? crypto.randomUUID(),
+    assistantId,
     captureTurnMessages: true,
     standalone: input.standalone,
     permissionLevel: input.permissionLevel,
