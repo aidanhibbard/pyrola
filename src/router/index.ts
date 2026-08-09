@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '@/views/HomePage.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import AgentThreadView from '@/views/AgentThreadView.vue'
+import ProjectView from '@/views/ProjectView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -20,6 +21,11 @@ const router = createRouter({
       path: '/chat/:chatId/subagent/:subagentId',
       name: 'home-chat-subagent',
       component: AgentThreadView,
+    },
+    {
+      path: '/project/:slug',
+      name: 'project',
+      component: ProjectView,
     },
     {
       path: '/project/:slug/chat/:chatId',

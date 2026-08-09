@@ -26,15 +26,6 @@ export const PERSONAL_SECTIONS: SettingsSectionId[] = [
   'rules',
 ]
 
-export const PROJECT_SECTIONS: SettingsSectionId[] = [
-  'mcp',
-  'plans',
-  'studio',
-  'skills',
-  'agents',
-  'rules',
-]
-
 export const SECTION_LABELS: Record<SettingsSectionId, string> = {
   appearance: 'Appearance',
   providers: 'Providers',

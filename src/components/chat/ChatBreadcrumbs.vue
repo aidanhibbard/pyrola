@@ -14,6 +14,7 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import useFleetSidebar from '@/composables/use-fleet-sidebar'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
+import projectRouteFor from '@/utils/project-route-for'
 import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 
 const route = useRoute()
@@ -90,6 +91,10 @@ const subagentTitle = computed(() => {
 })
 
 const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value))
+
+const projectTo = computed(() =>
+  isStandalone.value ? { name: 'home' as const } : projectRouteFor(projectSlug.value),
+)
 </script>
 
 <template>
@@ -99,7 +104,7 @@ const parentChatTo = computed(() => chatRouteFor(projectSlug.value, chatId.value
         <BreadcrumbItem class="shrink-0">
           <BreadcrumbLink as-child>
             <RouterLink
-              :to="{ name: 'home' }"
+              :to="projectTo"
               class="block max-w-[8rem] truncate text-muted-foreground sm:max-w-[10rem]"
               :title="projectName"
             >

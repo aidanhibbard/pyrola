@@ -14,7 +14,7 @@ Full OAuth 2.1 for MCP is not complete yet. Prefer stdio or bearer setups for al
 
 ## Add and trust a server
 
-- Open Settings and choose Personal or Project MCP (project overrides apply to that workspace).
+- Open Settings, MCP for personal servers, or open the Project view and select MCP for project servers.
 - Add a server with transport details (stdio command or remote URL).
 - Save the MCP config under the matching `.pyrola` scope.
 - Trust the server when prompted so the harness may call its tools.

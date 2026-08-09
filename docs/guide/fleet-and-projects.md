@@ -9,6 +9,13 @@ Pyrola keeps a fleet of registered projects. Chats are scoped per project slug a
 - Select a project to make it the active project.
 - Confirm the sidebar shows chats for that project slug.
 
+## Project view
+
+- Right-click a project name in the left sidebar and choose Open Project.
+- The Project view opens at `/project/:slug` with sections for Chats, MCP, Plans, Studio, Skills, Agents, and Rules.
+- The Chats section lists that project's chats in a table. Click a row to open a chat, or use rename and delete actions.
+- Breadcrumbs in a project chat link back to the Project view.
+
 ## Home chats
 
 - Start a chat from home when you do not need a project workspace.
@@ -31,3 +38,4 @@ Details: [CLI](./cli.md).
 
 - [Agents UI](./agents-ui.md)
 - [Data and config](../architecture/data-and-config.md)
+- [Settings overview](../settings/overview.md)

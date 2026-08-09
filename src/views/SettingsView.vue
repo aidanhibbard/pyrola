@@ -3,50 +3,33 @@ import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import SettingsLayout from '@/components/settings/SettingsLayout.vue'
+import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsSectionId } from '@/types/settings/settings-section'
-import { PERSONAL_SECTIONS, PROJECT_SECTIONS } from '@/types/settings/settings-section'
-import type { SettingsTab } from '@/composables/use-pyrola-config'
+import { PERSONAL_SECTIONS } from '@/types/settings/settings-section'
+import projectRouteFor from '@/utils/project-route-for'
 
 const route = useRoute()
 const router = useRouter()
 const config = usePyrolaConfig()
+const fleet = useFleetRegistry()
 
-const resolveSection = (tab: SettingsTab, section: SettingsSectionId): SettingsSectionId => {
-  const allowed = tab === 'personal' ? PERSONAL_SECTIONS : PROJECT_SECTIONS
-  return allowed.includes(section) ? section : allowed[0]!
-}
-
-const activeTab = computed<SettingsTab>(() =>
-  route.query.tab === 'project' ? 'project' : 'personal',
-)
+const resolveSection = (section: SettingsSectionId): SettingsSectionId =>
+  PERSONAL_SECTIONS.includes(section) ? section : PERSONAL_SECTIONS[0]!
 
 const activeSection = computed<SettingsSectionId>(() => {
   const section = route.query.section
   if (typeof section === 'string') {
-    return resolveSection(activeTab.value, section as SettingsSectionId)
+    return resolveSection(section as SettingsSectionId)
   }
-  return activeTab.value === 'project' ? PROJECT_SECTIONS[0]! : 'general'
+  return 'general'
 })
-
-const setTab = async (tab: SettingsTab): Promise<void> => {
-  try {
-    await router.replace({
-      path: '/settings',
-      query: { tab, section: resolveSection(tab, activeSection.value) },
-    })
-  } catch (error) {
-    toast.error('Navigation failed', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
 
 const setSection = async (section: SettingsSectionId): Promise<void> => {
   try {
     await router.replace({
       path: '/settings',
-      query: { tab: activeTab.value, section },
+      query: { section },
     })
   } catch (error) {
     toast.error('Navigation failed', {
@@ -56,25 +39,35 @@ const setSection = async (section: SettingsSectionId): Promise<void> => {
 }
 
 watch(
-  [() => config.hydrated.value, () => config.showProjectTab.value, () => route.query.tab],
-  async ([hydrated, showProject, tabQuery]) => {
+  [() => config.hydrated.value, () => route.query.tab, () => fleet.activeProject.value],
+  async ([hydrated, tabQuery, activeProject]) => {
     if (!hydrated) {
       return
     }
 
-    if (!showProject && tabQuery === 'project') {
-      await setTab('personal')
+    if (tabQuery === 'project') {
+      try {
+        if (activeProject) {
+          await router.replace(projectRouteFor(activeProject.slug))
+        } else {
+          await router.replace({
+            path: '/settings',
+            query: { section: activeSection.value },
+          })
+        }
+      } catch (error) {
+        toast.error('Navigation failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
       return
     }
 
-    if (showProject && tabQuery === undefined) {
+    if (tabQuery === 'personal') {
       try {
         await router.replace({
           path: '/settings',
-          query: {
-            tab: 'project',
-            section: resolveSection('project', activeSection.value),
-          },
+          query: { section: activeSection.value },
         })
       } catch (error) {
         toast.error('Navigation failed', {
@@ -120,10 +113,7 @@ onUnmounted(() => {
   </div>
   <div v-else class="flex h-full min-h-0 flex-1 flex-col">
     <SettingsLayout
-      :active-tab="activeTab"
       :active-section="activeSection"
-      :show-project-tab="config.showProjectTab.value"
-      @update:tab="setTab"
       @update:section="setSection"
     />
   </div>

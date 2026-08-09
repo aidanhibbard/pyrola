@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { Folder, FolderOpen, PanelLeftClose, Plus, FileCode, Terminal } from '@lucide/vue'
+import { Folder, FolderOpen, FolderCog, PanelLeftClose, Plus, FileCode, Terminal } from '@lucide/vue'
 import type { FleetSidebarProject } from '@/types/fleet/fleet-sidebar-project'
 import {
   Collapsible,
@@ -37,6 +37,7 @@ import useProjectsExpansion from '@/composables/use-projects-expansion'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import resolveModelForRole from '@/services/models/resolve-model-for-role'
+import projectRouteFor from '@/utils/project-route-for'
 
 const props = defineProps<{
   project: FleetSidebarProject
@@ -144,6 +145,25 @@ const handleRemoveFromSidebar = async (): Promise<void> => {
   }
 }
 
+const handleOpenProject = async (): Promise<void> => {
+  const fleetProject = fleet.projects.value.find(
+    (item) => item.slug === props.project.slug,
+  )
+  if (!fleetProject) {
+    toast.error('Project not found')
+    return
+  }
+
+  try {
+    await fleet.setActiveProject(fleetProject.id)
+    await router.push(projectRouteFor(fleetProject.slug))
+  } catch (error) {
+    toast.error('Could not open project', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleOpenEditor = async (): Promise<void> => {
   const fleetProject = fleet.projects.value.find(
     (item) => item.slug === props.project.slug,
@@ -207,6 +227,10 @@ const handleOpenTerminal = async (): Promise<void> => {
           </CollapsibleTrigger>
         </ContextMenuTrigger>
         <ContextMenuContent class="w-52">
+          <ContextMenuItem @select="handleOpenProject">
+            <FolderCog />
+            Open Project
+          </ContextMenuItem>
           <ContextMenuItem @select="handleOpenEditor">
             <FileCode />
             Open Editor

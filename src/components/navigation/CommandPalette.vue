@@ -29,6 +29,7 @@ import {
 } from '@/types/navigation/command-palette-item'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import chatRouteFor from '@/utils/chat-route-for'
+import projectRouteFor from '@/utils/project-route-for'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 
 const router = useRouter()
@@ -113,7 +114,7 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
     if (item.settingsSection) {
       await router.push({
         path: '/settings',
-        query: { tab: 'personal', section: item.settingsSection },
+        query: { section: item.settingsSection },
       })
       return
     }
@@ -132,7 +133,7 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
         return
       }
       await fleet.setActiveProject(project.id)
-      await router.push('/')
+      await router.push(projectRouteFor(project.slug))
     }
   } catch (error) {
     toast.error('Action failed', {

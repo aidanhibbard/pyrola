@@ -9,22 +9,16 @@ import GeneralSection from '@/components/settings/sections/GeneralSection.vue'
 import AgentsSection from '@/components/settings/sections/AgentsSection.vue'
 import PermissionsSection from '@/components/settings/sections/PermissionsSection.vue'
 import PlansSection from '@/components/settings/sections/PlansSection.vue'
-import StudioSection from '@/components/settings/sections/StudioSection.vue'
 import SkillsSection from '@/components/settings/sections/SkillsSection.vue'
 import RulesSection from '@/components/settings/sections/RulesSection.vue'
 import LspServersSection from '@/components/settings/sections/LspServersSection.vue'
-import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/ui/tabs'
 import type { SettingsSectionId } from '@/types/settings/settings-section'
-import type { SettingsTab } from '@/composables/use-pyrola-config'
 
 const props = defineProps<{
-  activeTab: SettingsTab
   activeSection: SettingsSectionId
-  showProjectTab: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:tab': [SettingsTab]
   'update:section': [SettingsSectionId]
 }>()
 
@@ -46,8 +40,6 @@ const sectionComponent = computed(() => {
       return PermissionsSection
     case 'plans':
       return PlansSection
-    case 'studio':
-      return StudioSection
     case 'skills':
       return SkillsSection
     case 'rules':
@@ -64,19 +56,9 @@ const sectionComponent = computed(() => {
   <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-6">
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-      <Tabs
-        :model-value="activeTab"
-        @update:model-value="(value) => emit('update:tab', value as SettingsTab)"
-      >
-        <TabsList>
-          <TabsTrigger value="personal">Personal</TabsTrigger>
-          <TabsTrigger v-if="showProjectTab" value="project">Project</TabsTrigger>
-        </TabsList>
-      </Tabs>
     </div>
 
     <SettingsNav
-      :active-tab="activeTab"
       :active-section="activeSection"
       @select="emit('update:section', $event)"
     />
@@ -85,7 +67,7 @@ const sectionComponent = computed(() => {
       <component
         :is="sectionComponent"
         class="flex min-h-0 flex-1 flex-col overflow-hidden"
-        :tab="activeTab"
+        tab="personal"
       />
     </div>
   </div>

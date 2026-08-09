@@ -217,7 +217,7 @@ const handleSelect = (providerId: string, modelId: string): void => {
 
 const openProvidersSettings = async (): Promise<void> => {
   open.value = false
-  await router.push({ path: '/settings', query: { tab: 'personal', section: 'providers' } })
+  await router.push({ path: '/settings', query: { section: 'providers' } })
 }
 
 const serializedFor = (model: ModelRef): string =>
