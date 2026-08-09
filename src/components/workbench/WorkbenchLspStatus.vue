@@ -8,7 +8,6 @@ import {
   CircleOff,
   Loader2,
   Pause,
-  Play,
   Settings,
   ShieldAlert,
   TriangleAlert,
@@ -97,7 +96,7 @@ const stateMeta = (
       }
     case 'running':
       return {
-        icon: Play,
+        icon: CircleCheck,
         label: 'Running',
         className: 'text-emerald-600 dark:text-emerald-400',
       }
