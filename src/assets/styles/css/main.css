@@ -80,7 +80,7 @@ html {
   }
 }
 
-/* Thin matte pastel border around the chat prompt while waiting on a reply */
+/* Soft full-perimeter pastel ring around the chat prompt while waiting on a reply */
 @property --chat-prompt-aurora-angle {
   syntax: '<angle>';
   inherits: false;
@@ -93,16 +93,16 @@ html {
     linear-gradient(var(--background), var(--background)) padding-box,
     conic-gradient(
       from var(--chat-prompt-aurora-angle),
-      #b89ad4,
-      #7eb6d9,
-      #7ec9a0,
-      #a894d4,
-      #b89ad4
+      color-mix(in oklab, #b89ad4 55%, var(--border)),
+      color-mix(in oklab, #7eb6d9 55%, var(--border)),
+      color-mix(in oklab, #7ec9a0 55%, var(--border)),
+      color-mix(in oklab, #a894d4 55%, var(--border)),
+      color-mix(in oklab, #b89ad4 55%, var(--border))
     )
     border-box !important;
   background-origin: border-box !important;
   background-clip: padding-box, border-box !important;
-  animation: chat-prompt-aurora-drift 18s linear infinite;
+  animation: chat-prompt-aurora-drift 14s linear infinite;
 }
 
 @keyframes chat-prompt-aurora-drift {
