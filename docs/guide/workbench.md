@@ -27,8 +27,9 @@ The right workbench sits beside the agent thread. Tabs share the active project 
 
 ## Studio
 
-- Open Studio to browse Comark artifacts under `.pyrola/studio/`.
-- Edit source, preview, and save artifacts the agent (or you) publish.
+- Open Studio to view Comark artifacts under `.pyrola/studio/`.
+- Refresh, copy markdown, and export PDF from the studio toolbar.
+- Agents publish artifacts via the `write_studio_artifact` tool.
 
 ## Related
 

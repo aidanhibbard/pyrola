@@ -14,7 +14,6 @@ export type StudioRendererState = {
   loading: Ref<boolean>
   parseError: Ref<string | null>
   reload: () => Promise<void>
-  applySourceContent: (content: string) => Promise<void>
 }
 
 const dataJsonPathFor = (artifactPath: string): string => {
@@ -116,10 +115,6 @@ export default (
     }
   }
 
-  const applySourceContent = async (content: string): Promise<void> => {
-    await applyParsedContent(content)
-  }
-
   watch(
     [projectRoot, artifactPath, refreshToken],
     () => {
@@ -138,6 +133,5 @@ export default (
     loading,
     parseError,
     reload,
-    applySourceContent,
   }
 }
