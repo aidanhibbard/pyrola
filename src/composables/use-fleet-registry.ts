@@ -62,6 +62,10 @@ export default () => {
   }
 
   const setActiveProject = async (projectId: string | null): Promise<void> => {
+    if (projectId === activeProjectId.value) {
+      return
+    }
+
     // Tear down project-scoped MCP before switching so tools do not keep the old cwd/env.
     const mcp = useMcpServers()
     const effective = mcp.listEffectiveMcpServers(
@@ -103,14 +107,14 @@ export default () => {
       const project = projects.value.find((entry) => entry.id === projectId)
       if (project) {
         // Project MCP was stopped above; reload configs for the new root via ensure.
-        try {
-          await ensureCodeGraph(project.rootPath)
-        } catch (error) {
-          toast.error('Failed to start graph', {
-            description: invokeErrorMessage(error),
+        // Do not block activation on CodeGraph connect; Graph UI polls status itself.
+        ensureCodeGraph(project.rootPath)
+          .then(() => refreshHasPyrola())
+          .catch((error: unknown) => {
+            toast.error('Failed to start graph', {
+              description: invokeErrorMessage(error),
+            })
           })
-        }
-        await refreshHasPyrola()
       }
     }
   }

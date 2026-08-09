@@ -155,7 +155,6 @@ const handleOpenProject = async (): Promise<void> => {
   }
 
   try {
-    await fleet.setActiveProject(fleetProject.id)
     await router.push(projectRouteFor(fleetProject.slug))
   } catch (error) {
     toast.error('Could not open project', {

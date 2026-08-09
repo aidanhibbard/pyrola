@@ -132,7 +132,6 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
         toast.error('Project not found')
         return
       }
-      await fleet.setActiveProject(project.id)
       await router.push(projectRouteFor(project.slug))
     }
   } catch (error) {
