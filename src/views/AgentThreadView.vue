@@ -6,6 +6,7 @@ import type { ChatStatus } from 'ai'
 import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PermissionLevel } from '@/types/harness/permission'
 import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
+import ChatMessageQueue from '@/components/chat/ChatMessageQueue.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
 import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import RunningTerminalsPanel from '@/components/chat/RunningTerminalsPanel.vue'
@@ -31,6 +32,7 @@ import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type { ContextMention } from '@/types/harness/context-mention'
+import type { QueuedChatMessage } from '@/types/chat/queued-chat-message'
 import { isReasoningLevel } from '@/types/models/reasoning-level'
 import { killAgentShell, listShellsForChat } from '@/services/harness/agent-shell-registry'
 import buildSubagentTimeline from '@/utils/build-subagent-timeline'
@@ -98,6 +100,18 @@ const harnessPendingApprovals = computed(
 const harnessPendingMcpAuth = computed(
   () => unref(harness.value?.pendingMcpAuth) ?? [],
 )
+const queuedMessages = computed<QueuedChatMessage[]>(
+  () => unref(harness.value?.queuedMessages) ?? [],
+)
+const isWaitingOnBackground = computed(() => {
+  // The subagent registry is module-level state, not reactive. Depend on the
+  // harness subagents ref so this recomputes when subagent status changes.
+  const subagents = unref(harness.value?.subagents) ?? []
+  return subagents.length >= 0 && (harness.value?.isWaitingOnBackground() ?? false)
+})
+const chatPromptInputRef = ref<{
+  hydrateQueuedMessage: (item: QueuedChatMessage) => Promise<void>
+} | null>(null)
 const pendingQuestion = computed(
   () => paintedSession.value?.pendingQuestion.value ?? null,
 )
@@ -365,6 +379,41 @@ const handleStopSubagent = (subagentId: string): void => {
   harness.value?.stopSubagent(subagentId)
 }
 
+const handleQueueForce = async (id: string): Promise<void> => {
+  if (!harness.value) {
+    return
+  }
+  try {
+    await harness.value.forceSendQueued(id)
+  } catch (error) {
+    toast.error('Failed to send queued message', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleQueueRemove = (id: string): void => {
+  harness.value?.cancelQueued(id)
+}
+
+const handleQueueEdit = async (id: string): Promise<void> => {
+  if (!harness.value) {
+    return
+  }
+  const item = harness.value.editQueued(id)
+  if (!item) {
+    return
+  }
+  try {
+    await chatPromptInputRef.value?.hydrateQueuedMessage(item)
+    harness.value.cancelQueued(id)
+  } catch (error) {
+    toast.error('Failed to load message for editing', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleKillShell = async (shellId: string): Promise<void> => {
   try {
     await killAgentShell(shellId)
@@ -612,11 +661,21 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
         :shells="runningShells"
         @stop-shell="handleKillShell"
       />
+      <ChatMessageQueue
+        v-if="queuedMessages.length > 0"
+        :items="queuedMessages"
+        class="mx-auto mb-2 w-full max-w-3xl"
+        @edit="handleQueueEdit"
+        @force="handleQueueForce"
+        @remove="handleQueueRemove"
+      />
       <ChatPromptInput
+        ref="chatPromptInputRef"
         :key="threadKey"
         :status="harnessStatus"
         :disabled="!threadReady"
         :permission-level="activePermissionLevel"
+        :waiting-on-background="isWaitingOnBackground"
         @submit="handleSubmit"
         @submit-edit="handleSubmitEdit"
         @stop="handleStop"

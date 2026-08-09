@@ -2,8 +2,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
-import { FolderIcon, ChevronDownIcon, XIcon } from '@lucide/vue'
+import { FolderIcon, ChevronDownIcon, XIcon, SquareIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +35,9 @@ import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
+import ChatQueueHandlers from '@/components/chat/ChatQueueHandlers.vue'
 import ChatPromptEditor from '@/components/chat/prompt-editor/ChatPromptEditor.vue'
+import type { QueuedChatMessage } from '@/types/chat/queued-chat-message'
 import ModelsOptionsModelOptionsRow from '@/components/models/options/ModelOptionsRow.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -64,12 +71,14 @@ const props = withDefaults(
     disabled?: boolean
     showProjectSelect?: boolean
     permissionLevel?: PermissionLevel
+    waitingOnBackground?: boolean
   }>(),
   {
     status: 'ready',
     disabled: false,
     showProjectSelect: false,
     permissionLevel: undefined,
+    waitingOnBackground: false,
   },
 )
 
@@ -102,6 +111,18 @@ const contextUsage = useContextUsage()
 const mcpServers = useMcpServers()
 
 const draftMentions = contextBudgetSync.draftMentions
+
+const queueHandlersRef = ref<{
+  hydrateQueuedMessage: (item: QueuedChatMessage) => Promise<void>
+} | null>(null)
+
+const hydrateQueuedMessage = async (item: QueuedChatMessage): Promise<void> => {
+  await queueHandlersRef.value?.hydrateQueuedMessage(item)
+}
+
+defineExpose<{ hydrateQueuedMessage: (item: QueuedChatMessage) => Promise<void> }>({
+  hydrateQueuedMessage,
+})
 
 const syncDraftSelection = (): void => {
   contextBudgetSync.setDraftSelection(session.selectedModelRef, session.selectedMode)
@@ -149,7 +170,7 @@ const activeProjectName = computed(() => {
   )
 })
 
-const submitStatus = computed((): ChatStatus => props.status)
+const submitControlStatus = computed((): ChatStatus => 'ready')
 
 const isWaitingOnReply = computed(
   () => props.status === 'submitted' || props.status === 'streaming',
@@ -297,10 +318,6 @@ const enrichMentionsBeforeSend = async (
 }
 
 const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
-  if (props.status === 'streaming' || props.status === 'submitted') {
-    emit('stop')
-    return
-  }
   const text = payload.text.trim()
   const files = payload.files ?? []
   if ((!text && files.length === 0) || props.disabled) {
@@ -483,6 +500,7 @@ watch(
         @submit="handleSubmit"
       >
         <ChatPromptAttachments />
+        <ChatQueueHandlers ref="queueHandlersRef" />
         <PromptInputBody>
           <ChatPromptEditSync />
           <ChatPromptMentionSync />
@@ -534,9 +552,24 @@ watch(
             />
             <PromptInputSubmit
               class="ml-1 shrink-0"
-              :status="submitStatus"
-              :disabled="disabled && status !== 'streaming' && status !== 'submitted'"
+              :status="submitControlStatus"
+              :disabled="disabled"
             />
+            <Tooltip v-if="isWaitingOnReply || waitingOnBackground">
+              <TooltipTrigger as-child>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  class="ml-1 shrink-0 rounded-full"
+                  aria-label="Stop generating"
+                  @click="emit('stop')"
+                >
+                  <SquareIcon class="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent class="z-[100]">Stop generating</TooltipContent>
+            </Tooltip>
           </PromptInputTools>
         </PromptInputFooter>
       </PromptInput>

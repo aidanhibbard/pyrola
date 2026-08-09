@@ -58,7 +58,9 @@ import buildMentionHighlights from '@/utils/build-mention-highlights'
 import chatRouteFor from '@/utils/chat-route-for'
 import formatUnknownError from '@/utils/format-unknown-error'
 import shouldFlushBackgroundSubagentResume from '@/utils/should-flush-background-subagent-resume'
+import useMessageQueue from '@/composables/use-message-queue'
 import router from '@/router'
+import type { QueuedChatMessage } from '@/types/chat/queued-chat-message'
 
 export type AgentHarnessOptions = {
   projectSlug: string
@@ -87,7 +89,7 @@ export const dropAgentHarness = (projectSlug: string, chatId: string): void => {
   const existing = harnessCache.get(key)
   harnessCache.delete(key)
   if (existing) {
-    existing.stop().catch(() => undefined)
+    existing.dispose().catch(() => undefined)
   }
 }
 
@@ -123,6 +125,19 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   let mcpAuthPollTimer: ReturnType<typeof setInterval> | null = null
 
   const mcpServers = useMcpServers()
+
+  const messageQueue = useMessageQueue()
+
+  const isParentBusy = (): boolean =>
+    status.value === 'streaming' ||
+    status.value === 'submitted' ||
+    resumingBackgroundBatch.value
+
+  const isWaitingOnBackground = (): boolean =>
+    hasPendingBackgroundResume(options.chatId) ||
+    hasRunningSubagentsForChat(options.chatId)
+
+  const isFullyIdle = (): boolean => !isParentBusy() && !isWaitingOnBackground()
 
   const refreshSidebar = (): void => {
     fleetSidebar.refreshSlug(options.projectSlug).catch((err) => {
@@ -636,6 +651,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       session.finishAgentTurn()
       applyTurnEndAttention('success')
       await fleetSidebar.refreshSlug(options.projectSlug)
+      await maybeDrainQueue()
     } catch (err) {
       const aborted = controller.signal.aborted
       if (aborted) {
@@ -667,7 +683,30 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     files?: FileUIPart[]
     skipUserMessage?: boolean
     skipUserPersist?: boolean
+    // Internal sends (drain, retry, edit, forceSendQueued) bypass the outbound
+    // queue and fall through to the streaming/submitted guard below. Only
+    // user-initiated sends from the composer enqueue when the harness is busy
+    // or waiting on background subagents.
+    internal?: boolean
   }): Promise<void> => {
+    if (!args.internal && (isParentBusy() || isWaitingOnBackground())) {
+      try {
+        messageQueue.enqueue({
+          text: args.text,
+          files: args.files ?? [],
+          mode: args.mode,
+          model: args.model,
+          reasoning: args.reasoning,
+          mentions: args.mentions,
+        })
+      } catch {
+        toast.error('Queue is full', {
+          description: 'Remove a queued message first',
+        })
+      }
+      return
+    }
+
     if (status.value === 'streaming' || status.value === 'submitted') {
       return
     }
@@ -797,6 +836,9 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
       session.finishAgentTurn()
       applyTurnEndAttention('success')
       await fleetSidebar.refreshSlug(options.projectSlug)
+      if (!args.internal) {
+        await maybeDrainQueue()
+      }
     } catch (err) {
       const aborted = controller.signal.aborted
       const timedOut =
@@ -861,6 +903,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         mode: args.mode,
         model: args.model,
         reasoning: args.reasoning,
+        internal: true,
       })
     } catch (err) {
       toast.error('Failed to edit message', {
@@ -904,6 +947,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         reasoning: args.reasoning,
         skipUserMessage: true,
         skipUserPersist: true,
+        internal: true,
       })
     } catch (err) {
       toast.error('Failed to retry', {
@@ -1103,6 +1147,71 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     }
   }
 
+  const maybeDrainQueue = async (): Promise<void> => {
+    while (isFullyIdle()) {
+      const item = messageQueue.take()
+      if (!item) {
+        return
+      }
+      try {
+        await send({
+          text: item.text,
+          files: item.files,
+          mode: item.mode,
+          model: item.model,
+          reasoning: item.reasoning,
+          mentions: item.mentions,
+          internal: true,
+        })
+      } catch (err) {
+        toast.error('Failed to send queued message', {
+          description: err instanceof Error ? err.message : 'Unknown error',
+        })
+        return
+      }
+    }
+  }
+
+  const forceSendQueued = async (id: string): Promise<void> => {
+    const item = messageQueue.items.value.find((entry) => entry.id === id)
+    if (!item) {
+      return
+    }
+    messageQueue.remove(id)
+    await stop()
+    clearPendingBackgroundResume(options.chatId)
+    try {
+      await send({
+        text: item.text,
+        files: item.files,
+        mode: item.mode,
+        model: item.model,
+        reasoning: item.reasoning,
+        mentions: item.mentions,
+        internal: true,
+      })
+    } catch (err) {
+      toast.error('Failed to send queued message', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }
+
+  const cancelQueued = (id: string): void => {
+    messageQueue.remove(id)
+  }
+
+  // Returns the queued item read-only. The view/composer slice is responsible
+  // for hydrating the composer from this item and then calling cancelQueued
+  // to remove it, so this slice never mutates the queue on edit.
+  const editQueued = (id: string): QueuedChatMessage | undefined =>
+    messageQueue.items.value.find((entry) => entry.id === id)
+
+  const dispose = async (): Promise<void> => {
+    await stop()
+    messageQueue.clear()
+  }
+
   return {
     status,
     error,
@@ -1112,6 +1221,8 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     toolRuns,
     subagents,
     liveEvents,
+    queuedMessages: messageQueue.items,
+    isWaitingOnBackground,
     send,
     submitEditMessage,
     retryLastTurn,
@@ -1127,6 +1238,10 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     compactChat,
     createHandoff,
     restorePendingApprovals,
+    forceSendQueued,
+    cancelQueued,
+    editQueued,
+    dispose,
   }
 }
 
