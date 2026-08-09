@@ -586,6 +586,18 @@ watch(pyrolaFileChangeToken, () => {
   refreshPlanStudioTabs()
 })
 
+const workspaceFileReloadNonce = ref(0)
+const workspaceFileReloadPaths = ref<string[]>([])
+
+const reloadWorkspaceFiles = (paths: string[]): void => {
+  const unique = [...new Set(paths.filter(Boolean))]
+  if (unique.length === 0) {
+    return
+  }
+  workspaceFileReloadPaths.value = unique
+  workspaceFileReloadNonce.value += 1
+}
+
 export default () => ({
   tabs,
   activeTabId,
@@ -595,6 +607,8 @@ export default () => ({
   hasMultipleProjects,
   duplicateDialogOpen,
   duplicateDialogTabType,
+  workspaceFileReloadNonce,
+  workspaceFileReloadPaths,
   focusTab,
   openEditor,
   openDiff,
@@ -607,6 +621,7 @@ export default () => ({
   closeAll,
   reorderTabs,
   registerTerminalSession,
+  reloadWorkspaceFiles,
   unregisterTerminalSession,
   getActiveTerminalSessionId,
   writeToActiveTerminal,

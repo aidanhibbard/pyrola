@@ -14,6 +14,9 @@ use uuid::Uuid;
 use super::fs::resolve_workspace_path;
 use super::paths::user_pyrola_dir;
 
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
+
 #[cfg(target_os = "macos")]
 use super::sandbox::generate_seatbelt_profile;
 
@@ -29,8 +32,42 @@ struct PtySession {
   child: Box<dyn portable_pty::Child + Send>,
 }
 
+/// Live tracked shell: wait task owns the Child and listens on `kill_rx`.
+/// Kill looks up this entry (so it stays registered until exit) and signals via `kill_tx`.
+#[derive(Clone)]
 struct TrackedShell {
-  child: tokio::process::Child,
+  kill_tx: tokio::sync::mpsc::Sender<()>,
+  exit_rx: tokio::sync::watch::Receiver<Option<ShellExitResult>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellExitResult {
+  pub exit_code: i32,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub signal: Option<i32>,
+}
+
+fn shell_exit_from_status(status: std::process::ExitStatus) -> ShellExitResult {
+  if let Some(code) = status.code() {
+    return ShellExitResult {
+      exit_code: code,
+      signal: None,
+    };
+  }
+
+  #[cfg(unix)]
+  if let Some(signal) = status.signal() {
+    return ShellExitResult {
+      exit_code: -1,
+      signal: Some(signal),
+    };
+  }
+
+  ShellExitResult {
+    exit_code: -1,
+    signal: None,
+  }
 }
 
 lazy_static::lazy_static! {
@@ -439,6 +476,22 @@ fn spawn_child(
     .map_err(|e| e.to_string())
 }
 
+async fn recv_tracked_exit(
+  mut exit_rx: tokio::sync::watch::Receiver<Option<ShellExitResult>>,
+) -> ShellExitResult {
+  loop {
+    if let Some(exit) = exit_rx.borrow().clone() {
+      return exit;
+    }
+    if exit_rx.changed().await.is_err() {
+      return ShellExitResult {
+        exit_code: -1,
+        signal: None,
+      };
+    }
+  }
+}
+
 #[tauri::command]
 pub async fn shell_spawn_tracked(
   app: AppHandle,
@@ -459,10 +512,16 @@ pub async fn shell_spawn_tracked(
     .take()
     .ok_or_else(|| "stderr unavailable".to_string())?;
 
-  TRACKED_SHELLS
-    .lock()
-    .unwrap()
-    .insert(shell_id.clone(), TrackedShell { child });
+  let (kill_tx, mut kill_rx) = tokio::sync::mpsc::channel::<()>(1);
+  let (exit_tx, exit_rx) = tokio::sync::watch::channel::<Option<ShellExitResult>>(None);
+
+  TRACKED_SHELLS.lock().unwrap().insert(
+    shell_id.clone(),
+    TrackedShell {
+      kill_tx,
+      exit_rx: exit_rx.clone(),
+    },
+  );
 
   let app_stdout = app.clone();
   let shell_stdout = shell_id.clone();
@@ -479,20 +538,41 @@ pub async fn shell_spawn_tracked(
   let app_wait = app.clone();
   let shell_wait = shell_id.clone();
   tokio::spawn(async move {
-    let child_opt = TRACKED_SHELLS.lock().unwrap().remove(&shell_wait);
-    let exit_code = match child_opt {
-      Some(mut tracked) => match tracked.child.wait().await {
-        Ok(status) => status.code().unwrap_or(-1),
-        Err(_) => -1,
+    // Keep the map entry until exit so kill can find this shell. The wait task
+    // owns the Child and handles kill via kill_rx (avoids remove-then-wait race).
+    let exit = tokio::select! {
+      status = child.wait() => match status {
+        Ok(status) => shell_exit_from_status(status),
+        Err(_) => ShellExitResult {
+          exit_code: -1,
+          signal: None,
+        },
       },
-      None => return,
+      kill = kill_rx.recv() => {
+        if kill.is_some() {
+          #[cfg(unix)]
+          kill_process_group(&mut child);
+          let _ = child.start_kill();
+        }
+        match child.wait().await {
+          Ok(status) => shell_exit_from_status(status),
+          Err(_) => ShellExitResult {
+            exit_code: -1,
+            signal: None,
+          },
+        }
+      }
     };
+
+    let _ = exit_tx.send(Some(exit.clone()));
+    TRACKED_SHELLS.lock().unwrap().remove(&shell_wait);
 
     let _ = app_wait.emit(
       &format!("shell-exit-{shell_wait}"),
       serde_json::json!({
         "shellId": shell_wait,
-        "exitCode": exit_code,
+        "exitCode": exit.exit_code,
+        "signal": exit.signal,
       }),
     );
   });
@@ -501,22 +581,18 @@ pub async fn shell_spawn_tracked(
 }
 
 #[tauri::command]
-pub async fn shell_kill_tracked(shell_id: String) -> Result<i32, String> {
-  let child_opt = TRACKED_SHELLS.lock().unwrap().remove(&shell_id);
-
-  let Some(mut tracked) = child_opt else {
-    return Err("Shell not found".to_string());
+pub async fn shell_kill_tracked(shell_id: String) -> Result<ShellExitResult, String> {
+  let tracked = {
+    let map = TRACKED_SHELLS.lock().unwrap();
+    map
+      .get(&shell_id)
+      .cloned()
+      .ok_or_else(|| "Shell not found".to_string())?
   };
 
-  #[cfg(unix)]
-  kill_process_group(&mut tracked.child);
+  // Signal the wait task to kill; if the send fails, the wait task already ended
+  // and exit_rx should still hold (or soon hold) the result.
+  let _ = tracked.kill_tx.send(()).await;
 
-  let _ = tracked.child.start_kill();
-  let status = tracked
-    .child
-    .wait()
-    .await
-    .map_err(|error| error.to_string())?;
-
-  Ok(status.code().unwrap_or(-1))
+  Ok(recv_tracked_exit(tracked.exit_rx).await)
 }

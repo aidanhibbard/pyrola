@@ -9,5 +9,6 @@ export type AgentShellRecord = {
   stdout: string
   stderr: string
   exitCode: number | null
+  exitSignal: number | null
   startedAt: string
 }

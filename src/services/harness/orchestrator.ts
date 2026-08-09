@@ -427,6 +427,7 @@ type HarnessStreamInput = {
   messages: UIMessage[]
   timeline?: ChatTimelineItem[]
   modelMessages: ModelMessage[]
+  userMessageId: string
   signal: AbortSignal
   onEvent: (event: HarnessEvent) => void
   assistantId: string
@@ -459,6 +460,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     messages,
     timeline,
     modelMessages,
+    userMessageId,
     signal,
     onEvent,
     assistantId,
@@ -614,6 +616,7 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     projectRoot,
     projectSlug,
     chatId,
+    userMessageId,
     settings,
     permissionLevel: input.permissionLevel ?? settings['agent.permissionLevel'] ?? 'allowlist',
     sessionAllows,
@@ -1109,6 +1112,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     chatId,
     messages,
     modelMessages: effectiveModelMessages,
+    userMessageId: userLine.id,
     assistantId: inputAssistantId ?? crypto.randomUUID(),
     captureTurnMessages: true,
     standalone: input.standalone,
@@ -1197,6 +1201,12 @@ export const resumeOrchestrator = async (
   clearTurnResponseMessages(chatId)
   clearPendingBackgroundResume(chatId)
 
+  const lastUser = [...messages].reverse().find((message) => message.role === 'user')
+  const userMessageId = lastUser?.id
+  if (!userMessageId) {
+    throw new Error('Cannot resume harness without a user message id for file checkpoints')
+  }
+
   await runHarnessStream({
     ...streamInput,
     mentions: [],
@@ -1204,6 +1214,7 @@ export const resumeOrchestrator = async (
     chatId,
     messages,
     modelMessages,
+    userMessageId,
     onEvent,
     assistantId: inputAssistantId ?? crypto.randomUUID(),
     captureTurnMessages: false,

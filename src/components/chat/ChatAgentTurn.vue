@@ -16,6 +16,7 @@ import AiElementsReasoningReasoningTrigger from '@/components/ai-elements/reason
 import AiElementsShimmerShimmer from '@/components/ai-elements/shimmer/Shimmer.vue'
 import ChatSubAgentTurn from '@/components/chat/SubAgentTurn.vue'
 import ChatToolRun from '@/components/chat/ChatToolRun.vue'
+import ChatTurnFilesChanged from '@/components/chat/ChatTurnFilesChanged.vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Alert,
@@ -24,6 +25,7 @@ import {
 } from '@/components/shadcn/ui/alert'
 import resolveSpawnSubagent from '@/utils/resolve-spawn-subagent'
 import segmentStepTools from '@/utils/segment-step-tools'
+import { aggregateTurnFileDiffs } from '@/services/harness/restore-file-checkpoints'
 
 const props = defineProps<{
   turn: AgentTurn
@@ -31,10 +33,12 @@ const props = defineProps<{
   activityLabel?: string | null
   subagentsByToolCallId?: Map<string, SubagentTimelineItem>
   subagentsById?: Map<string, SubagentTimelineItem>
+  restoreEnabled?: boolean
 }>()
 
 const emit = defineEmits<{
   retry: []
+  restoreFiles: []
   stopSubagent: [subagentId: string]
 }>()
 
@@ -44,6 +48,12 @@ const isStreaming = computed(
 
 const showActivity = computed(
   () => typeof props.activityLabel === 'string' && props.activityLabel.length > 0,
+)
+
+const fileChanges = computed(() => aggregateTurnFileDiffs(props.turn))
+
+const showFilesChanged = computed(
+  () => !isStreaming.value && fileChanges.value.length > 0,
 )
 
 const stepEntries = computed(() =>
@@ -186,6 +196,13 @@ const errorTitle = computed(() => {
     >
       {{ activityLabel }}
     </AiElementsShimmerShimmer>
+
+    <ChatTurnFilesChanged
+      v-if="showFilesChanged"
+      :changes="fileChanges"
+      :restore-enabled="restoreEnabled === true"
+      @restore="emit('restoreFiles')"
+    />
 
     <Alert
       v-if="turn.error && turn.error.kind !== 'aborted'"

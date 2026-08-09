@@ -28,6 +28,7 @@ defineEmits<{
   openMcpSettings: [serverId: string]
   secretsSavedMcp: [toolCallId: string, serverId: string]
   retry: []
+  restoreFiles: [turnId: string]
   stopSubagent: [subagentId: string]
 }>()
 </script>
@@ -53,6 +54,7 @@ defineEmits<{
       @open-mcp-settings="(serverId) => $emit('openMcpSettings', serverId)"
       @secrets-saved-mcp="(toolCallId, serverId) => $emit('secretsSavedMcp', toolCallId, serverId)"
       @retry="$emit('retry')"
+      @restore-files="$emit('restoreFiles', $event)"
       @stop-subagent="$emit('stopSubagent', $event)"
     />
   </MessageScrollerProvider>

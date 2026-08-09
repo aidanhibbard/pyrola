@@ -1026,6 +1026,43 @@ watch(
 )
 
 watch(
+  () => workbench.workspaceFileReloadNonce.value,
+  async () => {
+    const path = props.path
+    if (!path) {
+      return
+    }
+    const paths = workbench.workspaceFileReloadPaths.value
+    if (!paths.includes(path)) {
+      return
+    }
+    const root = projectRoot.value
+    if (!root) {
+      return
+    }
+    try {
+      const model = models.get(path)
+      if (!model) {
+        return
+      }
+      const result = await fsReadFile({ projectRoot: root, path })
+      if (model.getValue() !== result.content) {
+        model.setValue(result.content)
+      }
+      dirtyByPath.set(path, false)
+      emit('dirty-change', { path, dirty: false })
+    } catch {
+      const model = models.get(path)
+      if (model && model.getValue() !== '') {
+        model.setValue('')
+      }
+      dirtyByPath.set(path, false)
+      emit('dirty-change', { path, dirty: false })
+    }
+  },
+)
+
+watch(
   () => props.openPaths,
   (openPaths) => {
     if (!openPaths) {

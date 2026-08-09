@@ -20,6 +20,17 @@ Modes are not just prompts. They change which tools exist for that turn. See [Mo
 - Open a sub-agent thread from the main chat route to inspect nested work.
 - Abort or wait on sub-agents through harness registry plumbing.
 
+## File checkpoints
+
+Approved mutate tools (`write_file`, `edit_file`, `apply_patch`, `delete_file`, `move_file`) capture a first-touch baseline under the chat’s `file-checkpoints/` directory before writing disk. Baselines are keyed by the user message that started the turn.
+
+- **Turn files-changed** aggregates tool diffs for review and optional Restore.
+- **Edit submit** and **Retry** ask Keep files vs Revert files when later agent mutations exist. Canceling the edit banner never touches disk.
+- Restore uses checkpoint blobs, not the chat diff UI. A failed restore blocks chat truncate.
+- Shell / terminal side effects are **not** checkpointed. Git remains the source of truth for permanent history.
+- Manual edits on agent-touched paths are overwritten on revert (warned in the dialog).
+- Forking a chat copies `file-checkpoints/` so Restore still works on the fork.
+
 ## Related
 
 - [Architecture overview](./overview.md)

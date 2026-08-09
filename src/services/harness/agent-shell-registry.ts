@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { shellKillTracked, shellSpawnTracked } from '@/services/pyrola/pyrola-tauri'
 import type { AgentShellRecord, AgentShellStatus } from '@/types/harness/agent-shell'
 import type { HarnessEvent } from '@/types/harness/harness-event'
+import type { ShellExitResult } from '@/types/harness/shell-exit'
 
 type ShellOutputPayload = {
   shellId: string
@@ -9,9 +10,8 @@ type ShellOutputPayload = {
   data: string
 }
 
-type ShellExitPayload = {
+type ShellExitPayload = ShellExitResult & {
   shellId: string
-  exitCode: number
 }
 
 type EventEmitter = (event: HarnessEvent) => void
@@ -20,7 +20,7 @@ const MAX_BUFFER_CHARS = 500_000
 
 const shells = new Map<string, AgentShellRecord>()
 const chatShells = new Map<string, Set<string>>()
-const exitWaiters = new Map<string, Array<(exitCode: number) => void>>()
+const exitWaiters = new Map<string, Array<(exit: ShellExitResult) => void>>()
 const shellUnlisteners = new Map<string, Array<() => void>>()
 const eventEmitters = new Map<string, EventEmitter>()
 
@@ -39,9 +39,14 @@ const emitHarnessEvent = (chatId: string, event: HarnessEvent): void => {
   eventEmitters.get(chatId)?.(event)
 }
 
-const setShellStatus = (shell: AgentShellRecord, status: AgentShellStatus, exitCode: number): void => {
+const setShellStatus = (
+  shell: AgentShellRecord,
+  status: AgentShellStatus,
+  exit: ShellExitResult,
+): void => {
   shell.status = status
-  shell.exitCode = exitCode
+  shell.exitCode = exit.exitCode
+  shell.exitSignal = exit.signal ?? null
 }
 
 const appendOutput = (shellId: string, stream: 'stdout' | 'stderr', data: string): void => {
@@ -59,11 +64,11 @@ const appendOutput = (shellId: string, stream: 'stdout' | 'stderr', data: string
   emitHarnessEvent(shell.chatId, { type: 'terminal-output', shellId, stream, data })
 }
 
-const resolveExitWaiters = (shellId: string, exitCode: number): void => {
+const resolveExitWaiters = (shellId: string, exit: ShellExitResult): void => {
   const waiters = exitWaiters.get(shellId) ?? []
   exitWaiters.delete(shellId)
   for (const resolve of waiters) {
-    resolve(exitCode)
+    resolve(exit)
   }
 }
 
@@ -75,15 +80,15 @@ const cleanupShellListeners = (shellId: string): void => {
   shellUnlisteners.delete(shellId)
 }
 
-const markShellComplete = (shellId: string, exitCode: number): void => {
+const markShellComplete = (shellId: string, exit: ShellExitResult): void => {
   const shell = shells.get(shellId)
   if (!shell || shell.status !== 'running') {
     return
   }
 
-  setShellStatus(shell, exitCode === 0 ? 'completed' : 'failed', exitCode)
-  emitHarnessEvent(shell.chatId, { type: 'shell-complete', shellId, exitCode })
-  resolveExitWaiters(shellId, exitCode)
+  setShellStatus(shell, exit.exitCode === 0 ? 'completed' : 'failed', exit)
+  emitHarnessEvent(shell.chatId, { type: 'shell-complete', shellId, exitCode: exit.exitCode })
+  resolveExitWaiters(shellId, exit)
   cleanupShellListeners(shellId)
 }
 
@@ -93,7 +98,10 @@ const registerShellListeners = async (shellId: string): Promise<void> => {
   })
 
   const unlistenExit = await listen<ShellExitPayload>(`shell-exit-${shellId}`, (event) => {
-    markShellComplete(shellId, event.payload.exitCode)
+    markShellComplete(shellId, {
+      exitCode: event.payload.exitCode,
+      signal: event.payload.signal,
+    })
   })
 
   shellUnlisteners.set(shellId, [unlistenOutput, unlistenExit])
@@ -122,6 +130,7 @@ export const createAgentShell = async (args: {
     stdout: '',
     stderr: '',
     exitCode: null,
+    exitSignal: null,
     startedAt: new Date().toISOString(),
   }
 
@@ -142,15 +151,20 @@ export const createAgentShell = async (args: {
 export const waitForShellExit = (
   shellId: string,
   timeoutMs: number,
-): Promise<{ exitCode: number; timedOut: boolean }> => {
+): Promise<ShellExitResult & { timedOut: boolean }> => {
   const shell = shells.get(shellId)
   if (!shell) {
     return Promise.reject(new Error(`Shell not found: ${shellId}`))
   }
 
+  const toExitResult = (): ShellExitResult => ({
+    exitCode: shell.exitCode ?? -1,
+    signal: shell.exitSignal ?? undefined,
+  })
+
   if (shell.status !== 'running') {
     return Promise.resolve({
-      exitCode: shell.exitCode ?? -1,
+      ...toExitResult(),
       timedOut: false,
     })
   }
@@ -158,14 +172,14 @@ export const waitForShellExit = (
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       resolve({
-        exitCode: shell.exitCode ?? -1,
+        ...toExitResult(),
         timedOut: true,
       })
     }, timeoutMs)
 
-    const onExit = (exitCode: number): void => {
+    const onExit = (exit: ShellExitResult): void => {
       clearTimeout(timer)
-      resolve({ exitCode, timedOut: false })
+      resolve({ ...exit, timedOut: false })
     }
 
     const waiters = exitWaiters.get(shellId) ?? []
@@ -209,8 +223,23 @@ export const killAgentShell = async (shellId: string): Promise<AgentShellRecord>
   }
 
   if (shell.status === 'running') {
-    const exitCode = await shellKillTracked(shellId)
-    markShellComplete(shellId, exitCode)
+    try {
+      const exit = await shellKillTracked(shellId)
+      markShellComplete(shellId, exit)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // Backend may have already reaped the process between our status check and kill.
+      if (!message.includes('Shell not found')) {
+        throw error
+      }
+      if (shell.status === 'running') {
+        const waitResult = await waitForShellExit(shellId, 5_000)
+        markShellComplete(shellId, {
+          exitCode: waitResult.exitCode,
+          signal: waitResult.signal,
+        })
+      }
+    }
   }
 
   return shell

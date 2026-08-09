@@ -77,6 +77,7 @@ import {
   tailShellOutput,
   waitForShellExit,
 } from '@/services/harness/agent-shell-registry'
+import formatShellExitReason from '@/services/harness/format-shell-exit-reason'
 import { loadSkill } from '@/services/skills/skill-registry'
 import isStudioHtmlContent from '@/services/studio/is-studio-html-content'
 import parseStudioArtifact from '@/services/studio/parse-studio-artifact'
@@ -100,6 +101,7 @@ import {
   getPlanExecutionSession,
   markCreatedPlanThisTurn,
 } from '@/services/harness/plan-execution-session'
+import captureBaselinesBeforeMutate from '@/services/harness/capture-baselines-before-mutate'
 import linkAbortSignal from '@/utils/link-abort-signal'
 import {
   CODEGRAPH_SERVER_ID,
@@ -112,6 +114,8 @@ export type HarnessToolContext = {
   projectRoot: string
   projectSlug: string
   chatId: string
+  /** User message that started this agent turn; required for file checkpoints. */
+  userMessageId?: string
   settings: PyrolaSettings
   permissionLevel: PermissionLevel
   sessionAllows: Set<string>
@@ -477,8 +481,9 @@ const runTerminalCommand = async (
   }
 
   if (waitResult.exitCode !== 0) {
-    const detail = stderr.trim() || stdout.trim() || `exit code ${waitResult.exitCode}`
-    throw new Error(`Command failed (${waitResult.exitCode}): ${detail}`)
+    const reason = formatShellExitReason(waitResult)
+    const detail = stderr.trim() || stdout.trim() || reason
+    throw new Error(`Command failed (${reason}): ${detail}`)
   }
 
   return {
@@ -838,6 +843,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         return { rejected: true, error: 'Delete not approved' }
       }
 
+      await captureBaselinesBeforeMutate(ctx, [path], toolCallId)
       await fsDelete({ projectRoot: ctx.projectRoot, path, recursive })
       return { ok: true, path, diffs }
     },
@@ -882,6 +888,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         return { rejected: true, error: 'Move not approved' }
       }
 
+      await captureBaselinesBeforeMutate(ctx, [from, to], toolCallId)
       await fsMove({ projectRoot: ctx.projectRoot, from, to })
       return { ok: true, from, to, diffs }
     },
@@ -915,6 +922,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       if (!allowed) {
         return { rejected: true, error: 'Write not approved' }
       }
+      await captureBaselinesBeforeMutate(ctx, [path], toolCallId)
       await fsWriteFile({ projectRoot: ctx.projectRoot, path, content })
       return { ok: true, path, diffs }
     },
@@ -958,6 +966,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       if (!allowed) {
         return { rejected: true, error: 'Edit not approved' }
       }
+      await captureBaselinesBeforeMutate(ctx, [path], toolCallId)
       await fsEditFile({
         projectRoot: ctx.projectRoot,
         path,
@@ -997,6 +1006,9 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       })
       if (!allowed) {
         return { rejected: true, error: 'Patch not approved' }
+      }
+      if (paths.length > 0) {
+        await captureBaselinesBeforeMutate(ctx, paths, toolCallId)
       }
       await fsApplyPatch({ projectRoot: ctx.projectRoot, patch })
       return { ok: true, paths, diffs }

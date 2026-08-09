@@ -29,6 +29,14 @@ const fsEditFile = vi.fn<
 const fsApplyPatch = vi.fn<
   (args: { projectRoot: string; patch: string }) => Promise<FileDiff[]>
 >()
+const fileCheckpointCapture = vi
+  .fn<() => Promise<{ path: string; pathHash: string; existed: boolean; capturedAt: string }>>()
+  .mockResolvedValue({
+  path: 'x',
+  pathHash: 'h',
+  existed: true,
+  capturedAt: 'now',
+})
 
 const lspEnsureServer = vi.fn<() => Promise<unknown>>()
 const lspRequest = vi.fn<() => Promise<unknown>>()
@@ -48,6 +56,7 @@ vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   fsStagePreviewWrite,
   fsStagePreviewEdit,
   fsStagePreviewApplyPatch,
+  fileCheckpointCapture,
   workspaceGrep: vi.fn<() => Promise<unknown>>(),
   workspaceGlob: vi.fn<() => Promise<unknown>>(),
   gitStatus: vi.fn<() => Promise<unknown>>(),
@@ -121,7 +130,10 @@ const createAgentShell = vi.fn<
 const getAgentShell = vi.fn<(shellId: string) => unknown>()
 const killAgentShell = vi.fn<(shellId: string) => Promise<unknown>>()
 const waitForShellExit = vi.fn<
-  (shellId: string, timeoutMs: number) => Promise<{ exitCode: number; timedOut: boolean }>
+  (
+    shellId: string,
+    timeoutMs: number,
+  ) => Promise<{ exitCode: number; signal?: number; timedOut: boolean }>
 >()
 const tailShellOutput = vi.fn<
   (shell: { stdout: string; stderr: string }, tail?: number) => { stdout: string; stderr: string }
@@ -164,12 +176,19 @@ describe('build-tools stage preview wiring', () => {
     fsEditFile.mockResolvedValue(sampleDiff)
     fsApplyPatch.mockResolvedValue([sampleDiff])
     gateToolPermission.mockResolvedValue(true)
+    fileCheckpointCapture.mockResolvedValue({
+      path: 'x',
+      pathHash: 'h',
+      existed: true,
+      capturedAt: 'now',
+    })
   })
 
   const ctx = {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),
@@ -206,6 +225,16 @@ describe('build-tools stage preview wiring', () => {
       path: 'src/main.ts',
       content: 'next',
     })
+    expect(fileCheckpointCapture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: 'src/main.ts',
+        userMessageId: 'user-1',
+        chatId: 'chat-1',
+      }),
+    )
+    expect(fileCheckpointCapture.mock.invocationCallOrder[0]).toBeLessThan(
+      fsWriteFile.mock.invocationCallOrder[0]!,
+    )
   })
 
   it('edit_file stages preview with replacements', async () => {
@@ -283,6 +312,7 @@ describe('build-tools run_terminal', () => {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),
@@ -325,6 +355,25 @@ describe('build-tools run_terminal', () => {
     })
   })
 
+  it('reports signal death in command failed errors', async () => {
+    waitForShellExit.mockResolvedValue({ exitCode: -1, signal: 6, timedOut: false })
+    getAgentShell.mockReturnValue({
+      shellId: 'shell-1',
+      status: 'failed',
+      stdout: '',
+      stderr: 'Aborted',
+      exitCode: -1,
+      exitSignal: 6,
+    })
+
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    await expect(runTool(tools.run_terminal.execute, { command: 'false' })).rejects.toThrow(
+      'Command failed (killed by signal 6): Aborted',
+    )
+  })
+
   it('returns immediately for background commands', async () => {
     const buildTools = (await import('@/services/harness/build-tools')).default
     const tools = buildTools(ctx)
@@ -349,6 +398,7 @@ describe('build-tools run_terminal', () => {
       stdout: 'log line\n',
       stderr: '',
       exitCode: null,
+      exitSignal: null,
     })
 
     const buildTools = (await import('@/services/harness/build-tools')).default
@@ -404,6 +454,7 @@ describe('build-tools write_studio_artifact', () => {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),
@@ -504,6 +555,7 @@ describe('build-tools CodeGraph first-party tools', () => {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),
@@ -585,6 +637,7 @@ describe('build-tools lsp', () => {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),
@@ -745,6 +798,7 @@ describe('build-tools call_mcp_tool args normalization', () => {
     projectRoot: '/project',
     projectSlug: 'project',
     chatId: 'chat-1',
+    userMessageId: 'user-1',
     settings: { version: 1 } as PyrolaSettings,
     permissionLevel: 'ask' as const,
     sessionAllows: new Set<string>(),

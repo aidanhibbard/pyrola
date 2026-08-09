@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HarnessEvent } from '@/types/harness/harness-event'
 
 const shellSpawnTracked = vi.fn<() => Promise<void>>()
-const shellKillTracked = vi.fn<() => Promise<number>>()
+const shellKillTracked = vi.fn<() => Promise<{ exitCode: number; signal?: number }>>()
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn<() => Promise<() => void>>(async () => () => {}),
@@ -17,7 +17,7 @@ describe('agent shell event emitters per chat', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     shellSpawnTracked.mockResolvedValue(undefined)
-    shellKillTracked.mockResolvedValue(0)
+    shellKillTracked.mockResolvedValue({ exitCode: 0 })
     const { resetAgentShellRegistryForTests } = await import(
       '@/services/harness/agent-shell-registry'
     )

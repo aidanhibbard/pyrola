@@ -22,3 +22,15 @@ export const truncateChatLogAfterLastUser = async (
     keepThroughLastUser: true,
   })
 }
+
+export const truncateChatLogAfterUserMessage = async (
+  projectSlug: string,
+  chatId: string,
+  messageId: string,
+): Promise<void> => {
+  await truncateChatLog({
+    projectSlug,
+    chatId,
+    keepThroughMessageId: messageId,
+  })
+}

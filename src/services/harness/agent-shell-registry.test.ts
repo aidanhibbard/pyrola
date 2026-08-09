@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentShellRecord } from '@/types/harness/agent-shell'
 
 const shellSpawnTracked = vi.fn<() => Promise<void>>()
-const shellKillTracked = vi.fn<() => Promise<number>>()
+const shellKillTracked = vi.fn<() => Promise<{ exitCode: number; signal?: number }>>()
+
+type ExitListener = (event: { payload: { shellId: string; exitCode: number; signal?: number } }) => void
+
+const listen = vi.fn<
+  (event: string, handler: ExitListener) => Promise<() => void>
+>(async () => () => {})
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn<() => Promise<() => void>>(async () => () => {}),
+  listen,
 }))
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
@@ -17,7 +23,7 @@ describe('agent-shell-registry', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     shellSpawnTracked.mockResolvedValue(undefined)
-    shellKillTracked.mockResolvedValue(0)
+    shellKillTracked.mockResolvedValue({ exitCode: 0 })
     const { resetAgentShellRegistryForTests } = await import(
       '@/services/harness/agent-shell-registry'
     )
@@ -56,6 +62,7 @@ describe('agent-shell-registry', () => {
       stdout: 'line-1\nline-2\nline-3',
       stderr: 'err-1\nerr-2',
       exitCode: null,
+      exitSignal: null,
       startedAt: new Date().toISOString(),
     }
 
@@ -63,6 +70,39 @@ describe('agent-shell-registry', () => {
 
     expect(output.stdout).toBe('line-2\nline-3')
     expect(output.stderr).toBe('err-1\nerr-2')
+  })
+
+  it('propagates signal deaths from shell exit events', async () => {
+    let exitHandler: ExitListener | undefined
+    listen.mockImplementation(async (event, handler) => {
+      if (event.startsWith('shell-exit-')) {
+        exitHandler = handler
+      }
+      return () => {}
+    })
+
+    const { createAgentShell, waitForShellExit, getAgentShell } = await import(
+      '@/services/harness/agent-shell-registry'
+    )
+
+    const shell = await createAgentShell({
+      chatId: 'chat-1',
+      projectRoot: '/project',
+      command: 'sleep 1',
+    })
+
+    const waitPromise = waitForShellExit(shell.shellId, 5_000)
+    exitHandler?.({
+      payload: { shellId: shell.shellId, exitCode: -1, signal: 6 },
+    })
+
+    await expect(waitPromise).resolves.toEqual({
+      exitCode: -1,
+      signal: 6,
+      timedOut: false,
+    })
+    expect(getAgentShell(shell.shellId)?.exitSignal).toBe(6)
+    expect(getAgentShell(shell.shellId)?.status).toBe('failed')
   })
 
   it('kills all shells for a chat', async () => {
@@ -88,5 +128,36 @@ describe('agent-shell-registry', () => {
     expect(shellKillTracked).toHaveBeenCalledWith(second.shellId)
     expect(getAgentShell(first.shellId)?.status).toBe('completed')
     expect(getAgentShell(second.shellId)?.status).toBe('completed')
+  })
+
+  it('recovers when kill races with an already-reaped shell', async () => {
+    let exitHandler: ExitListener | undefined
+    listen.mockImplementation(async (event, handler) => {
+      if (event.startsWith('shell-exit-')) {
+        exitHandler = handler
+      }
+      return () => {}
+    })
+    shellKillTracked.mockRejectedValueOnce(new Error('Shell not found'))
+
+    const { createAgentShell, killAgentShell, getAgentShell } = await import(
+      '@/services/harness/agent-shell-registry'
+    )
+
+    const shell = await createAgentShell({
+      chatId: 'chat-1',
+      projectRoot: '/project',
+      command: 'sleep 10',
+    })
+
+    const killPromise = killAgentShell(shell.shellId)
+    await Promise.resolve()
+    exitHandler?.({
+      payload: { shellId: shell.shellId, exitCode: 0 },
+    })
+
+    await killPromise
+
+    expect(getAgentShell(shell.shellId)?.status).toBe('completed')
   })
 })

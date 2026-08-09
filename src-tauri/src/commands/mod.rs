@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod codegraph;
 pub mod config;
+pub mod file_checkpoint;
 pub mod fs;
 pub mod git;
 pub mod glob;
@@ -27,6 +28,7 @@ pub use config::{
   config_exists, read_json_file, read_lsp_config, read_mcp_config, read_settings, write_json_file,
   write_lsp_config, write_mcp_config, write_settings,
 };
+pub use file_checkpoint::{file_checkpoint_capture, file_checkpoint_restore};
 pub use fs::{
   fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir,
   fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file, write_temp_handoff,

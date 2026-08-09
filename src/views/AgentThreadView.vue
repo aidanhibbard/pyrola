@@ -9,12 +9,14 @@ import ChatPromptInput from '@/components/chat/ChatPromptInput.vue'
 import ChatMessageQueue from '@/components/chat/ChatMessageQueue.vue'
 import ChatThread from '@/components/chat/ChatThread.vue'
 import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
+import ChatFilePolicyDialog from '@/components/chat/ChatFilePolicyDialog.vue'
 import RunningTerminalsPanel from '@/components/chat/RunningTerminalsPanel.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import ChatCodegraphStatusChip from '@/components/chat/ChatCodegraphStatusChip.vue'
 import ChatChatPanelContextMenu from '@/components/chat/ChatPanelContextMenu.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
+import type { AggregatedTurnFileChange, FileCheckpointFilePolicy } from '@/types/harness/file-checkpoint'
 import useChatContextActions from '@/composables/use-chat-context-actions'
 import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -61,6 +63,26 @@ const sessionPermissionLevel = ref<PermissionLevel>(
   config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist',
 )
 const permissionLevelTouched = ref(false)
+
+type PendingFilePolicyAction =
+  | {
+      kind: 'edit'
+      text: string
+      mode: PyrolaChatMode
+      model: string
+      reasoning?: ReasoningLevel
+    }
+  | {
+      kind: 'retry'
+      mode: PyrolaChatMode
+      model: string
+    }
+
+const filePolicyOpen = ref(false)
+const filePolicyChanges = ref<AggregatedTurnFileChange[]>([])
+const filePolicyTitle = ref('Submit edited message?')
+const filePolicyEmphasizeRevert = ref(false)
+const pendingFilePolicyAction = ref<PendingFilePolicyAction | null>(null)
 
 const isStandalone = computed(
   () =>
@@ -353,13 +375,91 @@ const handleSubmitEdit = async (payload: {
     })
     return
   }
+  const messageId = chatStore.editingMessageId.value
+  const mutations =
+    messageId ? harness.value.getFileMutationsAfterMessage(messageId) : []
+  if (mutations.length > 0) {
+    pendingFilePolicyAction.value = {
+      kind: 'edit',
+      text: payload.text,
+      mode: payload.mode,
+      model: payload.model,
+      reasoning: payload.reasoning,
+    }
+    filePolicyTitle.value = 'Submit edited message?'
+    filePolicyEmphasizeRevert.value = false
+    filePolicyChanges.value = mutations
+    filePolicyOpen.value = true
+    return
+  }
   await harness.value.submitEditMessage({
     newContent: payload.text,
     mode: payload.mode,
     model: payload.model,
     reasoning: payload.reasoning,
+    filePolicy: 'keep',
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
+}
+
+const runPendingFilePolicy = async (
+  filePolicy: FileCheckpointFilePolicy,
+): Promise<void> => {
+  const pending = pendingFilePolicyAction.value
+  pendingFilePolicyAction.value = null
+  if (!pending || !harness.value) {
+    return
+  }
+  if (pending.kind === 'edit') {
+    await harness.value.submitEditMessage({
+      newContent: pending.text,
+      mode: pending.mode,
+      model: pending.model,
+      reasoning: pending.reasoning,
+      filePolicy,
+    })
+    await fleetSidebar.refreshSlug(projectSlug.value)
+    return
+  }
+  await harness.value.retryLastTurn({
+    mode: pending.mode,
+    model: pending.model,
+    filePolicy,
+  })
+}
+
+const handleFilePolicyKeep = async (): Promise<void> => {
+  try {
+    await runPendingFilePolicy('keep')
+  } catch (error) {
+    toast.error('Failed to continue', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleFilePolicyRevert = async (): Promise<void> => {
+  try {
+    await runPendingFilePolicy('revert')
+  } catch (error) {
+    toast.error('Failed to revert files', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleRestoreFiles = async (turnId: string): Promise<void> => {
+  if (!harness.value) {
+    return
+  }
+  try {
+    await harness.value.restoreAgentTurnFiles(turnId)
+    await fleetSidebar.refreshSlug(projectSlug.value)
+  } catch (error) {
+    toast.error('Failed to restore files', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 
 const handleStop = async (): Promise<void> => {
@@ -488,9 +588,19 @@ const handleRetry = async (): Promise<void> => {
     toast.error('Select a model before retrying')
     return
   }
+  const mutations = harness.value.getLastTurnFileMutations()
+  if (mutations.length > 0) {
+    pendingFilePolicyAction.value = { kind: 'retry', mode, model }
+    filePolicyTitle.value = 'Retry this turn?'
+    filePolicyEmphasizeRevert.value = true
+    filePolicyChanges.value = mutations
+    filePolicyOpen.value = true
+    return
+  }
   await harness.value.retryLastTurn({
     mode,
     model,
+    filePolicy: 'keep',
   })
 }
 
@@ -646,7 +756,16 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       @open-mcp-settings="handleOpenMcpSettings"
       @secrets-saved-mcp="(toolCallId) => handleSecretsSavedMcp(toolCallId)"
       @retry="handleRetry"
+      @restore-files="handleRestoreFiles"
       @stop-subagent="handleStopSubagent"
+    />
+    <ChatFilePolicyDialog
+      v-model:open="filePolicyOpen"
+      :title="filePolicyTitle"
+      :changes="filePolicyChanges"
+      :emphasize-revert="filePolicyEmphasizeRevert"
+      @keep="handleFilePolicyKeep"
+      @revert="handleFilePolicyRevert"
     />
     <div
       v-if="!isSubagentView"

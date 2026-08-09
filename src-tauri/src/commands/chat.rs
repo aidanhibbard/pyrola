@@ -42,10 +42,18 @@ fn chats_dir(app: &AppHandle, project_slug: &str) -> Result<PathBuf, String> {
   Ok(dir)
 }
 
-fn chat_dir(app: &AppHandle, project_slug: &str, chat_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn chat_dir_for(
+  app: &AppHandle,
+  project_slug: &str,
+  chat_id: &str,
+) -> Result<PathBuf, String> {
   let dir = chats_dir(app, project_slug)?.join(chat_id);
   fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
   Ok(dir)
+}
+
+fn chat_dir(app: &AppHandle, project_slug: &str, chat_id: &str) -> Result<PathBuf, String> {
+  chat_dir_for(app, project_slug, chat_id)
 }
 
 fn now_iso() -> String {
@@ -163,6 +171,7 @@ pub fn truncate_chat_log(
   chat_id: String,
   before_message_id: Option<String>,
   keep_through_last_user: Option<bool>,
+  keep_through_message_id: Option<String>,
 ) -> Result<(), String> {
   let messages = read_chat_messages(app.clone(), project_slug.clone(), chat_id.clone())?;
   let keep_count = if let Some(message_id) = before_message_id {
@@ -175,6 +184,17 @@ pub fn truncate_chat_log(
           .is_some_and(|id| id == message_id)
       })
       .unwrap_or(messages.len())
+  } else if let Some(message_id) = keep_through_message_id {
+    messages
+      .iter()
+      .position(|line| {
+        line
+          .get("id")
+          .and_then(|value| value.as_str())
+          .is_some_and(|id| id == message_id)
+      })
+      .map(|index| index + 1)
+      .unwrap_or(0)
   } else if keep_through_last_user.unwrap_or(false) {
     messages
       .iter()
@@ -187,7 +207,10 @@ pub fn truncate_chat_log(
       .map(|index| index + 1)
       .unwrap_or(0)
   } else {
-    return Err("truncate_chat_log requires before_message_id or keep_through_last_user".to_string());
+    return Err(
+      "truncate_chat_log requires before_message_id, keep_through_message_id, or keep_through_last_user"
+        .to_string(),
+    );
   };
 
   let kept = messages.into_iter().take(keep_count).collect::<Vec<_>>();
@@ -274,6 +297,14 @@ pub fn fork_chat(
       new_meta.id.clone(),
       line,
     )?;
+  }
+  if let Err(error) = super::file_checkpoint::copy_file_checkpoints(
+    &app,
+    &project_slug,
+    &source_id,
+    &new_meta.id,
+  ) {
+    log::warn!("Failed to copy file checkpoints on fork: {error}");
   }
   update_chat_meta(
     app,

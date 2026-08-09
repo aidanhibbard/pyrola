@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { PencilIcon } from '@lucide/vue'
 import type { FileUIPart, UIMessage } from 'ai'
 import {
@@ -12,21 +12,8 @@ import AiElementsMessageMessage from '@/components/ai-elements/message/Message.v
 import AiElementsMessageMessageAction from '@/components/ai-elements/message/MessageAction.vue'
 import AiElementsMessageMessageActions from '@/components/ai-elements/message/MessageActions.vue'
 import AiElementsMessageMessageContent from '@/components/ai-elements/message/MessageContent.vue'
-import ChatMentionText from '@/components/chat/ChatMentionText.vue'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/shadcn/ui/alert-dialog'
 import useChatStore from '@/composables/use-chat-store'
 import type { UserMessageMetadata } from '@/types/chat/user-message-metadata'
-import type { MentionHighlight } from '@/types/chat/mention-highlight'
-import { mentionHighlightSchema } from '@/schemas/mention-highlight'
 import formatModelLabelFromRef from '@/utils/format-model-label-from-ref'
 import formatRelativeTime from '@/utils/format-relative-time'
 
@@ -36,8 +23,6 @@ const props = defineProps<{
 }>()
 
 const chatStore = useChatStore()
-const confirmOpen = ref(false)
-
 const text = computed(() =>
   props.message.parts
     .filter((part) => part.type === 'text')
@@ -69,22 +54,11 @@ const metadata = computed((): UserMessageMetadata => {
     return {}
   }
   const record = value as Record<string, unknown>
-  const highlightsParsed = mentionHighlightSchema
-    .array()
-    .safeParse(record.mentionHighlights)
   return {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : undefined,
     model: typeof record.model === 'string' ? record.model : undefined,
-    mentionHighlights:
-      highlightsParsed.success && highlightsParsed.data.length > 0
-        ? highlightsParsed.data
-        : undefined,
   }
 })
-
-const mentionHighlights = computed(
-  (): MentionHighlight[] => metadata.value.mentionHighlights ?? [],
-)
 
 const modelLabel = computed(() => {
   const fromMeta = formatModelLabelFromRef(metadata.value.model)
@@ -109,20 +83,7 @@ const handleEditClick = (): void => {
   if (!props.editable || isEditing.value) {
     return
   }
-  if (chatStore.hasTimelineContentAfterMessage(props.message.id)) {
-    confirmOpen.value = true
-    return
-  }
   chatStore.beginEditMessage(props.message.id)
-}
-
-const handleConfirmEdit = (): void => {
-  confirmOpen.value = false
-  chatStore.beginEditMessage(props.message.id)
-}
-
-const handleConfirmOpenChange = (open: boolean): void => {
-  confirmOpen.value = open
 }
 </script>
 
@@ -157,7 +118,7 @@ const handleConfirmOpenChange = (open: boolean): void => {
         ]"
         @click="handleEditClick"
       >
-        <ChatMentionText :text="text" :highlights="mentionHighlights" />
+        {{ text }}
       </AiElementsMessageMessageContent>
     </AiElementsMessageMessage>
 
@@ -187,24 +148,4 @@ const handleConfirmOpenChange = (open: boolean): void => {
       </span>
     </AiElementsMessageMessageActions>
   </div>
-
-  <AlertDialog
-    :open="confirmOpen"
-    @update:open="handleConfirmOpenChange"
-  >
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>Edit this message?</AlertDialogTitle>
-        <AlertDialogDescription>
-          Editing this message will discard the conversation after it.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction @click="handleConfirmEdit">
-          Continue
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
 </template>

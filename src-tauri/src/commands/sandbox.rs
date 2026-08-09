@@ -25,6 +25,8 @@ pub fn generate_seatbelt_profile(allow_network: bool) -> String {
 (allow mach-lookup)
 
 ; System read paths: binaries, libraries, and frameworks
+; Modern macOS process startup needs root-directory read; subpath allows alone are insufficient.
+(allow file-read* (literal "/"))
 (allow file-read* (subpath "/usr"))
 (allow file-read* (subpath "/bin"))
 (allow file-read* (subpath "/sbin"))
@@ -82,4 +84,67 @@ pub fn generate_seatbelt_profile(allow_network: bool) -> String {
 
 {network_rule}"#
   )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::generate_seatbelt_profile;
+
+  #[test]
+  fn profile_allows_root_directory_read() {
+    let profile = generate_seatbelt_profile(false);
+    assert!(
+      profile.contains("(allow file-read* (literal \"/\"))"),
+      "profile must allow reading the filesystem root for modern macOS process startup"
+    );
+  }
+
+  #[test]
+  fn profile_includes_network_rule_when_enabled() {
+    let with_network = generate_seatbelt_profile(true);
+    let without_network = generate_seatbelt_profile(false);
+    assert!(with_network.contains("(allow network*)"));
+    assert!(!without_network.contains("(allow network*)"));
+  }
+
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn sandbox_exec_echo_succeeds_with_profile() {
+    use std::env;
+    use std::process::Command;
+
+    let profile = generate_seatbelt_profile(false);
+    let home = env::var("HOME").unwrap_or_default();
+    let tmpdir_raw = env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+    let tmpdir = std::fs::canonicalize(&tmpdir_raw)
+      .map(|p| p.to_string_lossy().to_string())
+      .unwrap_or(tmpdir_raw);
+    let project_root = env::current_dir()
+      .expect("current dir")
+      .to_string_lossy()
+      .to_string();
+
+    let output = Command::new("/usr/bin/sandbox-exec")
+      .arg("-D")
+      .arg(format!("HOME={home}"))
+      .arg("-D")
+      .arg(format!("PROJECT_ROOT={project_root}"))
+      .arg("-D")
+      .arg(format!("TMPDIR={tmpdir}"))
+      .arg("-p")
+      .arg(&profile)
+      .arg("sh")
+      .arg("-c")
+      .arg("echo hello")
+      .output()
+      .expect("sandbox-exec spawn");
+
+    assert!(
+      output.status.success(),
+      "sandbox-exec failed: status={} stderr={}",
+      output.status,
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
+  }
 }

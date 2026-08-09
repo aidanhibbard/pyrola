@@ -5,6 +5,7 @@ import { lspConfigSchema } from '@/schemas/lsp-config'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { GitStatusResult } from '@/types/git/git-status-result'
 import type { McpIcon } from '@/types/mcp/mcp-icon'
+import type { ShellExitResult } from '@/types/harness/shell-exit'
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -348,6 +349,7 @@ export const truncateChatLog = (args: {
   chatId: string
   beforeMessageId?: string
   keepThroughLastUser?: boolean
+  keepThroughMessageId?: string
 }): Promise<void> => call('truncate_chat_log', args)
 
 export const updateChatMeta = (
@@ -361,6 +363,33 @@ export const deleteChat = (projectSlug: string, chatId: string): Promise<void> =
 
 export const forkChat = (projectSlug: string, chatId: string): Promise<ChatMetaRecord> =>
   call('fork_chat', { projectSlug, chatId })
+
+export const fileCheckpointCapture = (args: {
+  projectSlug: string
+  chatId: string
+  userMessageId: string
+  projectRoot: string
+  path: string
+  toolCallId?: string
+}): Promise<{
+  path: string
+  pathHash: string
+  existed: boolean
+  capturedAt: string
+  toolCallId?: string
+}> => call('file_checkpoint_capture', args)
+
+export const fileCheckpointRestore = (args: {
+  projectSlug: string
+  chatId: string
+  projectRoot: string
+  targets: Array<{ path: string; userMessageId: string }>
+}): Promise<{
+  restored: string[]
+  deleted: string[]
+  skipped: string[]
+  errors: Array<{ path: string; error: string }>
+}> => call('file_checkpoint_restore', args)
 
 export const pinChat = (
   projectSlug: string,
@@ -655,7 +684,7 @@ export const shellSpawnTracked = (args: {
   allowNetwork?: boolean
 }): Promise<void> => call('shell_spawn_tracked', args)
 
-export const shellKillTracked = (shellId: string): Promise<number> =>
+export const shellKillTracked = (shellId: string): Promise<ShellExitResult> =>
   call('shell_kill_tracked', { shellId })
 
 export type LspServerStatus = {

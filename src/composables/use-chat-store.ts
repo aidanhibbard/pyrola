@@ -29,6 +29,7 @@ import {
 } from '@/services/pyrola/pyrola-tauri'
 import {
   truncateChatLogAfterLastUser,
+  truncateChatLogAfterUserMessage,
   truncateChatLogBeforeMessage,
 } from '@/services/chat/truncate-chat-log'
 
@@ -97,6 +98,11 @@ type SessionMutations = {
     messageId: string,
   ) => Promise<void>
   truncateAfterLastUserMessage: (projectSlug: string, chatId: string) => Promise<void>
+  truncateAfterUserMessage: (
+    projectSlug: string,
+    chatId: string,
+    messageId: string,
+  ) => Promise<void>
   getLastUserMessage: () => UIMessage | null
   appendLocalCompaction: (summary: string, focus: string | null) => void
   patchMetaActiveContext: (activeContext: {
@@ -1146,6 +1152,19 @@ const createSessionMutations = (session: ChatSession): SessionMutations => {
     clearActiveTurnState(session)
   }
 
+  const truncateTimelineAfterUserMessage = (messageId: string): void => {
+    const index = session.timeline.value.findIndex(
+      (entry) => entry.type === 'user' && entry.message.id === messageId,
+    )
+    if (index < 0) {
+      return
+    }
+    const nextTimeline = session.timeline.value.slice(0, index + 1)
+    session.timeline.value = nextTimeline
+    session.messages.value = rebuildMessagesFromTimeline(nextTimeline)
+    clearActiveTurnState(session)
+  }
+
   return {
     meta: computed(() => session.meta.value),
     messages: computed(() => session.messages.value),
@@ -1380,6 +1399,14 @@ const createSessionMutations = (session: ChatSession): SessionMutations => {
     ): Promise<void> => {
       await truncateChatLogAfterLastUser(projectSlug, chatId)
       truncateTimelineAfterLastUserMessage()
+    },
+    truncateAfterUserMessage: async (
+      projectSlug: string,
+      chatId: string,
+      messageId: string,
+    ): Promise<void> => {
+      await truncateChatLogAfterUserMessage(projectSlug, chatId, messageId)
+      truncateTimelineAfterUserMessage(messageId)
     },
     getLastUserMessage: (): UIMessage | null => {
       for (let index = session.timeline.value.length - 1; index >= 0; index -= 1) {
@@ -1754,6 +1781,22 @@ export default () => {
     )
   }
 
+  const truncateAfterUserMessage = async (
+    projectSlug: string,
+    chatIdValue: string,
+    messageId: string,
+  ): Promise<void> => {
+    const session = getActiveSession()
+    if (!session) {
+      return
+    }
+    await bindSessionMutations(session).truncateAfterUserMessage(
+      projectSlug,
+      chatIdValue,
+      messageId,
+    )
+  }
+
   const getLastUserMessage = (): UIMessage | null =>
     withActiveSession(null, (_session, api) => api.getLastUserMessage())
 
@@ -1820,6 +1863,7 @@ export default () => {
     cancelEditMessage,
     truncateBeforeMessage,
     truncateAfterLastUserMessage,
+    truncateAfterUserMessage,
     getLastUserMessage,
     appendLocalCompaction,
     patchMetaActiveContext,

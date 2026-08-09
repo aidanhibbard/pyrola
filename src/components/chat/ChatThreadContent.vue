@@ -45,6 +45,7 @@ const emit = defineEmits<{
   openMcpSettings: [serverId: string]
   secretsSavedMcp: [toolCallId: string, serverId: string]
   retry: []
+  restoreFiles: [turnId: string]
   stopSubagent: [subagentId: string]
 }>()
 
@@ -342,9 +343,12 @@ watch(
             :activity-label="agentTurnActivityLabel(index)"
             :subagents-by-tool-call-id="subagentsByToolCallId"
             :subagents-by-id="subagentsById"
+            :restore-enabled="!readOnly && !isLive"
             @retry="emit('retry')"
+            @restore-files="emit('restoreFiles', item.turn.id)"
             @stop-subagent="emit('stopSubagent', $event)"
-          />        </MessageScrollerItem>
+          />
+        </MessageScrollerItem>
         <MessageScrollerItem
           v-if="trailingActivityLabel"
           message-id="live-activity"
