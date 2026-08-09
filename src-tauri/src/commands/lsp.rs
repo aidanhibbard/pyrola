@@ -1630,6 +1630,138 @@ fn lsp_method_is_notification(method: &str) -> bool {
   )
 }
 
+fn position_needs_method(method: &str) -> bool {
+  matches!(
+    method,
+    "textDocument/definition" | "textDocument/hover" | "textDocument/references" | "textDocument/completion"
+  )
+}
+
+fn as_u64_position_coord(value: &serde_json::Value) -> Option<u64> {
+  value
+    .as_u64()
+    .or_else(|| value.as_i64().filter(|n| *n >= 0).map(|n| n as u64))
+    .or_else(|| {
+      value
+        .as_f64()
+        .filter(|n| n.is_finite() && *n >= 0.0)
+        .map(|n| n as u64)
+    })
+}
+
+fn normalize_position_into(obj: &mut serde_json::Map<String, serde_json::Value>) {
+  if let Some(position) = obj.get("position").cloned() {
+    if let Some(pos) = position.as_object() {
+      let line = pos
+        .get("line")
+        .and_then(as_u64_position_coord)
+        .or_else(|| {
+          pos
+            .get("lineNumber")
+            .and_then(as_u64_position_coord)
+            .map(|n| n.saturating_sub(1))
+        });
+      let character = pos
+        .get("character")
+        .and_then(as_u64_position_coord)
+        .or_else(|| {
+          pos
+            .get("column")
+            .and_then(as_u64_position_coord)
+            .map(|n| n.saturating_sub(1))
+        });
+      if let (Some(line), Some(character)) = (line, character) {
+        obj.insert(
+          "position".to_string(),
+          serde_json::json!({ "line": line, "character": character }),
+        );
+        return;
+      }
+    }
+  }
+
+  let flat_line = obj.get("line").and_then(as_u64_position_coord);
+  let flat_character = obj.get("character").and_then(as_u64_position_coord);
+  if let (Some(line), Some(character)) = (flat_line, flat_character) {
+    obj.remove("line");
+    obj.remove("character");
+    obj.insert(
+      "position".to_string(),
+      serde_json::json!({ "line": line, "character": character }),
+    );
+    return;
+  }
+
+  let monaco_line = obj.get("lineNumber").and_then(as_u64_position_coord);
+  let monaco_column = obj.get("column").and_then(as_u64_position_coord);
+  if let (Some(line_number), Some(column)) = (monaco_line, monaco_column) {
+    obj.remove("lineNumber");
+    obj.remove("column");
+    obj.insert(
+      "position".to_string(),
+      serde_json::json!({
+        "line": line_number.saturating_sub(1),
+        "character": column.saturating_sub(1),
+      }),
+    );
+  }
+}
+
+fn normalize_lsp_params(
+  method: &str,
+  mut params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+  let Some(obj) = params.as_object_mut() else {
+    return Ok(params);
+  };
+
+  for key in ["path", "content", "extension"] {
+    obj.remove(key);
+  }
+
+  normalize_position_into(obj);
+
+  if method == "textDocument/references" {
+    let context = obj
+      .entry("context")
+      .or_insert_with(|| serde_json::json!({}));
+    if let Some(ctx) = context.as_object_mut() {
+      ctx
+        .entry("includeDeclaration")
+        .or_insert(serde_json::json!(true));
+    }
+  }
+
+  if method == "workspace/symbol" {
+    let query = obj
+      .get("query")
+      .and_then(|value| value.as_str())
+      .unwrap_or("")
+      .trim();
+    if query.is_empty() {
+      return Err("workspace/symbol requires a non-empty query".to_string());
+    }
+  }
+
+  if position_needs_method(method) {
+    let has_position = obj
+      .get("position")
+      .and_then(|value| value.as_object())
+      .map(|pos| {
+        pos.get("line").and_then(as_u64_position_coord).is_some()
+          && pos.get("character").and_then(as_u64_position_coord).is_some()
+      })
+      .unwrap_or(false);
+    if !has_position {
+      return Err(format!(
+        "{method} requires position {{ line, character }} (0-based)"
+      ));
+    }
+  }
+
+  Ok(params)
+}
+
 #[tauri::command]
 pub async fn lsp_request(
   _app: AppHandle,
@@ -1719,6 +1851,8 @@ pub async fn lsp_request(
       }
     }
   }
+
+  let lsp_params = normalize_lsp_params(&method, lsp_params)?;
 
   if lsp_method_is_notification(&method) {
     send_notification(&process, &method, lsp_params).await?;
@@ -1950,8 +2084,8 @@ pub async fn lsp_set_server_disabled(
 #[cfg(test)]
 mod tests {
   use super::{
-    apply_server_disabled_flag, resolve_lsp_servers, server_display_label, tsserver_request_body,
-    unwrap_tsserver_request_tuple,
+    apply_server_disabled_flag, normalize_lsp_params, resolve_lsp_servers, server_display_label,
+    tsserver_request_body, unwrap_tsserver_request_tuple,
   };
 
   #[test]
@@ -2079,5 +2213,84 @@ mod tests {
     assert_eq!(server_display_label("typescript"), "TypeScript / JavaScript");
     assert_eq!(server_display_label("gopls"), "Go");
     assert_eq!(server_display_label("custom-lsp"), "Custom Lsp");
+  }
+
+  #[test]
+  fn normalize_strips_non_protocol_keys() {
+    let params = serde_json::json!({
+      "path": "src/main.ts",
+      "content": "export const x = 1",
+      "extension": "ts",
+      "textDocument": { "uri": "file:///tmp/src/main.ts" },
+      "position": { "line": 1, "character": 2 }
+    });
+    let normalized = normalize_lsp_params("textDocument/definition", params).unwrap();
+    let obj = normalized.as_object().unwrap();
+    assert!(!obj.contains_key("path"));
+    assert!(!obj.contains_key("content"));
+    assert!(!obj.contains_key("extension"));
+    assert_eq!(
+      obj.get("position").unwrap(),
+      &serde_json::json!({ "line": 1, "character": 2 })
+    );
+  }
+
+  #[test]
+  fn normalize_injects_references_context() {
+    let params = serde_json::json!({
+      "textDocument": { "uri": "file:///tmp/src/main.ts" },
+      "position": { "line": 4, "character": 0 }
+    });
+    let normalized = normalize_lsp_params("textDocument/references", params).unwrap();
+    assert_eq!(
+      normalized.get("context").unwrap(),
+      &serde_json::json!({ "includeDeclaration": true })
+    );
+  }
+
+  #[test]
+  fn normalize_rejects_empty_workspace_symbol_query() {
+    let params = serde_json::json!({ "query": "  " });
+    let err = normalize_lsp_params("workspace/symbol", params).unwrap_err();
+    assert!(err.contains("non-empty query"));
+  }
+
+  #[test]
+  fn normalize_flattens_line_character_into_position() {
+    let params = serde_json::json!({
+      "textDocument": { "uri": "file:///tmp/src/main.ts" },
+      "line": 8,
+      "character": 3
+    });
+    let normalized = normalize_lsp_params("textDocument/hover", params).unwrap();
+    assert_eq!(
+      normalized.get("position").unwrap(),
+      &serde_json::json!({ "line": 8, "character": 3 })
+    );
+    assert!(normalized.get("line").is_none());
+    assert!(normalized.get("character").is_none());
+  }
+
+  #[test]
+  fn normalize_converts_monaco_line_number_column() {
+    let params = serde_json::json!({
+      "textDocument": { "uri": "file:///tmp/src/main.ts" },
+      "lineNumber": 10,
+      "column": 5
+    });
+    let normalized = normalize_lsp_params("textDocument/definition", params).unwrap();
+    assert_eq!(
+      normalized.get("position").unwrap(),
+      &serde_json::json!({ "line": 9, "character": 4 })
+    );
+  }
+
+  #[test]
+  fn normalize_rejects_missing_position_for_definition() {
+    let params = serde_json::json!({
+      "textDocument": { "uri": "file:///tmp/src/main.ts" }
+    });
+    let err = normalize_lsp_params("textDocument/definition", params).unwrap_err();
+    assert!(err.contains("requires position"));
   }
 }

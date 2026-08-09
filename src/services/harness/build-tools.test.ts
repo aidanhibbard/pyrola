@@ -30,6 +30,9 @@ const fsApplyPatch = vi.fn<
   (args: { projectRoot: string; patch: string }) => Promise<FileDiff[]>
 >()
 
+const lspEnsureServer = vi.fn<() => Promise<unknown>>()
+const lspRequest = vi.fn<() => Promise<unknown>>()
+
 const gateToolPermission = vi.fn<() => Promise<boolean>>().mockResolvedValue(true)
 
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
@@ -46,8 +49,8 @@ vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   gitStatus: vi.fn<() => Promise<unknown>>(),
   gitDiff: vi.fn<() => Promise<unknown>>(),
   gitLog: vi.fn<() => Promise<unknown>>(),
-  lspEnsureServer: vi.fn<() => Promise<unknown>>(),
-  lspRequest: vi.fn<() => Promise<unknown>>(),
+  lspEnsureServer,
+  lspRequest,
   mcpCallTool: vi.fn<() => Promise<unknown>>(),
   httpProxyRequest: vi.fn<() => Promise<unknown>>(),
 }))
@@ -548,5 +551,142 @@ describe('build-tools CodeGraph first-party tools', () => {
       summary: expect.any(String),
       results: expect.any(Array),
     })
+  })
+})
+
+describe('build-tools lsp', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    lspEnsureServer.mockResolvedValue({
+      id: 'typescript',
+      running: true,
+      installState: 'ready',
+    })
+    lspRequest.mockResolvedValue({ ok: true })
+  })
+
+  const ctx = {
+    projectRoot: '/project',
+    projectSlug: 'project',
+    chatId: 'chat-1',
+    settings: { version: 1 } as PyrolaSettings,
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    supportsVision: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
+  }
+
+  const runTool = async (
+    execute: unknown,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<unknown> => {
+    const runner = execute as (
+      value: Record<string, unknown>,
+      options: { toolCallId: string },
+    ) => Promise<unknown>
+    return runner(input, { toolCallId })
+  }
+
+  it('goToDefinition forwards path and 0-based position', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    await runTool(
+      tools.lsp.execute,
+      {
+        method: 'goToDefinition',
+        path: 'src/main.ts',
+        position: { line: 10, character: 4 },
+      },
+      'tc-lsp-def',
+    )
+
+    expect(lspRequest).toHaveBeenCalledWith('typescript', 'goToDefinition', {
+      path: 'src/main.ts',
+      position: { line: 10, character: 4 },
+    })
+  })
+
+  it('findReferences injects context.includeDeclaration true by default', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    await runTool(
+      tools.lsp.execute,
+      {
+        method: 'findReferences',
+        path: 'src/main.ts',
+        position: { line: 3, character: 1 },
+      },
+      'tc-lsp-refs',
+    )
+
+    expect(lspRequest).toHaveBeenCalledWith('typescript', 'findReferences', {
+      path: 'src/main.ts',
+      position: { line: 3, character: 1 },
+      context: { includeDeclaration: true },
+    })
+  })
+
+  it('workspaceSymbol forwards path and query', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    await runTool(
+      tools.lsp.execute,
+      {
+        method: 'workspaceSymbol',
+        path: 'src/main.ts',
+        query: 'AuthService',
+      },
+      'tc-lsp-ws',
+    )
+
+    expect(lspRequest).toHaveBeenCalledWith('typescript', 'workspaceSymbol', {
+      path: 'src/main.ts',
+      query: 'AuthService',
+    })
+  })
+
+  it('returns error and skips lspRequest when position is missing', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.lsp.execute,
+      {
+        method: 'hover',
+        path: 'src/main.ts',
+      },
+      'tc-lsp-missing-pos',
+    )
+
+    expect(result).toMatchObject({
+      method: 'hover',
+      path: 'src/main.ts',
+      result: null,
+      error: 'position { line, character } (0-based) is required for this method',
+    })
+    expect(lspRequest).not.toHaveBeenCalled()
+  })
+
+  it('returns error and skips lspRequest when workspaceSymbol query is missing', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.lsp.execute,
+      {
+        method: 'workspaceSymbol',
+        path: 'src/main.ts',
+      },
+      'tc-lsp-missing-query',
+    )
+
+    expect(result).toMatchObject({
+      method: 'workspaceSymbol',
+      path: 'src/main.ts',
+      result: null,
+      error: 'query is required for workspaceSymbol',
+    })
+    expect(lspRequest).not.toHaveBeenCalled()
   })
 })
