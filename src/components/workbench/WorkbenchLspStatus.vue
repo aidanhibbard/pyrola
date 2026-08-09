@@ -329,6 +329,6 @@ const handleOpenSettings = async (): Promise<void> => {
         </DropdownMenu>
       </span>
     </TooltipTrigger>
-    <TooltipContent class="z-60">{{ lsp.tooltipSummary.value }}</TooltipContent>
+    <TooltipContent class="z-60">Language servers</TooltipContent>
   </Tooltip>
 </template>

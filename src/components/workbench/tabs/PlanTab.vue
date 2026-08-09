@@ -13,7 +13,6 @@ import { Markdown } from 'vue-stream-markdown'
 import 'vue-stream-markdown/index.css'
 import { toast } from 'vue-sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/shadcn/ui/alert'
-import { Badge } from '@/components/shadcn/ui/badge'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Tooltip,
@@ -261,9 +260,14 @@ watch([planPayload, projectRoot, refreshToken], () => {
         <p v-if="loading" class="text-xs text-muted-foreground">Loading…</p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <Badge v-if="allTodosDone" variant="secondary" class="pointer-events-none opacity-70">
-          Done
-        </Badge>
+        <Tooltip v-if="allTodosDone">
+          <TooltipTrigger as-child>
+            <span class="inline-flex shrink-0" aria-label="Done">
+              <CheckCircle2Icon class="size-4 text-emerald-500" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent class="z-60">Done</TooltipContent>
+        </Tooltip>
         <template v-else>
           <Tooltip>
             <TooltipTrigger as-child>

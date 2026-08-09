@@ -582,6 +582,7 @@ const setupLspForPath = async (
     }
 
     lspServerByPath.set(path, server.id)
+    await lspStatus.refreshCatalog()
     if (server.id === 'vue' || server.id === 'typescript') {
       lspStatus.markAwaitingProjectLoad(server.id)
     }
@@ -589,6 +590,7 @@ const setupLspForPath = async (
     if (server.id === 'vue') {
       try {
         await lspEnsureServer('ts', root)
+        await lspStatus.refreshCatalog()
       } catch (error) {
         toast.error('TypeScript language server unavailable', {
           description:

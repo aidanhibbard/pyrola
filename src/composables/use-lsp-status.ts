@@ -267,26 +267,6 @@ export default () => {
     })
   })
 
-  const tooltipSummary = computed((): string => {
-    if (isBusy.value) {
-      return installMessage.value?.trim() || 'Starting language servers'
-    }
-    if (errorCount.value > 0 || warningCount.value > 0) {
-      const parts: string[] = []
-      if (errorCount.value > 0) {
-        parts.push(`${errorCount.value} error${errorCount.value === 1 ? '' : 's'}`)
-      }
-      if (warningCount.value > 0) {
-        parts.push(`${warningCount.value} warning${warningCount.value === 1 ? '' : 's'}`)
-      }
-      return parts.join(', ')
-    }
-    if (hasServerErrors.value) {
-      return 'Language server error'
-    }
-    return 'Language servers healthy'
-  })
-
   const bindListeners = async (): Promise<void> => {
     if (!isTauri() || listenersBound) {
       return
@@ -451,7 +431,6 @@ export default () => {
     isBusy,
     health,
     installMessage,
-    tooltipSummary,
     projectRoot,
     refreshCatalog,
     warmDefaults,
