@@ -9,8 +9,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/shadcn/ui/dropdown-menu'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/shadcn/ui/sidebar'
@@ -53,8 +51,6 @@ const openChat = async (projectSlug: string, chatId: string): Promise<void> => {
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent class="w-64 rounded-lg" side="bottom" align="start">
-          <DropdownMenuLabel>Pinned</DropdownMenuLabel>
-          <DropdownMenuSeparator />
           <template v-if="pinnedChats.length > 0">
             <DropdownMenuItem
               v-for="chat in pinnedChats"
