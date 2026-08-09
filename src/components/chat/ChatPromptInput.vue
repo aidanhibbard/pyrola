@@ -166,7 +166,7 @@ const promptInputClass = computed(() => {
   return `${base} [&_[data-slot=input-group]]:border-border/50 [&_[data-slot=input-group]]:bg-background`
 })
 
-const promptWorkspaceRoot = computed((): string | null | undefined => {
+const promptWorkspaceRoot = computed((): string | null => {
   if (props.showProjectSelect) {
     if (session.selectedProjectId === null) {
       return null
@@ -181,7 +181,13 @@ const promptWorkspaceRoot = computed((): string | null | undefined => {
     return null
   }
 
-  return undefined
+  // Agent threads: resolve the same root git/context budget use so @ file
+  // search and slash skills can query the workspace.
+  const fromMeta = chatStore.meta.value?.projectRoot?.trim()
+  if (fromMeta) {
+    return fromMeta
+  }
+  return fleet.activeProject.value?.rootPath ?? null
 })
 
 const showGitBranch = computed(
@@ -484,7 +490,7 @@ watch(
           <ChatPromptEditor
             class="max-h-28 min-h-10"
             placeholder="Plan, build, / for skills, @ for context"
-            :project-root="promptWorkspaceRoot ?? null"
+            :project-root="promptWorkspaceRoot"
           />
         </PromptInputBody>
         <PromptInputFooter class="px-1 pb-1">
