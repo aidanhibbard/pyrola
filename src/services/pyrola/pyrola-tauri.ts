@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { homeDir } from '@tauri-apps/api/path'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { lspConfigSchema } from '@/schemas/lsp-config'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { GitStatusResult } from '@/types/git/git-status-result'
@@ -183,6 +183,26 @@ export const openFolderPicker = async (): Promise<string | null> => {
   }
 
   return Array.isArray(selected) ? (selected[0] ?? null) : selected
+}
+
+export const saveTextFileWithDialog = async (
+  defaultName: string,
+  content: string,
+): Promise<boolean> => {
+  if (!isTauri()) {
+    throw new Error('Pyrola desktop APIs are only available in the Tauri app')
+  }
+
+  const path = await save({
+    defaultPath: defaultName,
+    filters: [{ name: 'Text', extensions: ['txt', 'md'] }],
+  })
+  if (path === null) {
+    return false
+  }
+
+  await call('write_text_file', { path, content })
+  return true
 }
 
 export type ProjectFileEntry = {

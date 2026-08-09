@@ -18,6 +18,7 @@ import {
   ContextMenuLabel,
   ContextMenuSeparator,
 } from '@/components/shadcn/ui/context-menu'
+import WorkbenchFileEntryIcon from '@/components/workbench/FileEntryIcon.vue'
 import useFileTreeNodeMenu from '@/composables/use-file-tree-node-menu'
 
 const props = defineProps<{
@@ -98,7 +99,10 @@ const handleOpenInTerminalSelect = async (): Promise<void> => {
 
 <template>
   <ContextMenuContent class="w-56">
-    <ContextMenuLabel>{{ name }}</ContextMenuLabel>
+    <ContextMenuLabel class="flex items-center gap-1.5">
+      <WorkbenchFileEntryIcon :name="name" :is-directory="isDirectory" />
+      <span class="truncate">{{ name }}</span>
+    </ContextMenuLabel>
     <ContextMenuSeparator />
     <ContextMenuItem @select="handleRenameSelect">
       <Pencil />

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { getIconForFilePath } from 'vscode-material-icons'
+import {
+  getIconForDirectoryPath,
+  getIconForFilePath,
+} from 'vscode-material-icons'
 import resolveFileIcon, { FILE_ICON_BASE } from '@/utils/resolve-file-icon'
 
 describe('resolveFileIcon', () => {
@@ -27,8 +30,15 @@ describe('resolveFileIcon', () => {
     )
   })
 
-  it('returns null for directories', () => {
-    expect(resolveFileIcon('src', { isDirectory: true, isOpen: false })).toBeNull()
-    expect(resolveFileIcon('src', { isDirectory: true, isOpen: true })).toBeNull()
+  it('resolves directory icons, including open variants', () => {
+    expect(resolveFileIcon('src', { isDirectory: true, isOpen: false })?.src).toBe(
+      `${FILE_ICON_BASE}/${getIconForDirectoryPath('src')}.svg`,
+    )
+    expect(resolveFileIcon('src', { isDirectory: true, isOpen: true })?.src).toBe(
+      `${FILE_ICON_BASE}/${getIconForDirectoryPath('src')}-open.svg`,
+    )
+    expect(resolveFileIcon('foo', { isDirectory: true })?.src).toBe(
+      `${FILE_ICON_BASE}/folder.svg`,
+    )
   })
 })

@@ -1073,6 +1073,18 @@ pub fn write_temp_handoff(content: String) -> Result<WriteTempHandoffResult, Str
   })
 }
 
+/// Writes plain text to an absolute path chosen by the user (e.g. save dialog).
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+  let absolute = PathBuf::from(&path);
+  if let Some(parent) = absolute.parent() {
+    if !parent.as_os_str().is_empty() {
+      fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+  }
+  fs::write(&absolute, content).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

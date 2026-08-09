@@ -11,6 +11,7 @@ import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import RunningTerminalsPanel from '@/components/chat/RunningTerminalsPanel.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
 import ChatCodegraphStatusChip from '@/components/chat/ChatCodegraphStatusChip.vue'
+import ChatChatPanelContextMenu from '@/components/chat/ChatPanelContextMenu.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useChatContextActions from '@/composables/use-chat-context-actions'
@@ -536,7 +537,11 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 flex-col">
+  <ChatChatPanelContextMenu
+    :project-slug="projectSlug"
+    :chat-id="chatId"
+    :disabled="!threadReady"
+  >
     <!--
       Always host the ring on the chat column titlebar band. Parent main uses
       pt-(--titlebar-height). z-51 sits above the titlebar drag region; the
@@ -595,5 +600,5 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
         @update:permission-level="handlePermissionLevelChange"
       />
     </div>
-  </div>
+  </ChatChatPanelContextMenu>
 </template>
