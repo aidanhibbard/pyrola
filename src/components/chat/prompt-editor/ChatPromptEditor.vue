@@ -16,11 +16,12 @@ import ChatMentionSuggestionList from '@/components/chat/prompt-editor/ChatMenti
 import ChatSkillSuggestionList from '@/components/chat/prompt-editor/ChatSkillSuggestionList.vue'
 import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import useChatPromptEditor from '@/composables/use-chat-prompt-editor'
-import useChatSkills from '@/composables/use-chat-skills'
+import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
 import createChatMentionExtension from '@/utils/chat-mention-extension'
 import contextMentionFromNode from '@/utils/context-mention-from-node'
 import searchWorkspaceFiles from '@/utils/search-workspace-files'
 import formatUnknownError from '@/utils/format-unknown-error'
+import { listSlashSkillIndex } from '@/services/skills/skill-registry'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { SkillIndexEntry } from '@/types/skills/skill'
 
@@ -39,7 +40,30 @@ const props = withDefaults(
 const { textInput, setTextInput, addFiles, files, removeFile } = usePromptInput()
 const contextBudgetSync = useChatContextBudgetSync()
 const chatPromptEditor = useChatPromptEditor()
-const chatSkills = useChatSkills()
+
+const slashSkills = ref<SkillIndexEntry[]>([])
+
+const refreshSlashSkills = async (): Promise<void> => {
+  try {
+    slashSkills.value = await listSlashSkillIndex(props.projectRoot ?? null)
+  } catch (error) {
+    toast.error('Failed to load skills', {
+      description: formatUnknownError(error),
+    })
+  }
+}
+
+watch(
+  [() => props.projectRoot, pyrolaFileChangeToken],
+  () => {
+    refreshSlashSkills().catch((error) => {
+      toast.error('Failed to load skills', {
+        description: formatUnknownError(error),
+      })
+    })
+  },
+  { immediate: true },
+)
 
 const isComposing = ref(false)
 const suggestionOpen = ref(false)
@@ -148,9 +172,9 @@ const skillSuggestionListProps = (suggestionProps: {
 const filterSkills = (query: string): SkillIndexEntry[] => {
   const needle = query.trim().toLowerCase()
   if (!needle) {
-    return chatSkills.skills.value
+    return slashSkills.value
   }
-  return chatSkills.skills.value.filter(
+  return slashSkills.value.filter(
     (skill) =>
       skill.name.toLowerCase().includes(needle) ||
       skill.description.toLowerCase().includes(needle),
