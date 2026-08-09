@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Keyboard, Loader2, Monitor, Moon, RefreshCw, Sun } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import { Input } from '@/components/shadcn/ui/input'
@@ -11,8 +12,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/shadcn/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import useAppUpdater from '@/composables/use-app-updater'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
+
+const themeOptions = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+] as const
 
 const config = usePyrolaConfig()
 const updater = useAppUpdater()
@@ -20,6 +33,10 @@ const shortcutsOpen = ref(false)
 
 const machineLabel = computed(
   () => config.personalSettings.value['general.machineLabel'] ?? 'This machine',
+)
+
+const theme = computed(
+  () => config.effectiveSettings.value['appearance.theme'] ?? 'system',
 )
 
 const lastCheckedLabel = computed(() => {
@@ -54,6 +71,16 @@ const updateMachineLabel = async (value: string | number): Promise<void> => {
     await config.setMachineLabel(String(value))
   } catch (error) {
     toast.error('Failed to save machine label', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const setTheme = async (value: PyrolaTheme): Promise<void> => {
+  try {
+    await config.setTheme('personal', value)
+  } catch (error) {
+    toast.error('Failed to save theme', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   }
@@ -95,35 +122,89 @@ const shortcuts = [
 
     <div class="space-y-2">
       <Label>Machine label</Label>
+      <p class="text-sm text-muted-foreground">Shown in chat context bar</p>
       <Input
         :model-value="machineLabel"
         @update:model-value="updateMachineLabel"
       />
-      <p class="text-sm text-muted-foreground">Shown in chat context bar</p>
+    </div>
+
+    <div class="flex items-center gap-1">
+      <Label>Theme</Label>
+      <Tooltip
+        v-for="option in themeOptions"
+        :key="option.value"
+      >
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-7 w-7"
+            :class="theme === option.value ? 'bg-muted text-foreground' : 'text-muted-foreground'"
+            :aria-label="option.label"
+            :aria-pressed="theme === option.value"
+            @click="setTheme(option.value)"
+          >
+            <component
+              :is="option.icon"
+              class="h-4 w-4"
+            />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{{ option.label }}</TooltipContent>
+      </Tooltip>
     </div>
 
     <div class="space-y-2">
-      <Label>Keyboard shortcuts</Label>
-      <p class="text-sm text-muted-foreground">Cmd+K search, Cmd+N new agent, …</p>
-      <Button variant="outline" size="sm" class="w-fit" @click="shortcutsOpen = true">
-        View shortcuts
-      </Button>
+      <div class="flex items-center gap-1">
+        <Label>Keyboard shortcuts</Label>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-7 w-7"
+              aria-label="View shortcuts"
+              @click="shortcutsOpen = true"
+            >
+              <Keyboard class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>View shortcuts</TooltipContent>
+        </Tooltip>
+      </div>
+      <p class="text-sm text-muted-foreground">Cmd+K search, Cmd+N new agent, ...</p>
     </div>
 
     <div class="space-y-2">
-      <Label>Updates</Label>
+      <div class="flex items-center gap-1">
+        <Label>Updates</Label>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-7 w-7"
+              aria-label="Check for updates"
+              :disabled="updater.checking.value"
+              @click="handleCheckForUpdates"
+            >
+              <Loader2
+                v-if="updater.checking.value"
+                class="h-4 w-4 animate-spin"
+              />
+              <RefreshCw
+                v-else
+                class="h-4 w-4"
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Check for updates</TooltipContent>
+        </Tooltip>
+      </div>
       <p class="text-sm text-muted-foreground">
         Check for a new version. Install only when you choose to.
       </p>
-      <Button
-        variant="outline"
-        size="sm"
-        class="w-fit"
-        :disabled="updater.checking.value"
-        @click="handleCheckForUpdates"
-      >
-        {{ updater.checking.value ? 'Checking...' : 'Check for updates' }}
-      </Button>
 
       <div
         v-if="updater.updateAvailable.value"

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import SettingsNav from '@/components/settings/SettingsNav.vue'
-import AppearanceSection from '@/components/settings/sections/AppearanceSection.vue'
 import ProvidersSection from '@/components/settings/sections/ProvidersSection.vue'
 import ModelsSection from '@/components/settings/sections/ModelsSection.vue'
 import McpServersSection from '@/components/settings/sections/McpServersSection.vue'
@@ -24,8 +23,6 @@ const emit = defineEmits<{
 
 const sectionComponent = computed(() => {
   switch (props.activeSection) {
-    case 'appearance':
-      return AppearanceSection
     case 'providers':
       return ProvidersSection
     case 'models':

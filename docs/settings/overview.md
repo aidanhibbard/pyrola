@@ -4,7 +4,7 @@ Settings are global (app-wide). Project-scoped config lives on the Project view.
 
 ## Settings sections
 
-General, Appearance, MCP, Providers, Models, LSP, Permissions, Plans, Skills, Agents, Rules.
+General, MCP, Providers, Models, LSP, Permissions, Plans, Skills, Agents, Rules.
 
 ## Project view
 
