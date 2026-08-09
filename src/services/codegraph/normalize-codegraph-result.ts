@@ -136,7 +136,7 @@ const PENDING_FILE_RE = /^-\s+(?<path>\S+)/
 const FILES_FLAT_RE =
   /^-\s+(?<path>(?:[A-Za-z]:)?[^\s:(]+(?:\.[A-Za-z0-9_.-]+)?|[^\s:(]+\/[^\s:(]+)\s*(?:\((?<meta>[^)]*)\))?$/
 const NODE_SYMBOL_RE =
-  /^-\s+`(?<name>[^`]+)`\s*\((?<kind>[^)]+)\)(?:[^\u2014\-]*?)(?:\u2014|-)\s*:?(?<line>\d+)\s*$/
+  /^-\s+`(?<name>[^`]+)`\s*\((?<kind>[^)]+)\)(?:[^\u2014-]*?)(?:\u2014|-)\s*:?(?<line>\d+)\s*$/
 const NODE_FILE_HEADER_RE = /^\*\*(?<path>[^*]+?)\*\*/
 const EDGE_RE =
   /(?<from>[A-Za-z_$][\w$.:]*)\s*(?:->|→)\s*(?<to>[A-Za-z_$][\w$.:]*)(?:\s*\((?<kind>[^)]+)\))?/
