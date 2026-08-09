@@ -814,6 +814,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         title: ctx.subagentLabel
           ? `${ctx.subagentLabel}: ${serverId}/${toolName}`
           : `${serverId}/${toolName}`,
+        serverId,
       })
       if (!allowed) {
         return { rejected: true, error: 'MCP call denied' }
@@ -972,6 +973,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         action: 'mcp.call',
         capability: mcpCapability(serverId, 'resources/list'),
         title: `${serverId}/resources`,
+        serverId,
       })
       if (!allowed) {
         return { rejected: true, error: 'MCP resources denied' }
@@ -1000,6 +1002,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         action: 'mcp.call',
         capability: mcpCapability(serverId, 'resources/read'),
         title: `${serverId}/read ${uri}`,
+        serverId,
       })
       if (!allowed) {
         return { rejected: true, error: 'MCP resource read denied' }
@@ -1030,6 +1033,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         action: 'mcp.call',
         capability: mcpCapability(serverId, `prompts/${name}`),
         title: `${serverId}/prompt ${name}`,
+        serverId,
       })
       if (!allowed) {
         return { rejected: true, error: 'MCP prompt denied' }

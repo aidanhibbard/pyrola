@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { lspConfigSchema } from '@/schemas/lsp-config'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import type { GitStatusResult } from '@/types/git/git-status-result'
+import type { McpIcon } from '@/types/mcp/mcp-icon'
 
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -221,6 +222,7 @@ export type McpServerState = {
   status: string
   error?: string | null
   tools: McpToolInfo[]
+  icons?: McpIcon[] | null
 }
 
 export const mcpStart = (

@@ -34,6 +34,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/shadcn/ui/empty'
+import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import {
   Dialog,
   DialogContent,
@@ -490,6 +491,7 @@ const refreshAll = async (): Promise<void> => {
               v-else
               class="h-4 w-4 shrink-0"
             />
+            <McpServerIcon :server-id="server.id" />
             <span class="truncate font-medium">{{ server.id }}</span>
             <Loader2
               v-if="isServerLoading(server.id) || serverStatus(server.id) === 'starting' || serverStatus(server.id) === 'refreshing'"
@@ -734,7 +736,13 @@ const refreshAll = async (): Promise<void> => {
         </DialogHeader>
         <div class="space-y-3 text-sm text-muted-foreground">
           <p>
-            <span class="font-mono font-medium text-foreground">{{ trustPending?.serverId }}</span>
+            <span class="inline-flex items-center gap-2 font-mono font-medium text-foreground">
+              <McpServerIcon
+                v-if="trustPending?.serverId"
+                :server-id="trustPending.serverId"
+              />
+              {{ trustPending?.serverId }}
+            </span>
             is an MCP server that can execute code on your machine (for example via npx or uvx).
             Choose how much you trust this exact command or URL.
           </p>

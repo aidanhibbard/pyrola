@@ -4,6 +4,7 @@ import type { ApprovalResolution } from '@/services/harness/approval-gate'
 import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
 import type { PermissionScope } from '@/types/harness/permission'
 import ChatInlineFileDiff from '@/components/chat/InlineFileDiff.vue'
+import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import { Badge } from '@/components/shadcn/ui/badge'
 import { Button } from '@/components/shadcn/ui/button'
 import {
@@ -68,6 +69,10 @@ const handleDeny = (): void => {
           <Badge variant="outline" class="shrink-0 text-xs font-normal capitalize">
             {{ approval.kind }}
           </Badge>
+          <McpServerIcon
+            v-if="approval.kind === 'mcp' && approval.serverId"
+            :server-id="approval.serverId"
+          />
           {{ approval.title }}
         </MarkerContent>
       </Marker>

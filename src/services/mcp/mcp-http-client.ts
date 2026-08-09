@@ -14,7 +14,9 @@ import {
   loadMcpToolBaseline,
   saveMcpToolBaseline,
 } from '@/services/mcp/mcp-tool-baseline'
+import parseMcpIcons from '@/services/mcp/parse-mcp-icons'
 import type { McpServerState, McpToolInfo } from '@/services/pyrola/pyrola-tauri'
+import type { McpIcon } from '@/types/mcp/mcp-icon'
 
 type McpElicitationHandler = (
   request: ElicitationRequest,
@@ -54,6 +56,9 @@ const toToolInfo = (tool: {
   meta: tool._meta ?? null,
 })
 
+const iconsFromClient = (client: MCPClient): McpIcon[] | null =>
+  parseMcpIcons((client.serverInfo as { icons?: unknown }).icons)
+
 const setEntryState = (
   serverId: string,
   patch: Partial<McpServerState> & Pick<McpServerState, 'status'>,
@@ -65,6 +70,8 @@ const setEntryState = (
     status: patch.status,
     error: patch.error ?? null,
     tools: patch.tools ?? existing?.state.tools ?? [],
+    icons:
+      patch.icons !== undefined ? patch.icons : (existing?.state.icons ?? null),
   }
   httpServers.set(serverId, {
     client: extras?.client !== undefined ? extras.client : (existing?.client ?? null),
@@ -127,6 +134,7 @@ export const startHttpServer = async (
 
     const listed = await client.listTools()
     const tools = listed.tools.map(toToolInfo)
+    const icons = iconsFromClient(client)
     const fingerprintSources = tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -142,6 +150,7 @@ export const startHttpServer = async (
           {
             status: 'error',
             tools,
+            icons,
             error: `Tool definitions changed (${[...drift.changed, ...drift.added].join(', ') || 'unknown'}). Re-trust this server in Settings.`,
           },
           { client: null, config, authProvider: options?.authProvider },
@@ -153,7 +162,7 @@ export const startHttpServer = async (
 
     return setEntryState(
       serverId,
-      { status: 'connected', tools, error: null },
+      { status: 'connected', tools, icons, error: null },
       { client, config, authProvider: options?.authProvider },
     )
   } catch (error) {
@@ -217,6 +226,7 @@ export const refreshHttpServer = async (
   try {
     const listed = await entry.client.listTools()
     const tools = listed.tools.map(toToolInfo)
+    const icons = iconsFromClient(entry.client)
     const fingerprintSources = tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -230,6 +240,7 @@ export const refreshHttpServer = async (
         {
           status: 'error',
           tools,
+          icons,
           error: `Tool definitions changed (${[...drift.changed, ...drift.added].join(', ') || 'unknown'}). Re-trust this server in Settings.`,
         },
         { client: null },
@@ -238,6 +249,7 @@ export const refreshHttpServer = async (
     return setEntryState(serverId, {
       status: 'connected',
       tools,
+      icons,
       error: null,
     })
   } catch (error) {

@@ -92,7 +92,10 @@ export default () => {
     existing: McpServerState | undefined,
   ): McpServerState => {
     if (freshState) {
-      return freshState
+      return {
+        ...freshState,
+        icons: freshState.icons ?? existing?.icons ?? null,
+      }
     }
 
     const existingStatus = existing?.status ?? 'stopped'
@@ -101,6 +104,7 @@ export default () => {
         serverId,
         status: existingStatus,
         tools: [],
+        icons: null,
       }
     }
 
@@ -108,6 +112,7 @@ export default () => {
       serverId,
       status: 'stopped',
       tools: [],
+      icons: existing?.icons ?? null,
     }
   }
 

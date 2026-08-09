@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
 import { toast } from 'vue-sonner'
+import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { isMcpServerEnabled } from '@/schemas/mcp-config'
@@ -295,6 +296,10 @@ const handleLogin = async (server: EffectiveMcpServer): Promise<void> => {
           :key="server.id"
           class="flex items-center gap-1 rounded-md px-1.5 py-1.5"
         >
+          <McpServerIcon
+            :server-id="server.id"
+            class="ml-1"
+          />
           <span class="min-w-0 flex-1 truncate px-1 text-sm font-medium">
             {{ server.id }}
           </span>

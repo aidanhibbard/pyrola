@@ -103,11 +103,21 @@ pub struct McpToolInfo {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct McpIcon {
+  pub src: String,
+  pub mime_type: Option<String>,
+  pub sizes: Option<Vec<String>>,
+  pub theme: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpServerState {
   pub server_id: String,
   pub status: String,
   pub error: Option<String>,
   pub tools: Vec<McpToolInfo>,
+  pub icons: Option<Vec<McpIcon>>,
 }
 
 struct McpProcess {
@@ -122,8 +132,52 @@ lazy_static::lazy_static! {
   static ref MCP_STATES: Mutex<HashMap<String, McpServerState>> = Mutex::new(HashMap::new());
 }
 
-async fn set_state(server_id: &str, status: &str, error: Option<String>, tools: Vec<McpToolInfo>) {
+fn parse_mcp_icons(value: Option<&serde_json::Value>) -> Option<Vec<McpIcon>> {
+  let icons = value?.as_array()?;
+  let parsed: Vec<McpIcon> = icons
+    .iter()
+    .filter_map(|icon| {
+      let src = icon.get("src")?.as_str()?.to_string();
+      if src.is_empty() {
+        return None;
+      }
+      Some(McpIcon {
+        src,
+        mime_type: icon
+          .get("mimeType")
+          .and_then(|v| v.as_str())
+          .map(|s| s.to_string()),
+        sizes: icon.get("sizes").and_then(|v| {
+          v.as_array().map(|arr| {
+            arr
+              .iter()
+              .filter_map(|item| item.as_str().map(|s| s.to_string()))
+              .collect::<Vec<_>>()
+          })
+        }),
+        theme: icon
+          .get("theme")
+          .and_then(|v| v.as_str())
+          .map(|s| s.to_string()),
+      })
+    })
+    .collect();
+  if parsed.is_empty() {
+    None
+  } else {
+    Some(parsed)
+  }
+}
+
+async fn set_state(
+  server_id: &str,
+  status: &str,
+  error: Option<String>,
+  tools: Vec<McpToolInfo>,
+  icons: Option<Vec<McpIcon>>,
+) {
   let mut states = MCP_STATES.lock().await;
+  let previous_icons = states.get(server_id).and_then(|state| state.icons.clone());
   states.insert(
     server_id.to_string(),
     McpServerState {
@@ -131,6 +185,7 @@ async fn set_state(server_id: &str, status: &str, error: Option<String>, tools: 
       status: status.to_string(),
       error,
       tools,
+      icons: icons.or(previous_icons),
     },
   );
 }
@@ -202,7 +257,7 @@ fn spawn_reader(process: std::sync::Arc<Mutex<McpProcess>>, server_id: String) {
         }
       }
     }
-    set_state(&server_id, "stopped", None, vec![]).await;
+    set_state(&server_id, "stopped", None, vec![], None).await;
     let mut processes = MCP_PROCESSES.lock().await;
     processes.remove(&server_id);
   });
@@ -220,7 +275,7 @@ pub async fn mcp_start(
   validate_mcp_env(&env_overlay)?;
   mcp_stop(server_id.clone()).await.ok();
 
-  set_state(&server_id, "starting", None, vec![]).await;
+  set_state(&server_id, "starting", None, vec![], None).await;
 
   let mut command_builder = Command::new(&command);
   command_builder
@@ -266,18 +321,25 @@ pub async fn mcp_start(
       .and_then(|m| m.as_str())
       .unwrap_or("initialize failed")
       .to_string();
-    set_state(&server_id, "error", Some(message.clone()), vec![]).await;
+    set_state(&server_id, "error", Some(message.clone()), vec![], None).await;
     return Err(message);
   }
 
+  let icons = parse_mcp_icons(
+    init
+      .get("result")
+      .and_then(|result| result.get("serverInfo"))
+      .and_then(|info| info.get("icons")),
+  );
   let tools = list_tools_internal(&process).await?;
-  set_state(&server_id, "connected", None, tools.clone()).await;
+  set_state(&server_id, "connected", None, tools.clone(), icons.clone()).await;
 
   Ok(McpServerState {
     server_id,
     status: "connected".to_string(),
     error: None,
     tools,
+    icons,
   })
 }
 
@@ -320,13 +382,13 @@ pub async fn mcp_stop(server_id: String) -> Result<(), String> {
     let _ = guard.child.kill().await;
   }
 
-  set_state(&server_id, "stopped", None, vec![]).await;
+  set_state(&server_id, "stopped", None, vec![], None).await;
   Ok(())
 }
 
 #[tauri::command]
 pub async fn mcp_refresh(server_id: String) -> Result<McpServerState, String> {
-  set_state(&server_id, "refreshing", None, vec![]).await;
+  set_state(&server_id, "refreshing", None, vec![], None).await;
 
   let process = {
     let processes = MCP_PROCESSES.lock().await;
@@ -338,20 +400,26 @@ pub async fn mcp_refresh(server_id: String) -> Result<McpServerState, String> {
   };
 
   let tools = list_tools_internal(&process).await?;
-  set_state(&server_id, "connected", None, tools.clone()).await;
+  set_state(&server_id, "connected", None, tools.clone(), None).await;
+
+  let icons = {
+    let states = MCP_STATES.lock().await;
+    states.get(&server_id).and_then(|state| state.icons.clone())
+  };
 
   Ok(McpServerState {
     server_id: server_id.clone(),
     status: "connected".to_string(),
     error: None,
     tools,
+    icons,
   })
 }
 
 #[tauri::command]
 pub async fn mcp_logout(server_id: String) -> Result<(), String> {
   mcp_stop(server_id.clone()).await?;
-  set_state(&server_id, "auth_required", None, vec![]).await;
+  set_state(&server_id, "auth_required", None, vec![], None).await;
   Ok(())
 }
 
@@ -381,7 +449,7 @@ async fn sync_process_liveness(server_id: &str) -> Option<McpServerState> {
     let mut processes = MCP_PROCESSES.lock().await;
     processes.remove(server_id);
     drop(processes);
-    set_state(server_id, "stopped", None, vec![]).await;
+    set_state(server_id, "stopped", None, vec![], None).await;
     let states = MCP_STATES.lock().await;
     return states.get(server_id).cloned();
   }
@@ -396,7 +464,7 @@ async fn sync_process_liveness(server_id: &str) -> Option<McpServerState> {
   };
 
   if should_mark_stopped == Some(true) {
-    set_state(server_id, "stopped", None, vec![]).await;
+    set_state(server_id, "stopped", None, vec![], None).await;
   }
 
   let states = MCP_STATES.lock().await;

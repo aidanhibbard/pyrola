@@ -1,15 +1,55 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { Trash2 } from '@lucide/vue'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/shadcn/ui/accordion'
 import { Button } from '@/components/shadcn/ui/button'
 import { Badge } from '@/components/shadcn/ui/badge'
+import { Label } from '@/components/shadcn/ui/label'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
+import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
+import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { parsePermissionRecords } from '@/services/harness/permission-policy'
-import type { PermissionCapabilityKey, PermissionRecord } from '@/types/harness/permission'
+import type {
+  ApprovalKind,
+  PermissionCapabilityKey,
+  PermissionRecord,
+} from '@/types/harness/permission'
+
+type PermissionSubgroup = {
+  key: string
+  label: string | null
+  records: PermissionRecord[]
+}
+
+type PermissionGroup = {
+  kind: ApprovalKind
+  label: string
+  subgroups: PermissionSubgroup[]
+}
+
+const GROUP_ORDER: { kind: ApprovalKind; label: string }[] = [
+  { kind: 'fs', label: 'Filesystem' },
+  { kind: 'shell', label: 'Shell' },
+  { kind: 'git', label: 'Git' },
+  { kind: 'mcp', label: 'MCP' },
+]
+
+const FS_SUBGROUP_ORDER = ['write', 'delete'] as const
 
 const config = usePyrolaConfig()
+const { refreshStates } = useMcpServers()
 
 const clearing = ref(false)
 
@@ -17,15 +57,97 @@ const records = computed((): PermissionRecord[] =>
   parsePermissionRecords(config.personalSettings.value['agent.permissions']),
 )
 
+const kindFor = (capability: PermissionCapabilityKey): ApprovalKind => {
+  if (capability === 'shell' || capability === 'shell.unsandboxed') return 'shell'
+  if (
+    capability === 'git.commit' ||
+    capability === 'git.checkout' ||
+    capability === 'git.branch_create'
+  ) {
+    return 'git'
+  }
+  if (capability.startsWith('fs.write:') || capability.startsWith('fs.delete:')) return 'fs'
+  if (capability.startsWith('mcp:')) return 'mcp'
+  return 'fs'
+}
+
+const subgroupFor = (
+  capability: PermissionCapabilityKey,
+): { key: string; label: string | null } => {
+  if (capability.startsWith('fs.write:')) return { key: 'write', label: 'Write' }
+  if (capability.startsWith('fs.delete:')) return { key: 'delete', label: 'Delete' }
+  if (capability.startsWith('mcp:')) {
+    const rest = capability.slice('mcp:'.length)
+    const serverId = rest.split(':')[0] || rest
+    return { key: serverId, label: serverId }
+  }
+  return { key: kindFor(capability), label: null }
+}
+
+const groupedRecords = computed((): PermissionGroup[] => {
+  const byKind = new Map<ApprovalKind, Map<string, PermissionSubgroup>>()
+  for (const group of GROUP_ORDER) {
+    byKind.set(group.kind, new Map())
+  }
+
+  for (const record of records.value) {
+    const kind = kindFor(record.capability)
+    const kindBuckets = byKind.get(kind)
+    if (!kindBuckets) continue
+
+    const subgroup = subgroupFor(record.capability)
+    const existing = kindBuckets.get(subgroup.key)
+    if (existing) {
+      existing.records.push(record)
+    } else {
+      kindBuckets.set(subgroup.key, {
+        key: subgroup.key,
+        label: subgroup.label,
+        records: [record],
+      })
+    }
+  }
+
+  return GROUP_ORDER.flatMap((group) => {
+    const kindBuckets = byKind.get(group.kind)
+    if (!kindBuckets || kindBuckets.size === 0) return []
+
+    let subgroups = [...kindBuckets.values()]
+    if (group.kind === 'fs') {
+      subgroups = FS_SUBGROUP_ORDER.flatMap((key) => {
+        const subgroup = kindBuckets.get(key)
+        return subgroup ? [subgroup] : []
+      })
+    } else if (group.kind === 'mcp') {
+      subgroups.sort((a, b) => a.key.localeCompare(b.key))
+    }
+
+    return [
+      {
+        kind: group.kind,
+        label: group.label,
+        subgroups,
+      },
+    ]
+  })
+})
+
+const usesSubgroupAccordion = (kind: ApprovalKind): boolean => kind === 'fs' || kind === 'mcp'
+
 const labelFor = (capability: PermissionCapabilityKey): string => {
   if (capability === 'shell') return 'Shell'
   if (capability === 'shell.unsandboxed') return 'Shell (unsandboxed)'
-  if (capability === 'git.commit') return 'Git: commit'
-  if (capability === 'git.checkout') return 'Git: checkout'
-  if (capability === 'git.branch_create') return 'Git: create branch'
-  if (capability.startsWith('fs.write:')) return `Write: ${capability.slice('fs.write:'.length)}`
-  if (capability.startsWith('fs.delete:')) return `Delete: ${capability.slice('fs.delete:'.length)}`
-  if (capability.startsWith('mcp:')) return `MCP: ${capability.slice('mcp:'.length)}`
+  if (capability === 'git.commit') return 'Commit'
+  if (capability === 'git.checkout') return 'Checkout'
+  if (capability === 'git.branch_create') return 'Create branch'
+  if (capability.startsWith('fs.write:')) return capability.slice('fs.write:'.length)
+  if (capability.startsWith('fs.delete:')) return capability.slice('fs.delete:'.length)
+  if (capability.startsWith('mcp:')) {
+    const rest = capability.slice('mcp:'.length)
+    const separator = rest.indexOf(':')
+    if (separator === -1) return 'All tools'
+    return rest.slice(separator + 1)
+  }
   return capability
 }
 
@@ -55,57 +177,148 @@ const handleClearAll = async (): Promise<void> => {
     clearing.value = false
   }
 }
+
+onMounted(() => {
+  refreshStates().catch((error: unknown) => {
+    toast.error('Failed to load MCP server icons', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  })
+})
 </script>
 
 <template>
   <SettingsSectionScroll title="Permissions">
     <template #actions>
-      <Button
-        v-if="records.length > 0"
-        variant="ghost"
-        size="sm"
-        class="h-8 text-destructive hover:text-destructive"
-        :disabled="clearing"
-        @click="handleClearAll"
-      >
-        Clear all
-      </Button>
+      <Tooltip v-if="records.length > 0">
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8 text-muted-foreground hover:text-destructive"
+            aria-label="Clear all"
+            :disabled="clearing"
+            @click="handleClearAll"
+          >
+            <Trash2 class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Clear all</TooltipContent>
+      </Tooltip>
     </template>
 
     <div
       v-if="records.length === 0"
-      class="rounded-lg border border-border/50 px-4 py-8 text-center"
+      class="py-8 text-center"
     >
       <p class="text-sm text-muted-foreground">
         No saved permissions. Allow or deny prompts will appear as the agent requests access.
       </p>
     </div>
 
-    <div v-else class="space-y-1">
+    <div
+      v-else
+      class="space-y-6"
+    >
       <div
-        v-for="record in records"
-        :key="record.capability"
-        class="flex items-center gap-3 rounded-lg border border-border/50 px-3 py-2"
+        v-for="group in groupedRecords"
+        :key="group.kind"
+        class="space-y-2"
       >
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-mono">{{ labelFor(record.capability) }}</p>
-          <p class="text-xs text-muted-foreground capitalize">{{ record.scope }}</p>
+        <Label>{{ group.label }}</Label>
+
+        <Accordion
+          v-if="usesSubgroupAccordion(group.kind)"
+          type="multiple"
+          class="w-full"
+        >
+          <AccordionItem
+            v-for="subgroup in group.subgroups"
+            :key="subgroup.key"
+            :value="`${group.kind}:${subgroup.key}`"
+          >
+            <AccordionTrigger class="py-3 text-sm hover:no-underline">
+              <span class="flex min-w-0 items-center gap-2">
+                <McpServerIcon
+                  v-if="group.kind === 'mcp'"
+                  :server-id="subgroup.key"
+                />
+                <span class="truncate">{{ subgroup.label }}</span>
+                <Badge
+                  variant="secondary"
+                  class="shrink-0 font-normal tabular-nums"
+                >
+                  {{ subgroup.records.length }}
+                </Badge>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div class="divide-y divide-border">
+                <div
+                  v-for="record in subgroup.records"
+                  :key="record.capability"
+                  class="flex items-center gap-3 py-2"
+                >
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-mono">{{ labelFor(record.capability) }}</p>
+                    <p class="text-xs text-muted-foreground capitalize">{{ record.scope }}</p>
+                  </div>
+                  <Badge
+                    :variant="record.verdict === 'allow' ? 'default' : 'destructive'"
+                    class="shrink-0 capitalize"
+                  >
+                    {{ record.verdict }}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove"
+                    @click="handleRemove(record)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        <div
+          v-else
+          class="divide-y divide-border"
+        >
+          <template
+            v-for="subgroup in group.subgroups"
+            :key="subgroup.key"
+          >
+            <div
+              v-for="record in subgroup.records"
+              :key="record.capability"
+              class="flex items-center gap-3 py-2"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-mono">{{ labelFor(record.capability) }}</p>
+                <p class="text-xs text-muted-foreground capitalize">{{ record.scope }}</p>
+              </div>
+              <Badge
+                :variant="record.verdict === 'allow' ? 'default' : 'destructive'"
+                class="shrink-0 capitalize"
+              >
+                {{ record.verdict }}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                aria-label="Remove"
+                @click="handleRemove(record)"
+              >
+                <Trash2 class="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </template>
         </div>
-        <Badge
-          :variant="record.verdict === 'allow' ? 'default' : 'destructive'"
-          class="shrink-0 capitalize"
-        >
-          {{ record.verdict }}
-        </Badge>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-          aria-label="Remove"
-          @click="handleRemove(record)"
-        >
-          <Trash2 class="h-3.5 w-3.5" />
-        </Button>
       </div>
     </div>
   </SettingsSectionScroll>

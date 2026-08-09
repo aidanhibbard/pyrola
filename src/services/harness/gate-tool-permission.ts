@@ -21,6 +21,7 @@ export type PendingApprovalView = {
   unsandboxed?: boolean
   allowedScopes: PermissionScope[]
   diff?: FileDiff[]
+  serverId?: string
 }
 
 export type PermissionGateContext = {
@@ -50,6 +51,7 @@ export const gateToolPermission = async (args: {
   unsandboxed?: boolean
   paths?: string[]
   diff?: FileDiff[]
+  serverId?: string
 }): Promise<boolean> => {
   const decision = decidePermission({
     action: args.action,
@@ -78,6 +80,7 @@ export const gateToolPermission = async (args: {
     unsandboxed: args.unsandboxed,
     allowedScopes: decision.allowedScopes,
     diff: args.diff,
+    serverId: args.serverId,
   })
 
   const result = await requestApproval({

@@ -6,6 +6,7 @@ import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { Button } from '@/components/shadcn/ui/button'
 import { Marker, MarkerContent } from '@/components/shadcn/ui/marker'
 import ChatMcpSecretsForm from '@/components/chat/ChatMcpSecretsForm.vue'
+import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
 
 const props = defineProps<{
@@ -87,10 +88,13 @@ const handleSecretsSaved = (): void => {
       <p class="text-sm font-medium text-foreground">
         {{ auth.title }}
       </p>
-      <p class="font-mono text-xs text-muted-foreground">
-        {{ auth.serverId }}
-        <span v-if="auth.subagentLabel">
-          ({{ auth.subagentLabel }})
+      <p class="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+        <McpServerIcon :server-id="auth.serverId" />
+        <span>
+          {{ auth.serverId }}
+          <span v-if="auth.subagentLabel">
+            ({{ auth.subagentLabel }})
+          </span>
         </span>
       </p>
       <p
