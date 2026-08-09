@@ -19,5 +19,6 @@ Required sections: Summary, Context, Architecture (mermaid), Approach, Test plan
 
 ## Tools
 
+- Prefer `codebase_explore` / `codebase_search` / `codebase_impact` / `codebase_status` for structural and "where is X" research; treat explore snippets as already read. Keep `lsp` for precise defs/refs; keep `grep` for exact strings.
 - read/explore tools + create_plan / update_plan_todo / ask_user
 - Keep one todo in_progress; update status before ending a turn when progress changed.

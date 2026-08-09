@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{oneshot, Mutex};
 
+const MCP_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+
 /// Basenames allowed for MCP stdio servers (resolved via PATH). Absolute paths are rejected.
 const ALLOWED_MCP_COMMANDS: &[&str] = &[
   "npx", "npm", "node", "pnpm", "yarn", "bun", "deno", "uvx", "uv", "python", "python3", "pipx",
+  "codegraph",
 ];
 
 fn validate_mcp_spawn(command: &str, args: &[String]) -> Result<(), String> {
@@ -219,14 +223,66 @@ async fn json_rpc(
   {
     let mut guard = process.lock().await;
     if let Some(stdin) = guard.child.stdin.as_mut() {
-      stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
+      stdin
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
       stdin.flush().await.map_err(|e| e.to_string())?;
     } else {
       return Err("MCP process stdin unavailable".to_string());
     }
   }
 
-  rx.await.map_err(|_| "MCP request cancelled".to_string())
+  match tokio::time::timeout(MCP_REQUEST_TIMEOUT, rx).await {
+    Ok(Ok(value)) => Ok(value),
+    Ok(Err(_)) => Err("MCP request cancelled".to_string()),
+    Err(_) => {
+      let guard = process.lock().await;
+      guard.pending.lock().await.remove(&id);
+      Err(format!(
+        "MCP request timed out after {}s ({method})",
+        MCP_REQUEST_TIMEOUT.as_secs()
+      ))
+    }
+  }
+}
+
+async fn json_rpc_notify(
+  process: &Mutex<McpProcess>,
+  method: &str,
+  params: serde_json::Value,
+) -> Result<(), String> {
+  let request = serde_json::json!({
+    "jsonrpc": "2.0",
+    "method": method,
+    "params": params,
+  });
+  let line = format!("{}\n", request);
+  let mut guard = process.lock().await;
+  if let Some(stdin) = guard.child.stdin.as_mut() {
+    stdin
+      .write_all(line.as_bytes())
+      .await
+      .map_err(|e| e.to_string())?;
+    stdin.flush().await.map_err(|e| e.to_string())?;
+    Ok(())
+  } else {
+    Err("MCP process stdin unavailable".to_string())
+  }
+}
+
+fn response_id_as_u64(value: &serde_json::Value) -> Option<u64> {
+  let id = value.get("id")?;
+  if let Some(n) = id.as_u64() {
+    return Some(n);
+  }
+  if let Some(n) = id.as_i64() {
+    return u64::try_from(n).ok();
+  }
+  if let Some(s) = id.as_str() {
+    return s.parse::<u64>().ok();
+  }
+  None
 }
 
 fn spawn_reader(process: std::sync::Arc<Mutex<McpProcess>>, server_id: String) {
@@ -246,7 +302,7 @@ fn spawn_reader(process: std::sync::Arc<Mutex<McpProcess>>, server_id: String) {
       let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
         continue;
       };
-      if let Some(id) = value.get("id").and_then(|v| v.as_u64()) {
+      if let Some(id) = response_id_as_u64(&value) {
         let sender = {
           let guard = process.lock().await;
           let mut pending = guard.pending.lock().await;
@@ -275,6 +331,15 @@ pub async fn mcp_start(
   validate_mcp_env(&env_overlay)?;
   mcp_stop(server_id.clone()).await.ok();
 
+  let codegraph_path = if server_id == "codegraph" {
+    extract_codegraph_project_path(&args)
+  } else {
+    None
+  };
+  if let Some(project_path) = codegraph_path.as_deref() {
+    kill_orphaned_codegraph(project_path).await;
+  }
+
   set_state(&server_id, "starting", None, vec![], None).await;
 
   let mut command_builder = Command::new(&command);
@@ -282,13 +347,39 @@ pub async fn mcp_start(
     .args(&args)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::null())
+    .stderr(Stdio::piped())
     .kill_on_drop(true);
+  #[cfg(unix)]
+  {
+    command_builder.process_group(0);
+  }
   for (key, value) in &env_overlay {
     command_builder.env(key, value);
   }
 
-  let child = command_builder.spawn().map_err(|e| e.to_string())?;
+  let mut child = command_builder.spawn().map_err(|e| {
+    let message = format!("Failed to spawn MCP command '{command}': {e}");
+    message
+  })?;
+
+  // Drain stderr so the child cannot block on a full pipe; keep a short tail for errors.
+  let stderr = child.stderr.take();
+  let stderr_tail = std::sync::Arc::new(Mutex::new(String::new()));
+  if let Some(stderr) = stderr {
+    let stderr_tail = stderr_tail.clone();
+    tokio::spawn(async move {
+      let mut lines = BufReader::new(stderr).lines();
+      while let Ok(Some(line)) = lines.next_line().await {
+        let mut guard = stderr_tail.lock().await;
+        if guard.len() < 4_000 {
+          if !guard.is_empty() {
+            guard.push('\n');
+          }
+          guard.push_str(&line);
+        }
+      }
+    });
+  }
 
   let process = std::sync::Arc::new(Mutex::new(McpProcess {
     child,
@@ -303,7 +394,22 @@ pub async fn mcp_start(
     processes.insert(server_id.clone(), process.clone());
   }
 
-  let init = json_rpc(
+  let fail = |message: String| async {
+    let stderr_text = stderr_tail.lock().await.clone();
+    let full = if stderr_text.trim().is_empty() {
+      message
+    } else {
+      format!("{message}\n{stderr_text}")
+    };
+    let _ = mcp_stop(server_id.clone()).await;
+    if let Some(project_path) = codegraph_path.as_deref() {
+      kill_orphaned_codegraph(project_path).await;
+    }
+    set_state(&server_id, "error", Some(full.clone()), vec![], None).await;
+    Err(full)
+  };
+
+  let init = match json_rpc(
     &process,
     "initialize",
     serde_json::json!({
@@ -312,7 +418,11 @@ pub async fn mcp_start(
       "clientInfo": { "name": "pyrola", "version": "0.1.0" }
     }),
   )
-  .await?;
+  .await
+  {
+    Ok(value) => value,
+    Err(message) => return fail(message).await,
+  };
 
   if init.get("error").is_some() {
     let message = init
@@ -321,8 +431,17 @@ pub async fn mcp_start(
       .and_then(|m| m.as_str())
       .unwrap_or("initialize failed")
       .to_string();
-    set_state(&server_id, "error", Some(message.clone()), vec![], None).await;
-    return Err(message);
+    return fail(message).await;
+  }
+
+  if let Err(message) = json_rpc_notify(
+    &process,
+    "notifications/initialized",
+    serde_json::json!({}),
+  )
+  .await
+  {
+    return fail(message).await;
   }
 
   let icons = parse_mcp_icons(
@@ -331,8 +450,18 @@ pub async fn mcp_start(
       .and_then(|result| result.get("serverInfo"))
       .and_then(|info| info.get("icons")),
   );
-  let tools = list_tools_internal(&process).await?;
-  set_state(&server_id, "connected", None, tools.clone(), icons.clone()).await;
+  let tools = match list_tools_internal(&process).await {
+    Ok(tools) => tools,
+    Err(message) => return fail(message).await,
+  };
+  set_state(
+    &server_id,
+    "connected",
+    None,
+    tools.clone(),
+    icons.clone(),
+  )
+  .await;
 
   Ok(McpServerState {
     server_id,
@@ -370,6 +499,53 @@ async fn list_tools_internal(process: &Mutex<McpProcess>) -> Result<Vec<McpToolI
   )
 }
 
+fn extract_codegraph_project_path(args: &[String]) -> Option<String> {
+  let mut saw_path_flag = false;
+  for arg in args {
+    if saw_path_flag {
+      let trimmed = arg.trim();
+      if !trimmed.is_empty() {
+        return Some(trimmed.to_string());
+      }
+      return None;
+    }
+    if arg == "--path" {
+      saw_path_flag = true;
+    }
+  }
+  None
+}
+
+/// Best-effort cleanup of orphaned CodeGraph MCP trees left behind when `npx`
+/// reparents children out of the process group we track.
+#[cfg(unix)]
+async fn kill_orphaned_codegraph(project_path: &str) {
+  let path = project_path.trim();
+  if path.is_empty() {
+    return;
+  }
+  let patterns = [
+    format!("codegraph.js serve --mcp --path {path}"),
+    format!("codegraph serve --mcp --path {path}"),
+    format!("@colbymchenry/codegraph serve --mcp --path {path}"),
+  ];
+  for pattern in patterns {
+    let _ = Command::new("pkill")
+      .args(["-f", &pattern])
+      .stdout(Stdio::null())
+      .stderr(Stdio::null())
+      .status()
+      .await;
+  }
+  // Stale daemon socket blocks a clean restart after orphan kill storms.
+  let daemon_dir = Path::new(path).join(".codegraph");
+  let _ = tokio::fs::remove_file(daemon_dir.join("daemon.sock")).await;
+  let _ = tokio::fs::remove_file(daemon_dir.join("daemon.pid")).await;
+}
+
+#[cfg(not(unix))]
+async fn kill_orphaned_codegraph(_project_path: &str) {}
+
 #[tauri::command]
 pub async fn mcp_stop(server_id: String) -> Result<(), String> {
   let process = {
@@ -379,7 +555,21 @@ pub async fn mcp_stop(server_id: String) -> Result<(), String> {
 
   if let Some(process) = process {
     let mut guard = process.lock().await;
+    #[cfg(unix)]
+    {
+      if let Some(pid) = guard.child.id() {
+        let pgid = pid as i32;
+        unsafe {
+          let _ = libc::killpg(pgid, libc::SIGTERM);
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        unsafe {
+          let _ = libc::killpg(pgid, libc::SIGKILL);
+        }
+      }
+    }
     let _ = guard.child.kill().await;
+    let _ = guard.child.wait().await;
   }
 
   set_state(&server_id, "stopped", None, vec![], None).await;
@@ -473,9 +663,16 @@ async fn sync_process_liveness(server_id: &str) -> Option<McpServerState> {
 
 #[tauri::command]
 pub async fn mcp_status(server_id: String) -> Result<McpServerState, String> {
-  sync_process_liveness(&server_id)
-    .await
-    .ok_or_else(|| "Unknown server".to_string())
+  if let Some(state) = sync_process_liveness(&server_id).await {
+    return Ok(state);
+  }
+  Ok(McpServerState {
+    server_id,
+    status: "stopped".to_string(),
+    error: None,
+    tools: vec![],
+    icons: None,
+  })
 }
 
 #[tauri::command]
@@ -510,9 +707,27 @@ mod tests {
   fn mcp_command_allowlist() {
     assert!(validate_mcp_spawn("npx", &[]).is_ok());
     assert!(validate_mcp_spawn("uvx", &["some-server".into()]).is_ok());
+    assert!(validate_mcp_spawn("codegraph", &["serve".into(), "--mcp".into()]).is_ok());
+    assert!(validate_mcp_spawn("CODEGRAPH", &["serve".into(), "--mcp".into()]).is_ok());
     assert!(validate_mcp_spawn("/usr/bin/npx", &[]).is_err());
+    assert!(validate_mcp_spawn("/usr/local/bin/codegraph", &[]).is_err());
     assert!(validate_mcp_spawn("bash", &["-c".into(), "id".into()]).is_err());
     assert!(validate_mcp_spawn("npx", &["ok\0evil".into()]).is_err());
+  }
+
+  #[test]
+  fn mcp_env_overlay_allows_codegraph_keys() {
+    let mut env = HashMap::new();
+    env.insert("CODEGRAPH_MCP_TOOLS".into(), "explore,node".into());
+    env.insert("CODEGRAPH_TELEMETRY".into(), "0".into());
+    assert!(validate_mcp_env(&env).is_ok());
+  }
+
+  #[test]
+  fn mcp_env_overlay_denies_dangerous_keys() {
+    let mut env = HashMap::new();
+    env.insert("PATH".into(), "/evil".into());
+    assert!(validate_mcp_env(&env).is_err());
   }
 }
 

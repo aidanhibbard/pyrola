@@ -29,6 +29,7 @@ import {
   resolveServerTemplates,
 } from '@/services/mcp/resolve-mcp-inputs'
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
+import { isInternalMcpServer } from '@/types/codegraph/managed-codegraph'
 import {
   deleteSecret,
   mcpCallTool,
@@ -74,7 +75,7 @@ const assertServerTrusted = (
   config: McpServerConfig,
   options?: McpRuntimeOptions,
 ): void => {
-  if (options?.skipTrustCheck) {
+  if (options?.skipTrustCheck || isInternalMcpServer(serverId)) {
     return
   }
   const settings = options?.settings

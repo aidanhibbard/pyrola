@@ -2,13 +2,15 @@ import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { McpConfig, McpServerConfig } from '@/types/pyrola/mcp-config'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
-import { listEffectiveMcpServers, listScopedMcpServers } from '@/services/mcp/merge-mcp-config'
+import { listEffectiveMcpServers, listScopedMcpServers, listUserMcpServers } from '@/services/mcp/merge-mcp-config'
+import stripCodegraphMcpServer from '@/services/codegraph/strip-codegraph-mcp-server'
 import mcpRuntime, { type McpRuntimeOptions } from '@/services/mcp/mcp-runtime'
 import { resolveMcpAuthForServer } from '@/services/mcp/mcp-auth-gate'
 import { listRequiredInputIdsForServer } from '@/services/mcp/resolve-mcp-inputs'
 import { mcpKnownSecretKeys } from '@/services/mcp/mcp-keychain-keys'
 import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
+import { isInternalMcpServer, CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
 import {
   deleteSecret,
   readMcpConfig,
@@ -27,6 +29,7 @@ const projectMcp = ref<McpConfig>({ servers: {} })
 const serverStates = ref<Record<string, McpServerState>>({})
 const loadingServers = ref<Record<string, boolean>>({})
 const authenticatingServers = ref<Record<string, boolean>>({})
+const startInFlight = new Map<string, Promise<void>>()
 let refreshGeneration = 0
 
 export default () => {
@@ -40,6 +43,9 @@ export default () => {
   })
 
   const assertTrustedOrThrow = (serverId: string, serverConfig: McpServerConfig): void => {
+    if (isInternalMcpServer(serverId)) {
+      return
+    }
     const fingerprint = mcpServerFingerprint(serverConfig)
     if (
       !isMcpTrusted(
@@ -76,11 +82,23 @@ export default () => {
 
   const loadConfigs = async (rootPath: string | null): Promise<void> => {
     const personalRaw = await readMcpConfig('personal')
-    personalMcp.value = migrateMcpConfig(personalRaw)
+    const personalMigrated = migrateMcpConfig(personalRaw)
+    const personalHadCodegraph = CODEGRAPH_SERVER_ID in personalMigrated.servers
+    const personal = stripCodegraphMcpServer(personalMigrated)
+    personalMcp.value = personal
+    if (personalHadCodegraph) {
+      await writeMcpConfig('personal', personal, null)
+    }
 
     if (rootPath) {
       const projectRaw = await readMcpConfig('project', rootPath)
-      projectMcp.value = migrateMcpConfig(projectRaw)
+      const projectMigrated = migrateMcpConfig(projectRaw)
+      const projectHadCodegraph = CODEGRAPH_SERVER_ID in projectMigrated.servers
+      const project = stripCodegraphMcpServer(projectMigrated)
+      projectMcp.value = project
+      if (projectHadCodegraph) {
+        await writeMcpConfig('project', project, rootPath)
+      }
     } else {
       projectMcp.value = { servers: {} }
     }
@@ -149,11 +167,28 @@ export default () => {
       )
     }
 
+    // Internal CodeGraph is runtime-only (not in user MCP JSON). Keep its state.
+    if (
+      previousIds.has(CODEGRAPH_SERVER_ID) ||
+      bulkStatuses[CODEGRAPH_SERVER_ID] ||
+      serverStates.value[CODEGRAPH_SERVER_ID]
+    ) {
+      previousIds.delete(CODEGRAPH_SERVER_ID)
+      merged[CODEGRAPH_SERVER_ID] = mergeServerState(
+        CODEGRAPH_SERVER_ID,
+        bulkStatuses[CODEGRAPH_SERVER_ID],
+        serverStates.value[CODEGRAPH_SERVER_ID],
+      )
+    }
+
     if (generation !== refreshGeneration) {
       return
     }
 
     for (const removedId of previousIds) {
+      if (isInternalMcpServer(removedId)) {
+        continue
+      }
       try {
         await mcpRuntime.stop(removedId)
       } catch (error) {
@@ -180,11 +215,12 @@ export default () => {
     rootPath: string | null,
   ): Promise<void> => {
     const scope = tab === 'personal' ? 'personal' : 'project'
-    await writeMcpConfig(scope, config, rootPath)
+    const cleaned = stripCodegraphMcpServer(config)
+    await writeMcpConfig(scope, cleaned, rootPath)
     if (scope === 'personal') {
-      personalMcp.value = config
+      personalMcp.value = cleaned
     } else {
-      projectMcp.value = config
+      projectMcp.value = cleaned
     }
   }
 
@@ -193,6 +229,12 @@ export default () => {
     serverConfig: McpServerConfig,
     options?: { quiet?: boolean; manageLoading?: boolean },
   ): Promise<void> => {
+    const existing = startInFlight.get(serverId)
+    if (existing) {
+      await existing
+      return
+    }
+
     const run = async (): Promise<void> => {
       try {
         assertTrustedOrThrow(serverId, serverConfig)
@@ -205,30 +247,43 @@ export default () => {
           ...serverStates.value,
           [serverId]: state,
         }
-        if (!options?.quiet) {
+        if (!options?.quiet && !isInternalMcpServer(serverId)) {
           toast.success(`${serverId} connected (${state.tools.length} tools)`)
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
         serverStates.value = {
           ...serverStates.value,
           [serverId]: {
             serverId,
             status: 'error',
             tools: [],
-            error: error instanceof Error ? error.message : String(error),
+            error: message,
           },
         }
-        toast.error('Failed to start server', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
+        if (!options?.quiet) {
+          toast.error('Failed to start server', {
+            description: message,
+          })
+          return
+        }
+        throw error instanceof Error ? error : new Error(message)
       }
     }
 
-    if (options?.manageLoading === false) {
-      await run()
-      return
-    }
-    await withServerLoading(serverId, run)
+    const pending = (async () => {
+      try {
+        if (options?.manageLoading === false) {
+          await run()
+          return
+        }
+        await withServerLoading(serverId, run)
+      } finally {
+        startInFlight.delete(serverId)
+      }
+    })()
+    startInFlight.set(serverId, pending)
+    await pending
   }
 
   const refreshServer = async (
@@ -248,7 +303,7 @@ export default () => {
           ...serverStates.value,
           [serverId]: state,
         }
-        if (!options?.quiet) {
+        if (!options?.quiet && !isInternalMcpServer(serverId)) {
           toast.success(`${serverId} refreshed (${state.tools.length} tools)`)
         }
       } catch (error) {
@@ -373,7 +428,7 @@ export default () => {
             tools: [],
           },
         }
-        if (!options?.quiet) {
+        if (!options?.quiet && !isInternalMcpServer(serverId)) {
           toast.success(`${serverId} stopped`)
         }
       } catch (error) {
@@ -396,6 +451,9 @@ export default () => {
     config: McpServerConfig,
     rootPath: string | null,
   ): Promise<void> => {
+    if (isInternalMcpServer(serverId)) {
+      throw new Error(`Reserved MCP server id "${serverId}"`)
+    }
     const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
     const next = {
       servers: {
@@ -417,6 +475,9 @@ export default () => {
       inputs?: import('@/types/pyrola/mcp-config').McpInputDefinition[]
     },
   ): Promise<void> => {
+    if (isInternalMcpServer(serverId) || (options?.previousId && isInternalMcpServer(options.previousId))) {
+      throw new Error(`Reserved MCP server id "${serverId}"`)
+    }
     const scoped = tab === 'personal' ? personalMcp.value : projectMcp.value
     const nextServers = { ...scoped.servers }
     const previousId = options?.previousId
@@ -607,6 +668,7 @@ export default () => {
     deleteServer,
     setServerEnabled,
     listEffectiveMcpServers,
+    listUserMcpServers,
     listScopedMcpServers,
   }
 }

@@ -1,0 +1,117 @@
+import useMcpServers from '@/composables/use-mcp-servers'
+import { migrateMcpConfig } from '@/schemas/mcp-config'
+import stripCodegraphMcpServer from '@/services/codegraph/strip-codegraph-mcp-server'
+import mcpRuntime from '@/services/mcp/mcp-runtime'
+import { sessionTrusts } from '@/services/mcp/mcp-trust'
+import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
+import {
+  CODEGRAPH_DB_NAME,
+  CODEGRAPH_DIR_NAME,
+  CODEGRAPH_SERVER_ID,
+  buildCodegraphServer,
+} from '@/types/codegraph/managed-codegraph'
+import {
+  codegraphCli,
+  fsStat,
+  isTauri,
+  readMcpConfig,
+  writeMcpConfig,
+} from '@/services/pyrola/pyrola-tauri'
+import invokeErrorMessage from '@/utils/invoke-error-message'
+
+const relativeDbPath = `${CODEGRAPH_DIR_NAME}/${CODEGRAPH_DB_NAME}`
+
+const inFlightByRoot = new Map<string, Promise<void>>()
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+
+const persistStrippedMcpConfig = async (
+  scope: 'personal' | 'project',
+  root: string | null,
+): Promise<void> => {
+  const raw = await readMcpConfig(scope, root)
+  const migrated = migrateMcpConfig(raw)
+  if (!(CODEGRAPH_SERVER_ID in migrated.servers)) {
+    return
+  }
+  const cleaned = stripCodegraphMcpServer(migrated)
+  await writeMcpConfig(scope, cleaned, root)
+}
+
+const ensureCodeGraphOnce = async (root: string): Promise<void> => {
+  const dbStat = await fsStat(root, relativeDbPath)
+  if (!dbStat.exists) {
+    await codegraphCli(root, 'init')
+  }
+
+  await persistStrippedMcpConfig('project', root)
+  await persistStrippedMcpConfig('personal', null)
+
+  const server = buildCodegraphServer(root)
+  sessionTrusts.set(CODEGRAPH_SERVER_ID, mcpServerFingerprint(server))
+
+  const mcp = useMcpServers()
+  await mcp.loadConfigs(root)
+
+  const existing = await mcpRuntime.getStatus(CODEGRAPH_SERVER_ID)
+  if (existing.status === 'connected') {
+    return
+  }
+
+  await mcp.startServer(CODEGRAPH_SERVER_ID, server, { quiet: true })
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = await mcpRuntime.getStatus(CODEGRAPH_SERVER_ID)
+    if (status.status === 'connected') {
+      return
+    }
+    if (status.status === 'error') {
+      throw new Error(status.error ?? 'CodeGraph failed to start')
+    }
+    await wait(250)
+  }
+
+  const finalStatus = await mcpRuntime.getStatus(CODEGRAPH_SERVER_ID)
+  throw new Error(
+    finalStatus.error ??
+      `CodeGraph is ${finalStatus.status || 'not running'}`,
+  )
+}
+
+/**
+ * Ensure CodeGraph is initialized and started for the project root.
+ * Config lives in memory only; never writes CodeGraph into user MCP JSON.
+ * Concurrent calls for the same root share one in-flight start.
+ */
+export default async (projectRoot: string): Promise<void> => {
+  if (!isTauri()) {
+    return
+  }
+
+  const root = projectRoot.trim()
+  if (!root) {
+    return
+  }
+
+  const existing = inFlightByRoot.get(root)
+  if (existing) {
+    await existing
+    return
+  }
+
+  const pending = (async () => {
+    try {
+      await ensureCodeGraphOnce(root)
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(invokeErrorMessage(error))
+    } finally {
+      inFlightByRoot.delete(root)
+    }
+  })()
+
+  inFlightByRoot.set(root, pending)
+  await pending
+}

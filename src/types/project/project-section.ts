@@ -1,6 +1,7 @@
 export type ProjectSectionId =
   | 'chats'
   | 'mcp'
+  | 'codegraph'
   | 'plans'
   | 'studio'
   | 'skills'
@@ -10,6 +11,7 @@ export type ProjectSectionId =
 export const PROJECT_SECTIONS: ProjectSectionId[] = [
   'chats',
   'mcp',
+  'codegraph',
   'plans',
   'studio',
   'skills',
@@ -20,6 +22,7 @@ export const PROJECT_SECTIONS: ProjectSectionId[] = [
 export const PROJECT_SECTION_LABELS: Record<ProjectSectionId, string> = {
   chats: 'Chats',
   mcp: 'MCP',
+  codegraph: 'Graph',
   plans: 'Plans',
   studio: 'Studio',
   skills: 'Skills',

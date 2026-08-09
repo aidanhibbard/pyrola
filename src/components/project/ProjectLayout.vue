@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ProjectNav from '@/components/project/ProjectNav.vue'
 import ProjectChatsSection from '@/components/project/sections/ChatsSection.vue'
+import ProjectCodeGraphSection from '@/components/project/sections/CodeGraphSection.vue'
 import McpServersSection from '@/components/settings/sections/McpServersSection.vue'
 import PlansSection from '@/components/settings/sections/PlansSection.vue'
 import StudioSection from '@/components/settings/sections/StudioSection.vue'
@@ -26,6 +27,8 @@ const sectionComponent = computed(() => {
       return ProjectChatsSection
     case 'mcp':
       return McpServersSection
+    case 'codegraph':
+      return ProjectCodeGraphSection
     case 'plans':
       return PlansSection
     case 'studio':
@@ -43,6 +46,9 @@ const sectionComponent = computed(() => {
 
 const sectionProps = computed(() => {
   if (props.activeSection === 'chats') {
+    return { projectSlug: props.projectSlug }
+  }
+  if (props.activeSection === 'codegraph') {
     return { projectSlug: props.projectSlug }
   }
   return { tab: 'project' as const }
@@ -65,7 +71,7 @@ const sectionProps = computed(() => {
     <div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <component
         :is="sectionComponent"
-        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+        class="flex min-h-0 flex-1 flex-col"
         v-bind="sectionProps"
       />
     </div>

@@ -57,7 +57,7 @@ import {
 import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
-import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import { listEffectiveMcpServers, listUserMcpServers } from '@/services/mcp/merge-mcp-config'
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import mcpRuntime from '@/services/mcp/mcp-runtime'
@@ -100,6 +100,8 @@ import {
   markCreatedPlanThisTurn,
 } from '@/services/harness/plan-execution-session'
 import linkAbortSignal from '@/utils/link-abort-signal'
+import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
+import normalizeCodegraphResult from '@/services/codegraph/normalize-codegraph-result'
 
 export type HarnessToolContext = {
   projectRoot: string
@@ -244,6 +246,10 @@ const SUBAGENT_READ_ONLY_TOOLS = [
   'list_dir',
   'grep',
   'glob_files',
+  'codebase_explore',
+  'codebase_search',
+  'codebase_impact',
+  'codebase_status',
   'git_status',
   'git_diff',
   'git_log',
@@ -325,6 +331,118 @@ const resolveTrustedMcpServer = async (
   return {
     trusted: isMcpTrusted(ctx.settings, serverId, fingerprint, sessionTrusts),
     config: server.config,
+  }
+}
+
+type ManagedCodegraphCallResult =
+  | { ok: true; result: unknown }
+  | { ok: false; payload: Record<string, unknown> }
+
+const callManagedCodegraphTool = async (
+  ctx: HarnessToolContext,
+  args: {
+    toolCallId: string
+    firstPartyName: string
+    mcpToolName: string
+    toolArgs: Record<string, unknown>
+  },
+): Promise<ManagedCodegraphCallResult> => {
+  const serverId = CODEGRAPH_SERVER_ID
+  const trust = await resolveTrustedMcpServer(ctx, serverId)
+  if (!trust.trusted) {
+    return {
+      ok: false,
+      payload: {
+        error: `MCP server "${serverId}" has not been granted trust. Open Settings → MCP and start the server to grant trust before the agent can call its tools.`,
+      },
+    }
+  }
+
+  const allowed = await gateToolPermission({
+    ctx: toPermCtx(ctx),
+    toolCallId: args.toolCallId,
+    name: args.firstPartyName,
+    kind: 'mcp',
+    action: 'mcp.call',
+    capability: mcpCapability(serverId, args.mcpToolName),
+    title: ctx.subagentLabel
+      ? `${ctx.subagentLabel}: ${args.firstPartyName}`
+      : args.firstPartyName,
+    serverId,
+  })
+  if (!allowed) {
+    return {
+      ok: false,
+      payload: { rejected: true, error: `${args.firstPartyName} denied` },
+    }
+  }
+
+  const invokeTool = async (): Promise<unknown> => {
+    const previous = setMcpElicitationHandler(async (request) => {
+      const decision = await requestQuestion(
+        ctx.chatId,
+        `${args.toolCallId}:elicit`,
+        `${request.params.message}\n\nWarning: MCP servers may phish for secrets. Never paste passwords or API keys. Choose Accept, Decline, or Cancel.`,
+        ['Accept', 'Decline', 'Cancel'],
+      )
+      if (decision === 'Decline') {
+        return { action: 'decline' as const }
+      }
+      if (decision !== 'Accept') {
+        return { action: 'cancel' as const }
+      }
+      const answer = await requestQuestion(
+        ctx.chatId,
+        `${args.toolCallId}:elicit-content`,
+        'Optional response for Accept (leave blank if none). Do not paste secrets.',
+      )
+      return {
+        action: 'accept' as const,
+        content: answer.trim().length > 0 ? { answer } : {},
+      }
+    })
+    try {
+      return await mcpRuntime.callTool(serverId, args.mcpToolName, args.toolArgs)
+    } finally {
+      setMcpElicitationHandler(previous)
+    }
+  }
+
+  try {
+    return { ok: true, result: await invokeTool() }
+  } catch (error) {
+    if (!isMcpAuthError(error)) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, payload: { error: message } }
+    }
+
+    const kind = mcpAuthKindForError(error)
+    const resolution = await requestMcpAuth({
+      chatId: ctx.chatId,
+      toolCallId: args.toolCallId,
+      serverId,
+      kind,
+      title: ctx.subagentLabel
+        ? `Authenticate ${serverId} (${ctx.subagentLabel})`
+        : `Authenticate ${serverId}`,
+      detail: mcpAuthErrorMessage(error),
+      subagentId: ctx.subagentId,
+      subagentLabel: ctx.subagentLabel,
+    })
+
+    if (resolution.action !== 'authenticated') {
+      return { ok: false, payload: { error: 'auth_required', serverId } }
+    }
+
+    try {
+      return { ok: true, result: await invokeTool() }
+    } catch (retryError) {
+      if (isMcpAuthError(retryError)) {
+        return { ok: false, payload: { error: 'auth_required', serverId } }
+      }
+      const message = retryError instanceof Error ? retryError.message : String(retryError)
+      return { ok: false, payload: { error: message } }
+    }
   }
 }
 
@@ -471,6 +589,137 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     }),
     execute: async ({ pattern, glob }) =>
       workspaceGrep({ projectRoot: ctx.projectRoot, pattern, glob }),
+  }),
+  codebase_explore: tool({
+    description:
+      'Explore the CodeGraph index for architecture, flows, and "where is X" questions. Prefer over grep/read loops for structural context. Returns normalized spans with path and line ranges when possible.',
+    inputSchema: z.object({
+      query: z
+        .string()
+        .describe(
+          'Natural-language question or bag of symbol/file names (for example "AuthService loginUser" or "how does MCP trust work")',
+        ),
+    }),
+    execute: async ({ query }, { toolCallId }) => {
+      const called = await callManagedCodegraphTool(ctx, {
+        toolCallId,
+        firstPartyName: 'codebase_explore',
+        mcpToolName: 'codegraph_explore',
+        toolArgs: { query },
+      })
+      if (!called.ok) {
+        if ('rejected' in called.payload) {
+          return called.payload
+        }
+        return {
+          summary:
+            typeof called.payload.error === 'string'
+              ? called.payload.error
+              : 'CodeGraph explore failed',
+          results: [],
+        }
+      }
+      return normalizeCodegraphResult.tool(called.result)
+    },
+  }),
+  codebase_search: tool({
+    description:
+      'Search the CodeGraph index for symbols by name. Returns locations only. Prefer codebase_explore when you need source context.',
+    inputSchema: z.object({
+      query: z.string().describe('Symbol name or partial name to search'),
+    }),
+    execute: async ({ query }, { toolCallId }) => {
+      const called = await callManagedCodegraphTool(ctx, {
+        toolCallId,
+        firstPartyName: 'codebase_search',
+        mcpToolName: 'codegraph_search',
+        toolArgs: { query },
+      })
+      if (!called.ok) {
+        if ('rejected' in called.payload) {
+          return called.payload
+        }
+        return {
+          summary:
+            typeof called.payload.error === 'string'
+              ? called.payload.error
+              : 'CodeGraph search failed',
+          results: [],
+        }
+      }
+      return normalizeCodegraphResult.tool(called.result)
+    },
+  }),
+  codebase_impact: tool({
+    description:
+      'Analyze CodeGraph blast radius for changing a symbol. Optional file narrows overloaded names; optional depth controls traversal.',
+    inputSchema: z.object({
+      symbol: z.string().describe('Symbol name to analyze impact for'),
+      file: z
+        .string()
+        .optional()
+        .describe('Optional file path or suffix to disambiguate same-named symbols'),
+      depth: z
+        .number()
+        .optional()
+        .describe('Dependency traversal depth (CodeGraph default is 2)'),
+    }),
+    execute: async ({ symbol, file, depth }, { toolCallId }) => {
+      const toolArgs: Record<string, unknown> = { symbol }
+      if (typeof file === 'string' && file.length > 0) {
+        toolArgs.file = file
+      }
+      if (typeof depth === 'number' && Number.isFinite(depth)) {
+        toolArgs.depth = depth
+      }
+      const called = await callManagedCodegraphTool(ctx, {
+        toolCallId,
+        firstPartyName: 'codebase_impact',
+        mcpToolName: 'codegraph_impact',
+        toolArgs,
+      })
+      if (!called.ok) {
+        if ('rejected' in called.payload) {
+          return called.payload
+        }
+        return {
+          summary:
+            typeof called.payload.error === 'string'
+              ? called.payload.error
+              : 'CodeGraph impact failed',
+          results: [],
+        }
+      }
+      return normalizeCodegraphResult.impact(called.result)
+    },
+  }),
+  codebase_status: tool({
+    description:
+      'Check CodeGraph index health (ready, pending sync, errors). Use when the index may be missing or stale.',
+    inputSchema: z.object({}),
+    execute: async (input, { toolCallId }) => {
+      const called = await callManagedCodegraphTool(ctx, {
+        toolCallId,
+        firstPartyName: 'codebase_status',
+        mcpToolName: 'codegraph_status',
+        toolArgs: input,
+      })
+      if (!called.ok) {
+        if ('rejected' in called.payload) {
+          return called.payload
+        }
+        return {
+          ready: false,
+          indexing: false,
+          syncing: false,
+          error:
+            typeof called.payload.error === 'string'
+              ? called.payload.error
+              : 'CodeGraph status failed',
+        }
+      }
+      return normalizeCodegraphResult.status(called.result)
+    },
   }),
   glob_files: tool({
     description: 'Glob files in workspace',
@@ -899,7 +1148,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       const personal = migrateMcpConfig(await readMcpConfig('personal', null))
       const projectRaw = await readMcpConfig('project', ctx.projectRoot).catch(() => null)
       const project = projectRaw ? migrateMcpConfig(projectRaw) : null
-      const servers = listEffectiveMcpServers(personal, project)
+      const servers = listUserMcpServers(personal, project)
 
       const catalog = await Promise.all(
         servers.map(async (server) => {

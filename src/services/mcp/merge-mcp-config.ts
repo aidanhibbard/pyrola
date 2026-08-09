@@ -5,6 +5,7 @@ import type {
   McpServerScope,
 } from '@/types/pyrola/mcp-config'
 import { defaultMcpConfig } from '@/schemas/mcp-config'
+import { isInternalMcpServer } from '@/types/codegraph/managed-codegraph'
 
 export type EffectiveMcpServer = {
   id: string
@@ -87,6 +88,15 @@ export const listEffectiveMcpServers = (
   return servers.sort((a, b) => a.id.localeCompare(b.id))
 }
 
+/** User-visible MCP servers only (excludes first-party internal entries like CodeGraph). */
+export const listUserMcpServers = (
+  personal: McpConfig,
+  project: McpConfig | null,
+): EffectiveMcpServer[] =>
+  listEffectiveMcpServers(personal, project).filter(
+    (server) => !isInternalMcpServer(server.id),
+  )
+
 export const listScopedMcpServers = (
   personal: McpConfig,
   project: McpConfig | null,
@@ -96,6 +106,7 @@ export const listScopedMcpServers = (
 
   if (tab === 'personal') {
     return Object.entries(personal.servers)
+      .filter(([id]) => !isInternalMcpServer(id))
       .map(([id, config]) => ({
         id,
         config,
@@ -105,6 +116,7 @@ export const listScopedMcpServers = (
   }
 
   return Object.entries(project?.servers ?? {})
+    .filter(([id]) => !isInternalMcpServer(id))
     .map(([id, config]) => ({
       id,
       config,

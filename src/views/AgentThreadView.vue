@@ -10,6 +10,7 @@ import ChatThread from '@/components/chat/ChatThread.vue'
 import ChatTodoTimeline from '@/components/chat/ChatTodoTimeline.vue'
 import RunningTerminalsPanel from '@/components/chat/RunningTerminalsPanel.vue'
 import ChatContextUsageBar from '@/components/chat/ContextUsageBar.vue'
+import ChatCodegraphStatusChip from '@/components/chat/ChatCodegraphStatusChip.vue'
 import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useChatContextActions from '@/composables/use-chat-context-actions'
@@ -28,6 +29,7 @@ import { getUserHomeDir, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
+import type { ContextMention } from '@/types/harness/context-mention'
 import { isReasoningLevel } from '@/types/models/reasoning-level'
 import { killAgentShell, listShellsForChat } from '@/services/harness/agent-shell-registry'
 import buildSubagentTimeline from '@/utils/build-subagent-timeline'
@@ -183,6 +185,7 @@ const flushPendingChatMessage = async (): Promise<void> => {
     mode: pending.mode,
     model: pending.model,
     reasoning: isReasoningLevel(pending.reasoning) ? pending.reasoning : undefined,
+    mentions: contextBudgetSync.draftMentions.value,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
 }
@@ -246,6 +249,7 @@ const handleSubmit = async (payload: {
   model: string
   reasoning?: ReasoningLevel
   files?: import('ai').FileUIPart[]
+  mentions?: ContextMention[]
 }): Promise<void> => {
   if (isSubagentView.value) {
     return
@@ -266,6 +270,7 @@ const handleSubmit = async (payload: {
     model: payload.model,
     reasoning: payload.reasoning,
     files: payload.files,
+    mentions: payload.mentions,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
 }
@@ -516,7 +521,8 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       :class="workbench.rightSidebarOpen.value ? 'pr-2' : 'pr-12'"
       style="--titlebar-height: 40px"
     >
-      <div class="pointer-events-auto" data-tauri-drag-region="false">
+      <div class="pointer-events-auto flex items-center gap-2" data-tauri-drag-region="false">
+        <ChatCodegraphStatusChip />
         <ChatContextUsageBar />
       </div>
     </div>

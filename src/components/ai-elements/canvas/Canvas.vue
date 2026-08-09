@@ -2,11 +2,10 @@
 import type { FlowEmits, FlowProps, FlowSlots } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { VueFlow } from '@vue-flow/core'
-import { useForwardPropsEmits } from 'reka-ui'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
-const props = withDefaults(defineProps<FlowProps>(), {
+withDefaults(defineProps<FlowProps>(), {
   deleteKeyCode: () => ['Backspace', 'Delete'],
   fitViewOnInit: true,
   panOnDrag: false,
@@ -15,13 +14,12 @@ const props = withDefaults(defineProps<FlowProps>(), {
   zoomOnDoubleClick: false,
 })
 
-const emits = defineEmits<FlowEmits>()
+defineEmits<FlowEmits>()
 const slots = defineSlots<FlowSlots>()
-const forwarded = useForwardPropsEmits(props, emits)
 </script>
 
 <template>
-  <VueFlow data-slot="canvas" v-bind="forwarded">
+  <VueFlow data-slot="canvas" v-bind="$props">
     <Background />
 
     <template v-if="slots['connection-line']" #connection-line="connectionLineProps">

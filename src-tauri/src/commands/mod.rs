@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod codegraph;
 pub mod config;
 pub mod fs;
 pub mod git;
@@ -21,6 +22,7 @@ pub use chat::{
   append_chat_line, create_chat, delete_chat, fork_chat, list_chats, list_pinned_chats, pin_chat,
   read_chat_meta, read_chat_messages, truncate_chat_log, update_chat_meta,
 };
+pub use codegraph::codegraph_cli;
 pub use config::{
   config_exists, read_json_file, read_lsp_config, read_mcp_config, read_settings, write_json_file,
   write_lsp_config, write_mcp_config, write_settings,

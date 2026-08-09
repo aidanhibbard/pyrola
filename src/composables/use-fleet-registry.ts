@@ -2,7 +2,10 @@ import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { FleetProject } from '@/types/fleet/fleet-project'
 import useMcpServers from '@/composables/use-mcp-servers'
+import ensureCodeGraph from '@/services/codegraph/ensure-codegraph'
+import invokeErrorMessage from '@/utils/invoke-error-message'
 import { sessionTrusts } from '@/services/mcp/mcp-trust'
+import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
 import {
   getActiveProjectId,
   hasProjectPyrola,
@@ -17,6 +20,7 @@ const projects = ref<FleetProject[]>([])
 const activeProjectId = ref<string | null>(null)
 const hasProjectPyrolaFlag = ref(false)
 const loaded = ref(false)
+let bootstrapPromise: Promise<void> | null = null
 
 const mapProject = (record: {
   id: string
@@ -75,6 +79,13 @@ export default () => {
         }
       }
     }
+    try {
+      await mcp.stopServer(CODEGRAPH_SERVER_ID, { quiet: true })
+    } catch (error) {
+      toast.error('Failed to stop graph', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
     sessionTrusts.clear()
 
     await registrySetActiveProject(projectId)
@@ -87,6 +98,19 @@ export default () => {
         toast.error('Failed to prepare language support', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
+      }
+
+      const project = projects.value.find((entry) => entry.id === projectId)
+      if (project) {
+        // Project MCP was stopped above; reload configs for the new root via ensure.
+        try {
+          await ensureCodeGraph(project.rootPath)
+        } catch (error) {
+          toast.error('Failed to start graph', {
+            description: invokeErrorMessage(error),
+          })
+        }
+        await refreshHasPyrola()
       }
     }
   }
@@ -110,11 +134,32 @@ export default () => {
       !projects.value.some((project) => project.id === activeProjectId.value)
     ) {
       await setActiveProject(projects.value[0]!.id)
+      return
+    }
+
+    // Persisted active project: still ensure internal graph is up (setActiveProject was skipped).
+    if (isTauri()) {
+      const project = projects.value.find((entry) => entry.id === activeProjectId.value)
+      if (project) {
+        try {
+          await ensureCodeGraph(project.rootPath)
+        } catch (error) {
+          toast.error('Failed to start graph', {
+            description: invokeErrorMessage(error),
+          })
+        }
+      }
     }
   }
 
-  onMounted(async () => {
-    if (!loaded.value) {
+  onMounted(() => {
+    if (loaded.value) {
+      return
+    }
+    if (bootstrapPromise) {
+      return
+    }
+    bootstrapPromise = (async () => {
       try {
         await refresh()
         await ensureDefaultProject()
@@ -122,8 +167,10 @@ export default () => {
         toast.error('Failed to load fleet registry', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })
+      } finally {
+        bootstrapPromise = null
       }
-    }
+    })()
   })
 
   return {

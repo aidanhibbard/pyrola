@@ -4,7 +4,7 @@ mod tray;
 use tauri::Manager;
 
 use commands::{
-  append_chat_line, config_exists,
+  append_chat_line, codegraph_cli, config_exists,
   create_chat, delete_chat, delete_secret, fork_chat, truncate_chat_log, fs_apply_patch, fs_copy,
   fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir, fs_move, fs_read_file,
   fs_rename, fs_stage_preview, fs_stat, fs_write_file, write_temp_handoff, get_active_project,
@@ -139,6 +139,7 @@ pub fn run_with_launch_path(launch_path: Option<String>) {
       pin_chat,
       list_pinned_chats,
       mcp_call_tool,
+      codegraph_cli,
       shell_spawn_pty,
       shell_write_pty,
       shell_resize_pty,

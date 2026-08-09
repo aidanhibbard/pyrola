@@ -4,6 +4,7 @@ import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import { FolderIcon, ChevronDownIcon, XIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
+import { Badge } from '@/components/shadcn/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,21 +32,31 @@ import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
+import ChatContextMentionPicker from '@/components/chat/ContextMentionPicker.vue'
 import ModelsOptionsModelOptionsRow from '@/components/models/options/ModelOptionsRow.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
 import useChatStore from '@/composables/use-chat-store'
 import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
+import useContextUsage from '@/composables/use-context-usage'
+import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import mcpRuntime from '@/services/mcp/mcp-runtime'
+import normalizeCodegraphResult from '@/services/codegraph/normalize-codegraph-result'
 import resolveModelForRole from '@/services/models/resolve-model-for-role'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
 import { normalizeStoredModelRef } from '@/schemas/pyrola-settings'
 import { HOME_CHAT_SLUG } from '@/constants/home-chat'
+import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input/types'
+import type { ContextMention } from '@/types/harness/context-mention'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { FileUIPart } from 'ai'
+
+const PREFETCH_MIN_FREE_TOKENS = 4000
+const PREFETCH_MAX_CONTENT_CHARS = 12_000
 
 const props = withDefaults(
   defineProps<{
@@ -70,6 +81,7 @@ const emit = defineEmits<{
     projectId: string | null
     permissionLevel: PermissionLevel
     files?: FileUIPart[]
+    mentions?: ContextMention[]
   }]
   submitEdit: [payload: {
     text: string
@@ -85,6 +97,10 @@ const config = usePyrolaConfig()
 const git = useGitBranches()
 const chatStore = useChatStore()
 const contextBudgetSync = useChatContextBudgetSync()
+const contextUsage = useContextUsage()
+const mcpServers = useMcpServers()
+
+const draftMentions = contextBudgetSync.draftMentions
 
 const syncDraftSelection = (): void => {
   contextBudgetSync.setDraftSelection(session.selectedModelRef, session.selectedMode)
@@ -221,7 +237,88 @@ const handlePermissionLevelChange = (level: PermissionLevel): void => {
   emit('update:permissionLevel', level)
 }
 
-const handleSubmit = (payload: PromptInputMessage): void => {
+const mentionChipLabel = (mention: ContextMention): string => {
+  if (mention.type === 'file') {
+    return mention.path
+  }
+  if (mention.type === 'folder') {
+    return mention.path
+  }
+  if (mention.type === 'symbol') {
+    return mention.name
+  }
+  if (mention.type === 'codebase') {
+    return `codebase ${mention.query}`
+  }
+  if (mention.type === 'rule') {
+    return mention.name
+  }
+  return mention.name
+}
+
+const handleMentionSelect = (mention: ContextMention): void => {
+  contextBudgetSync.setDraftMentions([...draftMentions.value, mention])
+}
+
+const handleMentionRemove = (index: number): void => {
+  contextBudgetSync.setDraftMentions(
+    draftMentions.value.filter((_, itemIndex) => itemIndex !== index),
+  )
+}
+
+const enrichMentionsBeforeSend = async (
+  mentions: ContextMention[],
+): Promise<ContextMention[]> => {
+  const codegraphConnected =
+    mcpServers.serverStates.value[CODEGRAPH_SERVER_ID]?.status === 'connected'
+  if (!codegraphConnected) {
+    return mentions
+  }
+
+  const freeTokens = contextUsage.free.value
+  const maxChars = Math.min(
+    PREFETCH_MAX_CONTENT_CHARS,
+    Math.max(0, (freeTokens - 1000) * 4),
+  )
+  if (freeTokens < PREFETCH_MIN_FREE_TOKENS || maxChars < 500) {
+    return mentions
+  }
+
+  const enriched: ContextMention[] = []
+  for (const mention of mentions) {
+    if (mention.type !== 'codebase' || mention.content) {
+      enriched.push(mention)
+      continue
+    }
+    try {
+      const raw = await mcpRuntime.callTool(
+        CODEGRAPH_SERVER_ID,
+        'codegraph_explore',
+        { query: mention.query },
+      )
+      const normalized = normalizeCodegraphResult.tool(raw)
+      const content = [
+        normalized.summary,
+        ...normalized.results.map((span) => {
+          const loc = `${span.path}:${span.startLine}-${span.endLine}`
+          return span.snippet ? `${loc}\n${span.snippet}` : loc
+        }),
+      ]
+        .filter((part): part is string => typeof part === 'string' && part.length > 0)
+        .join('\n\n')
+        .slice(0, maxChars)
+      enriched.push(content.length > 0 ? { ...mention, content } : mention)
+    } catch (error) {
+      toast.error('Could not prefetch codebase context', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+      enriched.push(mention)
+    }
+  }
+  return enriched
+}
+
+const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
   if (props.status === 'streaming' || props.status === 'submitted') {
     emit('stop')
     return
@@ -235,7 +332,26 @@ const handleSubmit = (payload: PromptInputMessage): void => {
     toast.error('Select a model before sending')
     return
   }
-  const submitPayload = {
+  if (isEditing.value) {
+    emit('submitEdit', {
+      text: text || (files.length > 0 ? 'See attached image(s).' : ''),
+      mode: session.selectedMode,
+      model: session.selectedModelRef,
+    })
+    return
+  }
+
+  let mentions = [...draftMentions.value]
+  try {
+    mentions = await enrichMentionsBeforeSend(mentions)
+  } catch (error) {
+    toast.error('Could not prepare context mentions', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+  contextBudgetSync.setDraftMentions(mentions)
+
+  emit('submit', {
     text: text || (files.length > 0 ? 'See attached image(s).' : ''),
     mode: session.selectedMode,
     model: session.selectedModelRef,
@@ -244,16 +360,8 @@ const handleSubmit = (payload: PromptInputMessage): void => {
       : fleet.activeProject.value?.id ?? null,
     permissionLevel: localPermissionLevel.value,
     files,
-  }
-  if (isEditing.value) {
-    emit('submitEdit', {
-      text: submitPayload.text,
-      mode: submitPayload.mode,
-      model: submitPayload.model,
-    })
-    return
-  }
-  emit('submit', submitPayload)
+    mentions,
+  })
 }
 
 const handleCancelEdit = (): void => {
@@ -391,6 +499,29 @@ watch(
         @submit="handleSubmit"
       >
         <ChatPromptAttachments />
+        <div
+          v-if="draftMentions.length > 0"
+          class="flex flex-wrap gap-1.5 px-3 pt-2"
+        >
+          <Badge
+            v-for="(mention, index) in draftMentions"
+            :key="`${mention.type}:${mentionChipLabel(mention)}:${index}`"
+            variant="secondary"
+            class="max-w-full gap-1 truncate pr-1 font-normal"
+          >
+            <span class="truncate">@{{ mentionChipLabel(mention) }}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="size-5 shrink-0 p-0"
+              :title="`Remove ${mentionChipLabel(mention)}`"
+              @click="handleMentionRemove(index)"
+            >
+              <XIcon class="size-3" />
+            </Button>
+          </Badge>
+        </div>
         <PromptInputBody>
           <ChatPromptEditSync />
           <ChatPromptMentionSync />
@@ -429,6 +560,7 @@ watch(
                 </PromptInputActionMenuItem>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
+            <ChatContextMentionPicker @select="handleMentionSelect" />
           </PromptInputTools>
           <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
             <ModelsOptionsModelOptionsRow

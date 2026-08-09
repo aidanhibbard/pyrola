@@ -45,7 +45,7 @@ const {
   setServerEnabled,
   authenticateServer,
   refreshStates,
-  listEffectiveMcpServers,
+  listUserMcpServers,
 } = useMcpServers()
 const config = usePyrolaConfig()
 const router = useRouter()
@@ -54,7 +54,7 @@ const menuOpen = ref(false)
 const searchQuery = ref('')
 
 const effectiveServers = computed(() =>
-  listEffectiveMcpServers(personalMcp.value, projectMcp.value),
+  listUserMcpServers(personalMcp.value, projectMcp.value),
 )
 
 const filteredServers = computed(() => {

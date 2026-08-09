@@ -18,6 +18,7 @@ Implement changes end-to-end.
 
 ## Rules
 
+- Prefer `codebase_explore` / `codebase_search` / `codebase_impact` / `codebase_status` for structural and "where is X" questions before grep or broad read loops. Keep `lsp` for precise defs/refs; keep `grep` for exact strings. Treat explore snippets as already read.
 - Network via user MCP only.
 - Do not commit unless the user asks.
 - On repeated tool failure, stop and explain the blocker.

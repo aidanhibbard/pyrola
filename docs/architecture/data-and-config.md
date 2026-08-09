@@ -24,6 +24,8 @@ Each registered project may have `<project>/.pyrola/`:
 
 Pyrola walks parents a limited depth to find an existing project `.pyrola` with config.
 
+If CodeGraph is used on a project, its index lives under `<project>/.codegraph/` (SQLite `codegraph.db` and runtime files). That directory is local to each machine; the repo root `.gitignore` ignores `.codegraph/` so the database is never committed. The CodeGraph MCP process is started in-process by pyrola and is not written to personal or project `mcp.json`.
+
 ## Secrets
 
 - Provider API keys and MCP secrets use the OS keychain via Tauri commands.

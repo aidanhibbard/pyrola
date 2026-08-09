@@ -354,6 +354,19 @@ const openSecrets = (id: string): void => {
   secretsOpen.value = true
 }
 
+const handleDeleteServer = async (id: string): Promise<void> => {
+  if (!scopedMcpConfig.value.servers[id]) {
+    return
+  }
+  try {
+    await deleteServer(props.tab, id, config.activeRootPath.value)
+  } catch (error) {
+    toast.error('Failed to delete MCP server', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleManageSave = async (payload: {
   serverId: string
   previousId?: string
@@ -637,7 +650,7 @@ const refreshAll = async (): Promise<void> => {
                   size="icon"
                   class="h-8 w-8 text-destructive hover:text-destructive"
                   aria-label="Delete server"
-                  @click="deleteServer(tab, server.id, config.activeRootPath.value)"
+                  @click="handleDeleteServer(server.id)"
                 >
                   <Trash2 class="h-4 w-4" />
                 </Button>

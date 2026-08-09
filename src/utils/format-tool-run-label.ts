@@ -10,6 +10,10 @@ const TOOL_LABELS_DONE: Record<string, string> = {
   list_dir: 'Listed',
   glob_files: 'Searched files',
   grep: 'Searched',
+  codebase_explore: 'Explored codebase',
+  codebase_search: 'Searched codebase',
+  codebase_impact: 'Checked impact',
+  codebase_status: 'Checked CodeGraph status',
   git_status: 'Checked git status',
   git_diff: 'Viewed diff',
   git_log: 'Viewed git log',
@@ -38,6 +42,10 @@ const TOOL_LABELS_RUNNING: Record<string, string> = {
   list_dir: 'Listing',
   glob_files: 'Searching files',
   grep: 'Searching',
+  codebase_explore: 'Exploring codebase',
+  codebase_search: 'Searching codebase',
+  codebase_impact: 'Checking impact',
+  codebase_status: 'Checking CodeGraph status',
   git_status: 'Checking git status',
   git_diff: 'Viewing diff',
   git_log: 'Viewing git log',
@@ -83,6 +91,9 @@ const formatArgsHint = (
   }
   if (typeof record.query === 'string' && record.query.length > 0) {
     return record.query
+  }
+  if (typeof record.symbol === 'string' && record.symbol.length > 0) {
+    return record.symbol
   }
   if (
     !omitPath &&

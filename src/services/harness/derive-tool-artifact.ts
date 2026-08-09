@@ -1,13 +1,32 @@
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 
+const CODEBASE_SPAN_TOOLS = new Set([
+  'codebase_explore',
+  'codebase_search',
+  'codebase_impact',
+])
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object'
 
-const fileArtifact = (path: string | undefined): ChatArtifact | undefined => {
+const fileArtifact = (
+  path: string | undefined,
+  options?: { label?: string; startLine?: number; endLine?: number },
+): ChatArtifact | undefined => {
   if (!path) {
     return undefined
   }
-  return { kind: 'file', path }
+  const artifact: ChatArtifact = { kind: 'file', path }
+  if (options?.label) {
+    artifact.label = options.label
+  }
+  if (typeof options?.startLine === 'number' && options.startLine >= 1) {
+    artifact.startLine = Math.trunc(options.startLine)
+  }
+  if (typeof options?.endLine === 'number' && options.endLine >= 1) {
+    artifact.endLine = Math.trunc(options.endLine)
+  }
+  return artifact
 }
 
 const pathFromResultOrArgs = (
@@ -23,6 +42,42 @@ const pathFromResultOrArgs = (
     return args[argsKey] as string
   }
   return undefined
+}
+
+const lineSuffix = (startLine?: number, endLine?: number): string => {
+  if (typeof startLine !== 'number' || startLine < 1) {
+    return ''
+  }
+  if (typeof endLine === 'number' && endLine > startLine) {
+    return `:${startLine}-${endLine}`
+  }
+  return `:${startLine}`
+}
+
+const artifactFromCodebaseSpan = (
+  entry: Record<string, unknown>,
+): ChatArtifact | undefined => {
+  if (typeof entry.path !== 'string' || entry.path.length === 0) {
+    return undefined
+  }
+  const startLine =
+    typeof entry.startLine === 'number' && Number.isFinite(entry.startLine)
+      ? Math.max(1, Math.trunc(entry.startLine))
+      : undefined
+  const endLine =
+    typeof entry.endLine === 'number' && Number.isFinite(entry.endLine)
+      ? Math.max(1, Math.trunc(entry.endLine))
+      : startLine
+  const fileName = entry.path.split('/').pop() ?? entry.path
+  const suffix = lineSuffix(startLine, endLine)
+  const symbol =
+    typeof entry.symbol === 'string' && entry.symbol.length > 0
+      ? entry.symbol
+      : undefined
+  const label = symbol
+    ? `${symbol} (${fileName}${suffix})`
+    : `${fileName}${suffix}`
+  return fileArtifact(entry.path, { label, startLine, endLine })
 }
 
 export default (
@@ -89,6 +144,19 @@ export default (
         if (isRecord(entry) && typeof entry.path === 'string') {
           return fileArtifact(entry.path)
         }
+      }
+    }
+    return undefined
+  }
+
+  if (CODEBASE_SPAN_TOOLS.has(name) && Array.isArray(result.results)) {
+    for (const entry of result.results) {
+      if (!isRecord(entry)) {
+        continue
+      }
+      const artifact = artifactFromCodebaseSpan(entry)
+      if (artifact) {
+        return artifact
       }
     }
     return undefined

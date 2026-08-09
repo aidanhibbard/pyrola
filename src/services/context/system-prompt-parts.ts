@@ -5,7 +5,7 @@ import type { ContextMention } from '@/types/harness/context-mention'
 import type { PrefixSnapshot } from '@/types/harness/prefix-snapshot'
 import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
-import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import { listUserMcpServers } from '@/services/mcp/merge-mcp-config'
 import loadPrompt from '@/services/prompts/load-prompt'
 import {
   listInternalSkillIndex,
@@ -46,7 +46,7 @@ const formatMcpCatalog = async (
       : await readMcpConfig('project', projectRoot)
           .then((raw) => migrateMcpConfig(raw))
           .catch(() => null)
-  const servers = listEffectiveMcpServers(personal, project).filter((server) =>
+  const servers = listUserMcpServers(personal, project).filter((server) =>
     isMcpServerEnabled(server.config),
   )
 
@@ -128,6 +128,37 @@ const loadRuleContents = async (
   return blocks.join('\n\n')
 }
 
+const formatSymbolLocation = (mention: {
+  path: string
+  startLine?: number
+  endLine?: number
+}): string => {
+  if (
+    typeof mention.startLine === 'number' &&
+    typeof mention.endLine === 'number'
+  ) {
+    return `${mention.path}:${mention.startLine}-${mention.endLine}`
+  }
+  if (typeof mention.startLine === 'number') {
+    return `${mention.path}:${mention.startLine}`
+  }
+  return mention.path
+}
+
+const formatSymbolMention = (mention: {
+  path: string
+  name: string
+  startLine?: number
+  endLine?: number
+  content?: string
+}): string =>
+  `Symbol ${mention.name} (${formatSymbolLocation(mention)}):\n${mention.content ?? ''}`
+
+const formatCodebaseMention = (mention: {
+  query: string
+  content?: string
+}): string => `Codebase ${mention.query}:\n${mention.content ?? ''}`
+
 export const formatMentionsAsText = (mentions: ContextMention[]): string => {
   const lines: string[] = []
 
@@ -140,6 +171,10 @@ export const formatMentionsAsText = (mentions: ContextMention[]): string => {
       lines.push(`Rule ${mention.name}`)
     } else if (mention.type === 'skill') {
       lines.push(`Skill ${mention.name}`)
+    } else if (mention.type === 'symbol') {
+      lines.push(formatSymbolMention(mention))
+    } else if (mention.type === 'codebase') {
+      lines.push(formatCodebaseMention(mention))
     }
   }
 
@@ -167,6 +202,14 @@ const formatMentionBlocks = (
     }
     if (mention.type === 'rule') {
       mentionLines.push(`Rule ${mention.name}`)
+      continue
+    }
+    if (mention.type === 'symbol') {
+      mentionLines.push(formatSymbolMention(mention))
+      continue
+    }
+    if (mention.type === 'codebase') {
+      mentionLines.push(formatCodebaseMention(mention))
     }
   }
 

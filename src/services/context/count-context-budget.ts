@@ -19,7 +19,7 @@ import serializeTimelineForBudget from '@/services/context/serialize-timeline-fo
 import estimateBuiltinToolDefinitionTokens from '@/services/context/estimate-builtin-tool-definition-tokens'
 import { partsFromFrozenPrefix } from '@/services/harness/prefix-contract'
 import { migrateMcpConfig, isMcpServerEnabled } from '@/schemas/mcp-config'
-import { listEffectiveMcpServers } from '@/services/mcp/merge-mcp-config'
+import { listUserMcpServers } from '@/services/mcp/merge-mcp-config'
 import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
 import {
   resolveContextWindow,
@@ -132,7 +132,7 @@ const estimateMcpToolSchemas = async (
     : await readMcpConfig('project', projectRoot)
         .then((raw) => migrateMcpConfig(raw))
         .catch(() => null)
-  const servers = listEffectiveMcpServers(personal, project).filter((server) =>
+  const servers = listUserMcpServers(personal, project).filter((server) =>
     isMcpServerEnabled(server.config),
   )
 

@@ -413,6 +413,17 @@ export const fsListDir = (
 ): Promise<Array<{ name: string; path: string; kind: string }>> =>
   call('fs_list_dir', { projectRoot, path })
 
+export const fsStat = (
+  projectRoot: string,
+  path: string,
+): Promise<{
+  path: string
+  exists: boolean
+  kind: string
+  size: number
+  modifiedMs?: number
+}> => call('fs_stat', { projectRoot, path })
+
 export const fsListDirTree = (
   projectRoot: string,
   path: string,
@@ -583,6 +594,19 @@ export const mcpCallTool = (
   tool: string,
   args: Record<string, unknown>,
 ): Promise<unknown> => call('mcp_call_tool', { serverId, tool, args })
+
+export type CodegraphCliResult = {
+  ok: boolean
+  stdout: string
+  stderr: string
+  exitCode?: number | null
+}
+
+/** Allowlisted CodeGraph CLI (`init` | `index`). Spawns `npx -y @colbymchenry/codegraph`. */
+export const codegraphCli = (
+  projectRoot: string,
+  action: 'init' | 'index',
+): Promise<CodegraphCliResult> => call('codegraph_cli', { projectRoot, action })
 
 export const shellSpawnPty = (args: {
   projectRoot: string

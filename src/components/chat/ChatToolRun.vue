@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ChevronRightIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
+import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ToolRun } from '@/types/harness/tool-run'
 import type { FileDiff } from '@/types/harness/file-diff'
 import countDiffLines from '@/utils/count-diff-lines'
@@ -18,9 +19,30 @@ import {
   CollapsibleTrigger,
 } from '@/components/shadcn/ui/collapsible'
 
+const CODEBASE_SPAN_TOOLS = new Set([
+  'codebase_explore',
+  'codebase_search',
+  'codebase_impact',
+])
+
+const MAX_CODEBASE_LINKS = 25
+
 const props = defineProps<{
   run: ToolRun
 }>()
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object'
+
+const lineSuffix = (startLine?: number, endLine?: number): string => {
+  if (typeof startLine !== 'number' || startLine < 1) {
+    return ''
+  }
+  if (typeof endLine === 'number' && endLine > startLine) {
+    return `:${startLine}-${endLine}`
+  }
+  return `:${startLine}`
+}
 
 const formatDetail = (value: unknown): string => {
   if (value === undefined) {
@@ -62,11 +84,61 @@ const argsText = computed(() =>
   showInput.value ? formatDetail(props.run.args) : '',
 )
 const resultText = computed(() => formatDetail(props.run.result))
+
+const codebaseArtifacts = computed((): ChatArtifact[] => {
+  if (
+    props.run.status !== 'done' ||
+    !CODEBASE_SPAN_TOOLS.has(props.run.name) ||
+    !isRecord(props.run.result) ||
+    !Array.isArray(props.run.result.results)
+  ) {
+    return []
+  }
+
+  const artifacts: ChatArtifact[] = []
+  for (const entry of props.run.result.results) {
+    if (!isRecord(entry) || typeof entry.path !== 'string' || entry.path.length === 0) {
+      continue
+    }
+    const startLine =
+      typeof entry.startLine === 'number' && Number.isFinite(entry.startLine)
+        ? Math.max(1, Math.trunc(entry.startLine))
+        : undefined
+    const endLine =
+      typeof entry.endLine === 'number' && Number.isFinite(entry.endLine)
+        ? Math.max(1, Math.trunc(entry.endLine))
+        : startLine
+    const fileName = entry.path.split('/').pop() ?? entry.path
+    const suffix = lineSuffix(startLine, endLine)
+    const symbol =
+      typeof entry.symbol === 'string' && entry.symbol.length > 0
+        ? entry.symbol
+        : undefined
+    const artifact: ChatArtifact = {
+      kind: 'file',
+      path: entry.path,
+      label: symbol ? `${symbol} (${fileName}${suffix})` : `${fileName}${suffix}`,
+    }
+    if (typeof startLine === 'number') {
+      artifact.startLine = startLine
+    }
+    if (typeof endLine === 'number') {
+      artifact.endLine = endLine
+    }
+    artifacts.push(artifact)
+    if (artifacts.length >= MAX_CODEBASE_LINKS) {
+      break
+    }
+  }
+  return artifacts
+})
+
 const showRawOutput = computed(
   () =>
     resultText.value.length > 0 &&
     (props.run.status === 'done' || props.run.status === 'error') &&
-    diffs.value.length === 0,
+    diffs.value.length === 0 &&
+    codebaseArtifacts.value.length === 0,
 )
 const diffCounts = computed(() => {
   let additions = 0
@@ -145,6 +217,22 @@ const diffCounts = computed(() => {
           :key="diff.path"
           :diff="diff"
         />
+      </div>
+      <div
+        v-if="codebaseArtifacts.length > 0"
+        class="space-y-1"
+      >
+        <p class="mb-1 font-medium text-foreground/80">
+          Locations
+        </p>
+        <ul class="flex flex-col gap-1">
+          <li
+            v-for="(artifact, index) in codebaseArtifacts"
+            :key="`${artifact.path}:${artifact.startLine ?? 0}:${index}`"
+          >
+            <ChatArtifactLink :artifact="artifact" />
+          </li>
+        </ul>
       </div>
       <div v-if="showRawOutput">
         <p class="mb-1 font-medium text-foreground/80">

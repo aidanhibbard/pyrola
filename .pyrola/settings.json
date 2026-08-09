@@ -1,3 +1,10 @@
 {
+  "agent.mcp.trust": [
+    {
+      "fingerprint": "dfa1666824bc8bd5",
+      "scope": "workspace",
+      "serverId": "codegraph"
+    }
+  ],
   "version": 1
 }
