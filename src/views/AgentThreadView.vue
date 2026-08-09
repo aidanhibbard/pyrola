@@ -51,6 +51,7 @@ const contextBudgetSync = useChatContextBudgetSync()
 const harness = ref<ReturnType<typeof useAgentHarness> | null>(null)
 const threadReady = ref(false)
 const loadedThreadKey = ref<string | null>(null)
+const loadGeneration = ref(0)
 const homeRoot = ref<string | null>(null)
 const sessionPermissionLevel = ref<PermissionLevel>(
   config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist',
@@ -205,9 +206,13 @@ const loadThread = async (): Promise<void> => {
     return
   }
 
+  const gen = ++loadGeneration.value
+  const isStale = (): boolean => gen !== loadGeneration.value
+
   const alreadyWarm = chatStore.isSessionWarm(projectSlug.value, chatId.value)
 
-  // Warm sessions keep the previous thread visible until swap completes.
+  // Cold chats disable the prompt until hydrate finishes. Timeline still
+  // swaps as soon as loadChat flips activeKey below.
   if (!alreadyWarm) {
     threadReady.value = false
   }
@@ -215,8 +220,14 @@ const loadThread = async (): Promise<void> => {
   if (isStandalone.value) {
     if (!homeRoot.value) {
       homeRoot.value = await getUserHomeDir()
+      if (isStale()) {
+        return
+      }
     }
     await chatStore.loadChat(HOME_CHAT_SLUG, chatId.value)
+    if (isStale()) {
+      return
+    }
     initHarness(homeRoot.value, 'Home')
   } else {
     if (!project.value) {
@@ -225,12 +236,25 @@ const loadThread = async (): Promise<void> => {
       })
       return
     }
-    await fleet.setActiveProject(project.value.id)
+    const targetProject = project.value
+    // Flip the visible timeline before any project activation work.
     await chatStore.loadChat(projectSlug.value, chatId.value)
-    initHarness(project.value.rootPath, project.value.name)
+    if (isStale()) {
+      return
+    }
+    if (fleet.activeProjectId.value !== targetProject.id) {
+      await fleet.setActiveProject(targetProject.id)
+      if (isStale()) {
+        return
+      }
+    }
+    initHarness(targetProject.rootPath, targetProject.name)
   }
 
   await fleetSidebar.refreshSlug(projectSlug.value)
+  if (isStale()) {
+    return
+  }
   loadedThreadKey.value = threadKey
   threadReady.value = true
 
@@ -239,6 +263,9 @@ const loadThread = async (): Promise<void> => {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   })
+  if (isStale()) {
+    return
+  }
 
   await flushPendingChatMessage()
 }
