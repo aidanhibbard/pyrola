@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type {
+  AgentShellPayload,
   ChangesPayload,
   EditorPayload,
   PlanPayload,
@@ -20,7 +21,7 @@ import workbenchTabLabel from '@/utils/workbench-tab-label'
 
 type DuplicateTabResolution = 'existing' | 'new'
 
-type PromptableTabType = Exclude<WorkbenchTabType, 'plan' | 'studio'>
+type PromptableTabType = Exclude<WorkbenchTabType, 'plan' | 'studio' | 'agent-shell'>
 
 type ResolveWorkbenchTabOpenParams = {
   projectId: string
@@ -441,6 +442,27 @@ const openStudio = (
   focusTab(tab.id)
 }
 
+const openAgentShell = (projectId: string, shellId: string, label?: string): void => {
+  const existing = findTab(
+    (tab) =>
+      tab.type === 'agent-shell' && (tab.payload as AgentShellPayload).shellId === shellId,
+  )
+  if (existing) {
+    focusTab(existing.id)
+    return
+  }
+
+  const tab: WorkbenchTab = {
+    id: createId(),
+    type: 'agent-shell',
+    projectId,
+    label: label ?? 'Agent shell',
+    payload: { shellId } satisfies AgentShellPayload,
+  }
+  tabs.value.push(tab)
+  focusTab(tab.id)
+}
+
 const openChanges = async (projectId: string): Promise<void> => {
   const predicate = (tab: WorkbenchTab) => tab.type === 'changes' && tab.projectId === projectId
   const existing = findTab(predicate)
@@ -615,6 +637,7 @@ export default () => ({
   openTerminal,
   openPlan,
   openStudio,
+  openAgentShell,
   openChanges,
   closeTab,
   closeOthers,

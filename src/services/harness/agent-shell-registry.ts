@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
+import { ref } from 'vue'
 import { shellKillTracked, shellSpawnTracked } from '@/services/pyrola/pyrola-tauri'
 import type { AgentShellRecord, AgentShellStatus } from '@/types/harness/agent-shell'
 import type { HarnessEvent } from '@/types/harness/harness-event'
@@ -23,6 +24,12 @@ const chatShells = new Map<string, Set<string>>()
 const exitWaiters = new Map<string, Array<(exit: ShellExitResult) => void>>()
 const shellUnlisteners = new Map<string, Array<() => void>>()
 const eventEmitters = new Map<string, EventEmitter>()
+
+export const agentShellRevision = ref(0)
+
+const bumpRevision = (): void => {
+  agentShellRevision.value++
+}
 
 export const setAgentShellEventEmitter = (
   chatId: string,
@@ -62,6 +69,7 @@ const appendOutput = (shellId: string, stream: 'stdout' | 'stderr', data: string
   }
 
   emitHarnessEvent(shell.chatId, { type: 'terminal-output', shellId, stream, data })
+  bumpRevision()
 }
 
 const resolveExitWaiters = (shellId: string, exit: ShellExitResult): void => {
@@ -88,6 +96,7 @@ const markShellComplete = (shellId: string, exit: ShellExitResult): void => {
 
   setShellStatus(shell, exit.exitCode === 0 ? 'completed' : 'failed', exit)
   emitHarnessEvent(shell.chatId, { type: 'shell-complete', shellId, exitCode: exit.exitCode })
+  bumpRevision()
   resolveExitWaiters(shellId, exit)
   cleanupShellListeners(shellId)
 }
@@ -144,6 +153,7 @@ export const createAgentShell = async (args: {
     sandboxed: args.sandboxed,
     allowNetwork: args.allowNetwork,
   })
+  bumpRevision()
 
   return record
 }
@@ -242,6 +252,7 @@ export const killAgentShell = async (shellId: string): Promise<AgentShellRecord>
     }
   }
 
+  bumpRevision()
   return shell
 }
 

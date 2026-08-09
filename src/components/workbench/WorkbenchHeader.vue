@@ -31,6 +31,8 @@ const tabIcon = (type: WorkbenchTabType) => {
       return FileCode
     case 'terminal':
       return Terminal
+    case 'agent-shell':
+      return Terminal
     case 'changes':
       return GitBranch
     case 'studio':

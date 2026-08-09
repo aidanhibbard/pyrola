@@ -30,7 +30,7 @@ import {
   setSubagentModelLock,
 } from '@/services/harness/plan-execution-session'
 import { getUserHomeDir, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
-import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
+import { HOME_CHAT_SLUG, HOME_WORKSPACE_ID, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type { ContextMention } from '@/types/harness/context-mention'
@@ -524,6 +524,24 @@ const handleKillShell = async (shellId: string): Promise<void> => {
   }
 }
 
+const handleOpenShell = (shellId: string): void => {
+  const projectId = isStandalone.value ? HOME_WORKSPACE_ID : project.value?.id
+  if (!projectId) {
+    toast.error('Project not found', {
+      description: 'Could not resolve the active project for this chat.',
+    })
+    return
+  }
+
+  try {
+    workbench.openAgentShell(projectId, shellId)
+  } catch (error) {
+    toast.error('Failed to open terminal', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
 const handleResolveApproval = (toolCallId: string, resolution: ApprovalResolution): void => {
   harness.value?.resolveApprovalDecision(toolCallId, resolution)
 }
@@ -779,6 +797,7 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
         />
         <RunningTerminalsPanel
           :shells="runningShells"
+          @open-shell="handleOpenShell"
           @stop-shell="handleKillShell"
         />
         <ChatMessageQueue

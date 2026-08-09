@@ -11,9 +11,10 @@ The right workbench sits beside the agent thread. Tabs share the active project 
 
 ## Terminal
 
-- Open a human PTY for the active project.
-- Watch agent-tracked shells when the harness runs `run_terminal`.
-- Stop agent terminals from the UI when a command should halt.
+- Open a human PTY tab for interactive use in the active project.
+- Expand Running terminals in the composer to see live agent shells from `run_terminal`.
+- Click a row to open a read-only agent shell tab with live stdout and stderr.
+- Stop (ghost button) kills that shell.
 
 ## Changes
 
