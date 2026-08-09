@@ -17,6 +17,7 @@ import {
 } from '@/components/shadcn/ui/resizable'
 import { Toaster } from '@/components/shadcn/ui/sonner'
 import useAppearance from '@/composables/use-appearance'
+import useAppUpdater from '@/composables/use-app-updater'
 import useCommandPalette from '@/composables/use-command-palette'
 import usePyrolaLiveSync from '@/composables/use-pyrola-live-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -35,6 +36,7 @@ const RIGHT_SIDEBAR_MIN_SIZE = 20
 useFleetRegistry()
 useAppearance()
 usePyrolaLiveSync()
+const updater = useAppUpdater()
 
 const { rightSidebarOpen, setRightSidebarOpen } = useWorkbenchStore()
 const commandPalette = useCommandPalette()
@@ -78,6 +80,7 @@ whenever(
 onMounted(async () => {
   await nextTick()
   syncRightSidebarPanel(rightSidebarOpen.value)
+  await updater.checkForUpdates({ silent: true })
 })
 
 watch(rightSidebarOpen, (open) => {

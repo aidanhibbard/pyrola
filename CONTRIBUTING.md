@@ -124,6 +124,20 @@ The [Release](.github/workflows/release.yml) workflow builds macOS (arm64 + x64)
 
 Optional Apple signing/notarization: set `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` repository secrets.
 
+### OTA updates
+
+The Release workflow signs updater artifacts and uploads a static `latest.json` to each GitHub Release (via tauri-action defaults). The app's updater checks `https://github.com/aidanhibbard/pyrola/releases/latest/download/latest.json`.
+
+Required repo secret for OTA: `TAURI_SIGNING_PRIVATE_KEY` (minisign key, passwordless). Optional: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if a password-protected key is used.
+
+**Critical:** the private key is permanent. If lost, already-installed clients cannot update to new versions without shipping a new build that embeds a new pubkey. Store the private key offline and back it up.
+
+The public key is embedded in `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
+
+Apple notarization (`APPLE_*` secrets) is separate from the updater minisign signature: one is for Gatekeeper trust, the other is for OTA integrity.
+
+Releases must be published (not draft) for `/releases/latest/download/latest.json` to resolve. The checksums job already flips draft to false after all matrix legs, so clients never see a partial `latest.json`.
+
 ### Verify a download
 
 ```bash

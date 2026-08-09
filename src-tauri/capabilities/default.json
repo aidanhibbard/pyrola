@@ -18,6 +18,8 @@
     "fs:allow-rename",
     "fs:scope-appdata-recursive",
     "dialog:default",
-    "mcp-bridge:default"
+    "mcp-bridge:default",
+    "updater:default",
+    "process:default"
   ]
 }
