@@ -6,6 +6,7 @@ import useFleetRegistry from '@/composables/use-fleet-registry'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
 import resolveModelForRole from '@/services/models/resolve-model-for-role'
+import { resolveReasoningForRole } from '@/services/models/resolve-reasoning-for-call'
 import loadPrompt from '@/services/prompts/load-prompt'
 import { setPendingChatMessage } from '@/services/chat/pending-message'
 import updatePlanFrontmatter from '@/services/plans/update-plan-frontmatter'
@@ -15,6 +16,7 @@ import {
 } from '@/services/harness/plan-execution-session'
 import { readChatMeta, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 
 export type PlanExecutionMode = 'agent' | 'orchestrator'
 
@@ -25,6 +27,8 @@ export type StartPlanBuildInput = {
   sourceChatId?: string | null
   model?: string
   subagentModel?: string
+  reasoning?: ReasoningLevel
+  subagentReasoning?: ReasoningLevel
   executionMode?: PlanExecutionMode
 }
 
@@ -78,7 +82,7 @@ export default () => {
     const subagentModel =
       executionMode === 'orchestrator'
         ? input.subagentModel?.trim() ||
-          resolveModelForRole('agent', config.effectiveSettings.value) ||
+          resolveModelForRole('subagent', config.effectiveSettings.value) ||
           ''
         : null
 
@@ -86,6 +90,15 @@ export default () => {
       toast.error('Select a sub-agent model before orchestrating')
       return false
     }
+
+    const reasoning =
+      input.reasoning ??
+      resolveReasoningForRole(modelRole, config.effectiveSettings.value)
+    const subagentReasoning =
+      executionMode === 'orchestrator'
+        ? input.subagentReasoning ??
+          resolveReasoningForRole('subagent', config.effectiveSettings.value)
+        : undefined
 
     const promptPath =
       executionMode === 'orchestrator'
@@ -117,16 +130,25 @@ export default () => {
         mode: chatMode,
         awaitingPlanGo: null,
         subagentModel,
+        reasoning: reasoning ?? null,
+        subagentReasoning: subagentReasoning ?? null,
       })
 
       clearAwaitingPlanGo(project.slug, chatId)
-      setSubagentModelLock(project.slug, chatId, subagentModel)
+      setSubagentModelLock(
+        project.slug,
+        chatId,
+        subagentModel,
+        subagentReasoning ?? null,
+      )
 
       setPendingChatMessage({
         text: prompt,
         mode: chatMode,
         model,
+        ...(reasoning ? { reasoning } : {}),
         ...(subagentModel ? { subagentModel } : {}),
+        ...(subagentReasoning ? { subagentReasoning } : {}),
       })
 
       await updatePlanFrontmatter({

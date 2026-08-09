@@ -25,4 +25,8 @@ describe('resolveModelForRole', () => {
     expect(resolveModelForRole('title', settings)).toBe('google::gemini-2.0-flash')
     expect(resolveModelForRole('compaction', settings)).toBe('anthropic::claude-sonnet-4-5')
   })
+
+  it('resolves subagent with agent fallback', () => {
+    expect(resolveModelForRole('subagent', settings)).toBe('openai::gpt-4o')
+  })
 })

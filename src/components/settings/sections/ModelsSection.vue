@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { CircleHelpIcon, TriangleAlertIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import { Label } from '@/components/shadcn/ui/label'
 import { Switch } from '@/components/shadcn/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
-import ModelsSearchModelSearchPicker from '@/components/models/search/ModelSearchPicker.vue'
+import ModelsOptionsModelOptionsRow from '@/components/models/options/ModelOptionsRow.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import {
-  BACKGROUND_MODEL_ROLES,
-  CHAT_MODE_MODEL_ROLES,
-  MODEL_ROLE_GROUP_LABELS,
   MODEL_ROLE_REGISTRY,
   type ModelRoleDefinition,
 } from '@/data/model-role-registry'
@@ -27,9 +31,11 @@ const settings = computed(() => config.getScopeSettings(props.tab))
 
 const hasProviders = computed(() => listConfiguredProviders(settings.value).length > 0)
 
-const defaultModel = computed(() => settings.value['models.default'] ?? '')
-
 const autoTitleEnabled = computed(() => settings.value['chat.autoTitle'] !== false)
+
+const roles = MODEL_ROLE_REGISTRY.filter((role) => role.id !== 'subagent')
+
+const subagentRole = MODEL_ROLE_REGISTRY.find((role) => role.id === 'subagent')!
 
 const roleModelValue = (role: ModelRoleDefinition): string =>
   settings.value[role.settingsKey] ?? ''
@@ -37,8 +43,13 @@ const roleModelValue = (role: ModelRoleDefinition): string =>
 const isRoleOverridden = (role: ModelRoleDefinition): boolean =>
   Boolean(settings.value[role.settingsKey])
 
-const updateModelSetting = async (
-  key: ModelRoleDefinition['settingsKey'],
+const showDefaultWarning = (role: ModelRoleDefinition): boolean =>
+  Boolean(role.recommendCheapModel) &&
+  role.id !== 'default' &&
+  !isRoleOverridden(role)
+
+const handleModelChange = async (
+  role: ModelRoleDefinition,
   value: string,
 ): Promise<void> => {
   if (props.tab === 'project' && !config.activeRootPath.value) {
@@ -49,7 +60,7 @@ const updateModelSetting = async (
   }
 
   try {
-    await config.updateSetting(props.tab, key, value)
+    await config.updateSetting(props.tab, role.settingsKey, value)
     toast.success('Model saved')
   } catch (error) {
     toast.error('Failed to save model', {
@@ -67,24 +78,16 @@ const clearRoleOverride = async (role: ModelRoleDefinition): Promise<void> => {
   }
 
   try {
-    await config.removeSettings(props.tab, [role.settingsKey])
+    await config.removeSettings(props.tab, [
+      role.settingsKey,
+      role.reasoningSettingsKey,
+    ])
     toast.success('Using default model')
   } catch (error) {
     toast.error('Failed to clear override', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   }
-}
-
-const handleDefaultModelChange = async (value: string): Promise<void> => {
-  await updateModelSetting('models.default', value)
-}
-
-const handleRoleModelChange = async (
-  role: ModelRoleDefinition,
-  value: string,
-): Promise<void> => {
-  await updateModelSetting(role.settingsKey, value)
 }
 
 const setAutoTitle = async (value: boolean): Promise<void> => {
@@ -97,7 +100,14 @@ const setAutoTitle = async (value: boolean): Promise<void> => {
   }
 }
 
-const defaultRole = MODEL_ROLE_REGISTRY.find((role) => role.id === 'default')
+const defaultModel = computed(() => settings.value['models.default'] ?? '')
+
+const modelPlaceholder = (role: ModelRoleDefinition): string => {
+  if (role.id === 'default') {
+    return 'Select default model'
+  }
+  return defaultModel.value ? 'Using default' : 'Select model'
+}
 </script>
 
 <template>
@@ -111,95 +121,150 @@ const defaultRole = MODEL_ROLE_REGISTRY.find((role) => role.id === 'default')
       </p>
     </div>
 
-    <template v-else>
-      <div class="space-y-6">
-        <div v-if="defaultRole" class="space-y-2">
-          <Label>{{ defaultRole.label }}</Label>
-          <p class="text-sm text-muted-foreground">{{ defaultRole.description }}</p>
-          <ModelsSearchModelSearchPicker
-            :model-value="defaultModel"
-            :scope-settings="settings"
-            :disabled="!hasProviders"
-            placeholder="Select default model"
-            @update:model-value="handleDefaultModelChange"
-          />
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-sm font-medium">{{ MODEL_ROLE_GROUP_LABELS.chatModes }}</h3>
-          <div
-            v-for="role in CHAT_MODE_MODEL_ROLES"
-            :key="role.id"
-            class="space-y-2 rounded-lg border border-border/50 px-4 py-3"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <Label>{{ role.label }}</Label>
-                <p class="text-sm text-muted-foreground">{{ role.description }}</p>
-              </div>
-              <Button
-                v-if="isRoleOverridden(role)"
-                variant="ghost"
-                size="sm"
-                class="shrink-0"
-                @click="clearRoleOverride(role)"
-              >
-                Use default
-              </Button>
-            </div>
-            <ModelsSearchModelSearchPicker
-              :model-value="roleModelValue(role)"
-              :scope-settings="settings"
-              :disabled="!hasProviders"
-              :placeholder="defaultModel ? 'Using default' : 'Select model'"
-              @update:model-value="handleRoleModelChange(role, $event)"
-            />
-          </div>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-sm font-medium">{{ MODEL_ROLE_GROUP_LABELS.backgroundTasks }}</h3>
-          <div
-            v-for="role in BACKGROUND_MODEL_ROLES"
-            :key="role.id"
-            class="space-y-2 rounded-lg border border-border/50 px-4 py-3"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <Label>{{ role.label }}</Label>
-                <p class="text-sm text-muted-foreground">{{ role.description }}</p>
-              </div>
-              <Button
-                v-if="isRoleOverridden(role)"
-                variant="ghost"
-                size="sm"
-                class="shrink-0"
-                @click="clearRoleOverride(role)"
-              >
-                Use default
-              </Button>
-            </div>
-            <div
-              v-if="role.id === 'title'"
-              class="flex items-center gap-3 pb-1"
+    <TooltipProvider v-else>
+      <div class="flex flex-col gap-5">
+        <div
+          v-for="role in roles"
+          :key="role.id"
+          class="flex flex-col gap-2"
+        >
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <Label class="text-sm font-medium">{{ role.label }}</Label>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="inline-flex text-muted-foreground hover:text-foreground"
+                  :aria-label="`${role.label} description`"
+                >
+                  <CircleHelpIcon class="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent class="max-w-xs">
+                {{ role.description }}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip v-if="showDefaultWarning(role)">
+              <TooltipTrigger as-child>
+                <button
+                  type="button"
+                  class="inline-flex text-amber-500 hover:text-amber-400"
+                  :aria-label="`${role.label} is using the default model`"
+                >
+                  <TriangleAlertIcon class="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent class="max-w-xs">
+                Using the default model. Prefer a small, low-cost model for this background task.
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              v-if="role.id !== 'default' && role.id !== 'orchestrator' && isRoleOverridden(role)"
+              variant="ghost"
+              size="sm"
+              class="h-7 px-2 text-xs"
+              @click="clearRoleOverride(role)"
             >
-              <Switch
-                id="auto-title"
-                :model-value="autoTitleEnabled"
-                @update:model-value="setAutoTitle"
-              />
-              <Label for="auto-title">Generate titles automatically</Label>
+              Use default
+            </Button>
+          </div>
+
+          <div
+            v-if="role.id === 'title'"
+            class="flex items-center gap-2"
+          >
+            <Switch
+              id="auto-title"
+              :model-value="autoTitleEnabled"
+              @update:model-value="setAutoTitle"
+            />
+            <Label for="auto-title" class="text-xs font-normal text-muted-foreground">
+              Auto-title
+            </Label>
+          </div>
+
+          <template v-if="role.id === 'orchestrator'">
+            <div class="flex max-w-md flex-col gap-3">
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center gap-2">
+                  <Label class="text-xs font-normal text-muted-foreground">
+                    Parent
+                  </Label>
+                  <Button
+                    v-if="isRoleOverridden(role)"
+                    variant="ghost"
+                    size="sm"
+                    class="h-6 px-2 text-xs"
+                    @click="clearRoleOverride(role)"
+                  >
+                    Use default
+                  </Button>
+                </div>
+                <ModelsOptionsModelOptionsRow
+                  :model-value="roleModelValue(role)"
+                  :scope-settings="settings"
+                  :options-tab="tab"
+                  :disabled="!hasProviders"
+                  :placeholder="modelPlaceholder(role)"
+                  @update:model-value="handleModelChange(role, $event)"
+                />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center gap-2">
+                  <Label class="text-xs font-normal text-muted-foreground">
+                    Subagent
+                  </Label>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <button
+                        type="button"
+                        class="inline-flex text-muted-foreground hover:text-foreground"
+                        aria-label="Subagent description"
+                      >
+                        <CircleHelpIcon class="size-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-xs">
+                      {{ subagentRole.description }}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Button
+                    v-if="isRoleOverridden(subagentRole)"
+                    variant="ghost"
+                    size="sm"
+                    class="h-6 px-2 text-xs"
+                    @click="clearRoleOverride(subagentRole)"
+                  >
+                    Use default
+                  </Button>
+                </div>
+                <ModelsOptionsModelOptionsRow
+                  :model-value="roleModelValue(subagentRole)"
+                  :scope-settings="settings"
+                  :options-tab="tab"
+                  :disabled="!hasProviders"
+                  :placeholder="modelPlaceholder(subagentRole)"
+                  @update:model-value="handleModelChange(subagentRole, $event)"
+                />
+              </div>
             </div>
-            <ModelsSearchModelSearchPicker
+          </template>
+
+          <div
+            v-else
+            class="min-w-0 max-w-md"
+          >
+            <ModelsOptionsModelOptionsRow
               :model-value="roleModelValue(role)"
               :scope-settings="settings"
+              :options-tab="tab"
               :disabled="!hasProviders || (role.id === 'title' && !autoTitleEnabled)"
-              :placeholder="defaultModel ? 'Using default' : 'Select model'"
-              @update:model-value="handleRoleModelChange(role, $event)"
+              :placeholder="modelPlaceholder(role)"
+              @update:model-value="handleModelChange(role, $event)"
             />
           </div>
         </div>
       </div>
-    </template>
+    </TooltipProvider>
   </SettingsSectionScroll>
 </template>

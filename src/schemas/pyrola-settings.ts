@@ -8,6 +8,8 @@ import {
   customProviderSchema,
   formatCustomProviderSchemaError,
 } from '@/schemas/providers/custom-provider'
+import { reasoningLevelSchema } from '@/schemas/models/reasoning-level'
+import { modelCatalogOptionsMapSchema } from '@/schemas/models/model-catalog-option'
 
 export { customProviderSchema, customProviderModelSchema } from '@/schemas/providers/custom-provider'
 
@@ -15,6 +17,7 @@ const themeSchema = z.enum(['light', 'dark', 'system'])
 const duplicateTabBehaviorSchema = z.enum(['ask', 'open-existing', 'open-new'])
 
 const modelRefStringSchema = z.string().min(1)
+const reasoningSettingSchema = reasoningLevelSchema
 const permissionCapabilitySchema = z.custom<PermissionCapabilityKey>(
   (value): value is PermissionCapabilityKey => typeof value === 'string' && value.length > 0,
 )
@@ -64,13 +67,25 @@ export const pyrolaSettingsSchema = z
     'models.studio': modelRefStringSchema.optional(),
     'models.agent': modelRefStringSchema.optional(),
     'models.orchestrator': modelRefStringSchema.optional(),
+    'models.subagent': modelRefStringSchema.optional(),
     'models.title': modelRefStringSchema.optional(),
     'models.compaction': modelRefStringSchema.optional(),
+    'models.defaultReasoning': reasoningSettingSchema.optional(),
+    'models.askReasoning': reasoningSettingSchema.optional(),
+    'models.planReasoning': reasoningSettingSchema.optional(),
+    'models.studioReasoning': reasoningSettingSchema.optional(),
+    'models.agentReasoning': reasoningSettingSchema.optional(),
+    'models.orchestratorReasoning': reasoningSettingSchema.optional(),
+    'models.subagentReasoning': reasoningSettingSchema.optional(),
+    'models.titleReasoning': reasoningSettingSchema.optional(),
+    'models.compactionReasoning': reasoningSettingSchema.optional(),
+    'models.catalogOptions': modelCatalogOptionsMapSchema.optional(),
   })
   .catchall(
     z.union([
       z.string(),
       customProviderSchema,
+      modelCatalogOptionsMapSchema,
       z.number(),
       z.boolean(),
       z.array(z.unknown()),

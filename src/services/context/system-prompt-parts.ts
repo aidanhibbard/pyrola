@@ -13,6 +13,7 @@ import {
 } from '@/services/skills/discover-internal-skills'
 import { listSkillIndex } from '@/services/skills/skill-registry'
 import { mcpListStatuses, readMcpConfig } from '@/services/pyrola/pyrola-tauri'
+import { listAgentDefinitions } from '@/services/agents/resolve-agent-definition'
 
 export type SystemPromptInput = {
   mode: PyrolaChatMode
@@ -204,12 +205,21 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     ? []
     : await listPyrolaFiles('project', 'agents', input.projectRoot).catch(() => [])
 
-  const agentCatalog = agents.length
-    ? agents.map((agent) => ({
+  let agentCatalog = input.agentCatalog
+  if (agents.length > 0) {
+    const definitions = await listAgentDefinitions(input.projectRoot).catch(() => [])
+    if (definitions.length > 0) {
+      agentCatalog = definitions.map((agent) => ({
+        name: agent.name,
+        description: agent.description,
+      }))
+    } else {
+      agentCatalog = agents.map((agent) => ({
         name: agent.name,
         description: agent.description ?? agent.name,
       }))
-    : input.agentCatalog
+    }
+  }
 
   const { mentions, skills: mentionSkills } = formatMentionBlocks(input.mentions)
 

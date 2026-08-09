@@ -7,6 +7,7 @@ import type { SubagentEntry } from '@/types/harness/subagent-entry'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { ToolRun } from '@/types/harness/tool-run'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type { PermissionCapabilityKey, PermissionLevel, PermissionRecord } from '@/types/harness/permission'
 import useChatStore from '@/composables/use-chat-store'
 import useContextUsage from '@/composables/use-context-usage'
@@ -112,6 +113,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   const lastRunConfig = ref<{
     mode: PyrolaChatMode
     model: string
+    reasoning?: ReasoningLevel
     mentions: ContextMention[]
     effectiveSettings: PyrolaSettings
   } | null>(null)
@@ -626,6 +628,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         skipUserPersist: true,
         permissionLevel: sessionPermissionLevel.value ?? undefined,
         persistPermission,
+        reasoning: cfg.reasoning,
       })
       status.value = 'ready'
       session.finishAgentTurn()
@@ -657,6 +660,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     text: string
     mode: PyrolaChatMode
     model: string
+    reasoning?: ReasoningLevel
     mentions?: ContextMention[]
     files?: FileUIPart[]
     skipUserMessage?: boolean
@@ -697,6 +701,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     lastRunConfig.value = {
       mode: args.mode,
       model: args.model,
+      reasoning: args.reasoning,
       mentions: args.mentions ?? [],
       effectiveSettings: config.effectiveSettings.value,
     }
@@ -771,6 +776,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         standalone: options.standalone,
         permissionLevel: sessionPermissionLevel.value ?? undefined,
         persistPermission,
+        reasoning: args.reasoning,
       })
       status.value = 'ready'
       session.finishAgentTurn()
@@ -816,6 +822,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     newContent: string
     mode: PyrolaChatMode
     model: string
+    reasoning?: ReasoningLevel
   }): Promise<void> => {
     const messageId = chatStore.editingMessageId.value
     if (!messageId) {
@@ -838,6 +845,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         text,
         mode: args.mode,
         model: args.model,
+        reasoning: args.reasoning,
       })
     } catch (err) {
       toast.error('Failed to edit message', {
@@ -849,6 +857,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
   const retryLastTurn = async (args: {
     mode: PyrolaChatMode
     model: string
+    reasoning?: ReasoningLevel
   }): Promise<void> => {
     if (status.value === 'streaming' || status.value === 'submitted') {
       return
@@ -877,6 +886,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
         text,
         mode: args.mode,
         model: args.model,
+        reasoning: args.reasoning,
         skipUserMessage: true,
         skipUserPersist: true,
       })

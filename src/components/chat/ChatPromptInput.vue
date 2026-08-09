@@ -31,7 +31,7 @@ import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
-import ModelsSearchModelSearchPicker from '@/components/models/search/ModelSearchPicker.vue'
+import ModelsOptionsModelOptionsRow from '@/components/models/options/ModelOptionsRow.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useGitBranches from '@/composables/use-git-branches'
@@ -71,7 +71,11 @@ const emit = defineEmits<{
     permissionLevel: PermissionLevel
     files?: FileUIPart[]
   }]
-  submitEdit: [payload: { text: string; mode: PyrolaChatMode; model: string }]
+  submitEdit: [payload: {
+    text: string
+    mode: PyrolaChatMode
+    model: string
+  }]
   stop: []
   'update:permissionLevel': [value: PermissionLevel]
 }>()
@@ -427,9 +431,10 @@ watch(
             </PromptInputActionMenu>
           </PromptInputTools>
           <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
-            <ModelsSearchModelSearchPicker
+            <ModelsOptionsModelOptionsRow
               :model-value="session.selectedModelRef"
               compact
+              hide-disallowed
               :disabled="!hasProviders || disabled"
               placeholder="Select model"
               @update:model-value="handleModelChange"

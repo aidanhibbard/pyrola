@@ -33,6 +33,13 @@ export const resolveModelForRole = (
     return roleValue
   }
 
+  if (role === 'subagent') {
+    return (
+      readSettingsModel(settings, 'models.agent') ??
+      readSettingsModel(settings, 'models.default')
+    )
+  }
+
   if (isChatMode(role) || role === 'title' || role === 'compaction') {
     return readSettingsModel(settings, 'models.default')
   }

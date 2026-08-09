@@ -12,6 +12,7 @@ import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 
 const router = useRouter()
 const fleet = useFleetRegistry()
@@ -26,6 +27,7 @@ const handleSubmit = async (payload: {
   text: string
   mode: PyrolaChatMode
   model: string
+  reasoning?: ReasoningLevel
   projectId: string | null
   permissionLevel: PermissionLevel
 }): Promise<void> => {
@@ -58,6 +60,7 @@ const handleSubmit = async (payload: {
       mode: payload.mode,
       model: payload.model,
       permissionLevel: payload.permissionLevel,
+      ...(payload.reasoning ? { reasoning: payload.reasoning } : {}),
     })
     await refreshFleetSidebar()
     await router.push(chatRouteFor(chat.projectSlug, chat.id))

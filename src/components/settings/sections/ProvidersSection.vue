@@ -419,15 +419,11 @@ watch(
                   : providerRequiresApiKey(providerId, settings)
                     ? 'No API key'
                     : 'API key optional'
-              }}
-              <template v-if="isCustomProvider(providerId)">
-                ·
-                {{
+              }}<template v-if="isCustomProvider(providerId)">, {{
                   getCustomModelCount(providerId) > 0
                     ? `${getCustomModelCount(providerId)} model${getCustomModelCount(providerId) === 1 ? '' : 's'}`
                     : 'No models configured'
-                }}
-              </template>
+                }}</template>
             </p>
           </div>
           <div class="flex items-center gap-0.5">

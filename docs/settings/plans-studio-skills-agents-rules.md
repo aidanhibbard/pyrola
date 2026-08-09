@@ -25,6 +25,7 @@ These sections manage files under personal or project `.pyrola/` trees.
 - Open Settings, Personal or Project, Agents.
 - Review agent definition files for custom agent behavior in that scope.
 - Prefer project agents when instructions should stay with the repo.
+- Set `model` and `reasoning` in the agent markdown frontmatter when that agent should not use the Subagent default from Models settings.
 
 ## Rules
 

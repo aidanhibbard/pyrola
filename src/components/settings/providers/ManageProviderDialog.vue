@@ -804,7 +804,7 @@ const handleSave = (): void => {
                     <Input
                       :id="`model-efforts-${index}`"
                       v-model="model.supportsReasoningEffort"
-                      placeholder="low, medium, high"
+                      placeholder="none, minimal, low, medium, high, xhigh"
                       :class="fieldClass"
                 />
                   </div>
@@ -813,7 +813,7 @@ const handleSave = (): void => {
                     <Input
                       :id="`model-effort-${index}`"
                       v-model="model.reasoningEffort"
-                      placeholder="medium"
+                      placeholder="provider-default, none, low, medium, high"
                       :class="fieldClass"
                 />
                   </div>

@@ -289,6 +289,8 @@ export type ChatMetaRecord = {
     planId: string
   } | null
   subagentModel?: string | null
+  reasoning?: string | null
+  subagentReasoning?: string | null
 }
 
 export const createChat = (args: {

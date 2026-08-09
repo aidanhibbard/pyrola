@@ -27,4 +27,6 @@ export type ChatMeta = {
   }
   awaitingPlanGo?: AwaitingPlanGo | null
   subagentModel?: string | null
+  reasoning?: string | null
+  subagentReasoning?: string | null
 }

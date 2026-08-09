@@ -1,10 +1,12 @@
 import type { ModelRef } from '@/types/models/model-ref'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type {
   PyrolaCustomProvider,
   PyrolaCustomProviderModel,
   PyrolaSettings,
 } from '@/types/pyrola/pyrola-settings'
 import { getCustomProvider } from '@/services/providers/registry'
+import { mapReasoningToCallOptions } from '@/services/models/resolve-reasoning-for-call'
 
 type JsonPrimitive = string | number | boolean | null
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
@@ -18,6 +20,7 @@ export type ResolvedModelCallOptions = {
   frequencyPenalty?: number
   presencePenalty?: number
   seed?: number
+  reasoning?: ReasoningLevel
   providerOptions?: Record<string, JsonObject>
 }
 
@@ -28,6 +31,28 @@ export type ResolvedModelContextLimits = {
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 const DEFAULT_SIDE_TASK_MAX_OUTPUT_TOKENS = 256
+
+const applyFastOption = (
+  options: ResolvedModelCallOptions,
+  ref: ModelRef,
+  fast: boolean | undefined,
+): void => {
+  if (!fast) {
+    return
+  }
+  const key =
+    ref.providerId === 'anthropic' || ref.providerId === 'gateway'
+      ? 'anthropic'
+      : ref.providerId
+  const existing = options.providerOptions?.[key] ?? {}
+  options.providerOptions = {
+    ...options.providerOptions,
+    [key]: {
+      ...existing,
+      speed: 'fast',
+    },
+  }
+}
 
 export const getCustomProviderModel = (
   settings: PyrolaSettings,
@@ -85,13 +110,31 @@ export const resolveMaxInputTokens = (
 export const resolveModelCallOptions = (
   settings: PyrolaSettings,
   ref: ModelRef,
-  defaults?: { maxOutputTokens?: number },
+  defaults?: { maxOutputTokens?: number; reasoning?: ReasoningLevel },
 ): ResolvedModelCallOptions => {
   const fallbackMaxOutput = defaults?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
   const matched = getCustomProviderModel(settings, ref)
+  const reasoningMapping = mapReasoningToCallOptions(settings, ref, defaults?.reasoning)
 
   if (!matched) {
-    return { maxOutputTokens: fallbackMaxOutput }
+    const options: ResolvedModelCallOptions = {
+      maxOutputTokens: fallbackMaxOutput,
+    }
+    if (reasoningMapping.reasoning) {
+      options.reasoning = reasoningMapping.reasoning
+    }
+    if (
+      reasoningMapping.providerOptionsKey &&
+      reasoningMapping.providerOptionsReasoningEffort
+    ) {
+      options.providerOptions = {
+        [reasoningMapping.providerOptionsKey]: {
+          reasoningEffort: reasoningMapping.providerOptionsReasoningEffort,
+        },
+      }
+    }
+    applyFastOption(options, ref, reasoningMapping.fast)
+    return options
   }
 
   const { model } = matched
@@ -124,16 +167,30 @@ export const resolveModelCallOptions = (
       providerOptionsBody[key] = value as JsonValue
     }
   }
-  if (model.reasoningEffort) {
-    providerOptionsBody.reasoningEffort = model.reasoningEffort
-  }
 
-  if (Object.keys(providerOptionsBody).length > 0) {
+  const effortFromMapping = reasoningMapping.providerOptionsReasoningEffort
+  const effortFromModel =
+    !defaults?.reasoning || defaults.reasoning === 'provider-default'
+      ? model.reasoningEffort
+      : undefined
+  const effort = effortFromMapping ?? effortFromModel
+  if (effort) {
+    const key = reasoningMapping.providerOptionsKey ?? ref.providerId
+    providerOptionsBody.reasoningEffort = effort
+    options.providerOptions = {
+      [key]: providerOptionsBody,
+    }
+  } else if (Object.keys(providerOptionsBody).length > 0) {
     options.providerOptions = {
       [ref.providerId]: providerOptionsBody,
     }
   }
 
+  if (reasoningMapping.reasoning) {
+    options.reasoning = reasoningMapping.reasoning
+  }
+
+  applyFastOption(options, ref, reasoningMapping.fast)
   return options
 }
 
@@ -143,6 +200,7 @@ export const resolveSideTaskCallOptions = (
 ): ResolvedModelCallOptions =>
   resolveModelCallOptions(settings, ref, {
     maxOutputTokens: DEFAULT_SIDE_TASK_MAX_OUTPUT_TOKENS,
+    reasoning: 'none',
   })
 
 export { DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_SIDE_TASK_MAX_OUTPUT_TOKENS }

@@ -27,6 +27,8 @@ import {
 import { getUserHomeDir, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
+import { isReasoningLevel } from '@/types/models/reasoning-level'
 import { killAgentShell, listShellsForChat } from '@/services/harness/agent-shell-registry'
 import buildSubagentTimeline from '@/utils/build-subagent-timeline'
 
@@ -151,10 +153,20 @@ const flushPendingChatMessage = async (): Promise<void> => {
   }
 
   if (pending.subagentModel) {
-    setSubagentModelLock(projectSlug.value, chatId.value, pending.subagentModel)
+    const subagentReasoning = isReasoningLevel(pending.subagentReasoning)
+      ? pending.subagentReasoning
+      : null
+    setSubagentModelLock(
+      projectSlug.value,
+      chatId.value,
+      pending.subagentModel,
+      subagentReasoning,
+    )
     try {
       await updateChatMeta(projectSlug.value, chatId.value, {
         subagentModel: pending.subagentModel,
+        subagentReasoning,
+        reasoning: isReasoningLevel(pending.reasoning) ? pending.reasoning : null,
         awaitingPlanGo: null,
       })
     } catch (error) {
@@ -170,6 +182,7 @@ const flushPendingChatMessage = async (): Promise<void> => {
     text: pending.text,
     mode: pending.mode,
     model: pending.model,
+    reasoning: isReasoningLevel(pending.reasoning) ? pending.reasoning : undefined,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
 }
@@ -231,6 +244,7 @@ const handleSubmit = async (payload: {
   text: string
   mode: PyrolaChatMode
   model: string
+  reasoning?: ReasoningLevel
   files?: import('ai').FileUIPart[]
 }): Promise<void> => {
   if (isSubagentView.value) {
@@ -250,6 +264,7 @@ const handleSubmit = async (payload: {
     text: payload.text,
     mode: payload.mode,
     model: payload.model,
+    reasoning: payload.reasoning,
     files: payload.files,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
@@ -259,6 +274,7 @@ const handleSubmitEdit = async (payload: {
   text: string
   mode: PyrolaChatMode
   model: string
+  reasoning?: ReasoningLevel
 }): Promise<void> => {
   if (isSubagentView.value) {
     return
@@ -273,6 +289,7 @@ const handleSubmitEdit = async (payload: {
     newContent: payload.text,
     mode: payload.mode,
     model: payload.model,
+    reasoning: payload.reasoning,
   })
   await fleetSidebar.refreshSlug(projectSlug.value)
 }

@@ -1,8 +1,10 @@
 import type { AwaitingPlanGo } from '@/types/plans/awaiting-plan-go'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 
 export type PlanExecutionSession = {
   awaitingPlanGo: AwaitingPlanGo | null
   subagentModel: string | null
+  subagentReasoning: ReasoningLevel | null
   createdPlanThisTurn: boolean
 }
 
@@ -26,6 +28,7 @@ export const getPlanExecutionSession = (
   const created: PlanExecutionSession = {
     awaitingPlanGo: null,
     subagentModel: null,
+    subagentReasoning: null,
     createdPlanThisTurn: false,
   }
   sessions.set(key, created)
@@ -38,6 +41,7 @@ export const hydratePlanExecutionSession = (
   patch: {
     awaitingPlanGo?: AwaitingPlanGo | null
     subagentModel?: string | null
+    subagentReasoning?: ReasoningLevel | null
   },
 ): PlanExecutionSession => {
   const session = getPlanExecutionSession(projectSlug, chatId)
@@ -46,6 +50,9 @@ export const hydratePlanExecutionSession = (
   }
   if (patch.subagentModel !== undefined) {
     session.subagentModel = patch.subagentModel
+  }
+  if (patch.subagentReasoning !== undefined) {
+    session.subagentReasoning = patch.subagentReasoning
   }
   return session
 }
@@ -81,8 +88,13 @@ export const setSubagentModelLock = (
   projectSlug: string,
   chatId: string,
   model: string | null,
+  reasoning?: ReasoningLevel | null,
 ): void => {
-  getPlanExecutionSession(projectSlug, chatId).subagentModel = model
+  const session = getPlanExecutionSession(projectSlug, chatId)
+  session.subagentModel = model
+  if (reasoning !== undefined) {
+    session.subagentReasoning = reasoning
+  }
 }
 
 export const isAwaitingPlanGo = (

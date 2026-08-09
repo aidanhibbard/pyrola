@@ -352,6 +352,8 @@ const mapMeta = (record: {
   activeContext?: ChatMeta['activeContext']
   awaitingPlanGo?: ChatMeta['awaitingPlanGo']
   subagentModel?: ChatMeta['subagentModel']
+  reasoning?: ChatMeta['reasoning']
+  subagentReasoning?: ChatMeta['subagentReasoning']
 }): ChatMeta =>
   chatMetaSchema.parse({
     id: record.id,
@@ -371,6 +373,8 @@ const mapMeta = (record: {
     activeContext: record.activeContext,
     awaitingPlanGo: record.awaitingPlanGo,
     subagentModel: record.subagentModel,
+    reasoning: record.reasoning,
+    subagentReasoning: record.subagentReasoning,
   })
 
 const parsePart = (part: Record<string, unknown>): MessagePart => {

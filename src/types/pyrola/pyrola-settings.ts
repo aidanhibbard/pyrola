@@ -3,6 +3,7 @@ import type {
   PermissionLevel,
   PermissionRecord,
 } from '@/types/harness/permission'
+import type { ModelCatalogOptionsMap } from '@/types/models/model-catalog-option'
 
 export type PyrolaTheme = 'light' | 'dark' | 'system'
 
@@ -65,8 +66,19 @@ export type PyrolaSettings = {
   'models.studio'?: string
   'models.agent'?: string
   'models.orchestrator'?: string
+  'models.subagent'?: string
   'models.title'?: string
   'models.compaction'?: string
+  'models.defaultReasoning'?: string
+  'models.askReasoning'?: string
+  'models.planReasoning'?: string
+  'models.studioReasoning'?: string
+  'models.agentReasoning'?: string
+  'models.orchestratorReasoning'?: string
+  'models.subagentReasoning'?: string
+  'models.titleReasoning'?: string
+  'models.compactionReasoning'?: string
+  'models.catalogOptions'?: ModelCatalogOptionsMap
   [key: `providers.${string}.apiKeyRef`]: string | undefined
   [key: `providers.custom.${string}`]: PyrolaCustomProvider | undefined
   [key: `models.${string}`]: string | undefined

@@ -10,6 +10,8 @@ export type PendingChatMessage = {
   model: string
   permissionLevel?: PermissionLevel
   subagentModel?: string
+  reasoning?: string
+  subagentReasoning?: string
 }
 
 export const setPendingChatMessage = (payload: PendingChatMessage): void => {
