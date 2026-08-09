@@ -55,13 +55,20 @@ const statusIcon = (status: TodoItem['status']) => {
   return CircleIcon
 }
 
-const statusClass = (status: TodoItem['status']): string => {
+const statusIconClass = (status: TodoItem['status']): string => {
   if (status === 'completed') {
     return 'text-emerald-500'
   }
   if (status === 'in_progress') {
     return 'text-primary'
   }
+  if (status === 'cancelled') {
+    return 'text-muted-foreground'
+  }
+  return 'text-muted-foreground'
+}
+
+const statusTextClass = (status: TodoItem['status']): string => {
   if (status === 'cancelled') {
     return 'text-muted-foreground line-through'
   }
@@ -97,9 +104,9 @@ const statusClass = (status: TodoItem['status']): string => {
           <component
             :is="statusIcon(todo.status)"
             class="mt-0.5 size-3.5 shrink-0"
-            :class="statusClass(todo.status)"
+            :class="statusIconClass(todo.status)"
           />
-          <span :class="cn('min-w-0 flex-1', statusClass(todo.status))">
+          <span :class="cn('min-w-0 flex-1', statusTextClass(todo.status))">
             {{ todo.content }}
           </span>
         </TaskItem>
