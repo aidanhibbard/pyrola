@@ -1,6 +1,7 @@
 import type { ChatStatus, ModelMessage, UIMessage } from 'ai'
 import { convertToModelMessages, isLoopFinished, smoothStream, stepCountIs, streamText } from 'ai'
 import type { HarnessEvent, TodoItem } from '@/types/harness/harness-event'
+import parseTodoUpdate from '@/services/harness/parse-todo-update'
 import type { ChatArtifact } from '@/types/chat/chat-artifact'
 import type { ContextMention } from '@/types/harness/context-mention'
 import type { MentionHighlight } from '@/types/chat/mention-highlight'
@@ -36,6 +37,7 @@ import {
   getPlanExecutionSession,
   hydratePlanExecutionSession,
   PLAN_GO_BLOCKED_TOOLS,
+  PLAN_GO_EXECUTE_GATE_TOOLS,
 } from '@/services/harness/plan-execution-session'
 import { rejectPendingForChat } from '@/services/harness/approval-gate'
 import { rejectPendingQuestionsForChat } from '@/services/harness/question-gate'
@@ -186,20 +188,6 @@ const persistStepBoundary = async (
   })
 }
 
-const parseTodoUpdate = (name: string, result: unknown): TodoItem[] | null => {
-  if (name !== 'create_plan' && name !== 'update_plan_todo') {
-    return null
-  }
-  if (!result || typeof result !== 'object' || !('todos' in result)) {
-    return null
-  }
-  const todos = (result as { todos: unknown }).todos
-  if (!Array.isArray(todos)) {
-    return null
-  }
-  return todos as TodoItem[]
-}
-
 const persistTodoUpdate = async (
   projectSlug: string,
   chatId: string,
@@ -286,7 +274,11 @@ const filterToolsForMode = (
     if (!allow.has(name)) {
       return false
     }
-    if (options?.awaitingPlanGo && PLAN_GO_BLOCKED_TOOLS.has(name)) {
+    if (
+      options?.awaitingPlanGo &&
+      PLAN_GO_BLOCKED_TOOLS.has(name) &&
+      !PLAN_GO_EXECUTE_GATE_TOOLS.has(name)
+    ) {
       return false
     }
     return true

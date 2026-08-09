@@ -858,3 +858,44 @@ describe('build-tools call_mcp_tool args normalization', () => {
     })
   })
 })
+
+describe('build-tools write_todos', () => {
+  const ctx = {
+    projectRoot: '/project',
+    projectSlug: 'project',
+    chatId: 'chat-write-todos',
+    userMessageId: 'user-1',
+    settings: { version: 1 } as PyrolaSettings,
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    supportsVision: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
+  }
+
+  const runTool = async (
+    execute: unknown,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<unknown> => {
+    const runner = execute as (
+      value: Record<string, unknown>,
+      options: { toolCallId: string },
+    ) => Promise<unknown>
+    return runner(input, { toolCallId })
+  }
+
+  it('returns the full todos array without plan side effects', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const todos = [
+      { id: 'review', content: 'Review harness wiring', status: 'completed' as const },
+      { id: 'tests', content: 'Cover write_todos', status: 'pending' as const },
+    ]
+
+    const result = await runTool(tools.write_todos.execute, { todos }, 'tc-write-todos')
+
+    expect(result).toEqual({ todos })
+  })
+})

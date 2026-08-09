@@ -121,7 +121,15 @@ export const PLAN_GO_BLOCKED_TOOLS = new Set([
   'get_mcp_prompt',
   'spawn_subagent',
   'write_studio_artifact',
+  'create_plan',
 ])
+
+/**
+ * Tools that stay in the toolset while awaiting Go so execute can throw a
+ * visible error (filtering alone would hide the tool and invite retries via
+ * other paths). All other PLAN_GO_BLOCKED_TOOLS are filtered out silently.
+ */
+export const PLAN_GO_EXECUTE_GATE_TOOLS = new Set(['create_plan'])
 
 export const assertNotAwaitingPlanGo = (
   projectSlug: string,
@@ -134,4 +142,34 @@ export const assertNotAwaitingPlanGo = (
   throw new Error(
     `Plan awaiting user Go. Use Build now or Orchestrate on the plan tab before making changes (${awaiting.planPath}).`,
   )
+}
+
+export const assertCreatePlanNotAwaitingPlanGo = (
+  projectSlug: string,
+  chatId: string,
+): void => {
+  const awaiting = getPlanExecutionSession(projectSlug, chatId).awaitingPlanGo
+  if (!awaiting) {
+    return
+  }
+  throw new Error(
+    `Plan awaiting user Go (${awaiting.planPath}). Wait for Build / Orchestrate, or call update_plan_todo / write_todos. Do not create another plan.`,
+  )
+}
+
+/**
+ * Resolve planPath for update_plan_todo: explicit path wins; otherwise the
+ * active awaiting-Go plan. Throws when neither is available.
+ */
+export const resolveUpdatePlanTodoPath = (
+  planPath: string | undefined,
+  awaitingPlanGo: AwaitingPlanGo | null,
+): string => {
+  const resolved = planPath ?? awaitingPlanGo?.planPath
+  if (!resolved) {
+    throw new Error(
+      'No active plan; pass planPath or use write_todos for chat-only todos.',
+    )
+  }
+  return resolved
 }

@@ -92,6 +92,26 @@ ${body}
   return { planId, path, content }
 }
 
+const removeTodosBlock = (yaml: string): string => {
+  const lines = yaml.split('\n')
+  const kept: string[] = []
+  let skippingTodos = false
+  for (const line of lines) {
+    if (!skippingTodos && line.trim().startsWith('todos:')) {
+      skippingTodos = true
+      continue
+    }
+    if (skippingTodos) {
+      if (line.startsWith('  ') || line.startsWith('\t')) {
+        continue
+      }
+      skippingTodos = false
+    }
+    kept.push(line)
+  }
+  return kept.join('\n')
+}
+
 export const updatePlanTodos = (
   existingContent: string,
   todos: PlanTodoItem[],
@@ -103,8 +123,7 @@ export const updatePlanTodos = (
 
   const yaml = frontmatterMatch[1] ?? ''
   const body = frontmatterMatch[2] ?? ''
-  const lines = yaml.split('\n').filter((line) => !line.trim().startsWith('todos:'))
-  const trimmedYaml = lines.join('\n').trimEnd()
+  const trimmedYaml = removeTodosBlock(yaml).trimEnd()
   const nextYaml = `${trimmedYaml}\n${formatTodos(todos)}`
   const nextContent = `---\n${nextYaml}\n---\n\n${body.trimStart()}`
   const parsed = parsePlan(nextContent)

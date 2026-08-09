@@ -97,9 +97,11 @@ import {
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import withToolExamples from '@/services/harness/with-tool-examples'
 import {
+  assertCreatePlanNotAwaitingPlanGo,
   assertNotAwaitingPlanGo,
   getPlanExecutionSession,
   markCreatedPlanThisTurn,
+  resolveUpdatePlanTodoPath,
 } from '@/services/harness/plan-execution-session'
 import captureBaselinesBeforeMutate from '@/services/harness/capture-baselines-before-mutate'
 import linkAbortSignal from '@/utils/link-abort-signal'
@@ -1355,6 +1357,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       todos: z.array(planTodoItemSchema).optional().describe('Initial todo items'),
     }),
     execute: async ({ title, body, todos }) => {
+      assertCreatePlanNotAwaitingPlanGo(ctx.projectSlug, ctx.chatId)
       const planTodos = todos ?? []
       const plan = createPlan({ title, body, todos: planTodos, sourceChatId: ctx.chatId })
       await fsWriteFile({ projectRoot: ctx.projectRoot, path: plan.path, content: plan.content })
@@ -1379,25 +1382,31 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
     },
   }),
   update_plan_todo: tool({
-    description: withToolExamples('Replace the todos array in an existing plan file.', [
-      {
-        planPath: '.pyrola/plans/harness-tool-examples-2026-08-06-221900/PLAN.md',
-        todos: [
-          {
-            id: 'helper',
-            content: 'Add with-tool-examples helper',
-            status: 'completed',
-          },
-          {
-            id: 'builtin-examples',
-            content: 'Add examples to high-friction tools',
-            status: 'in_progress',
-          },
-        ],
-      },
-    ]),
+    description: withToolExamples(
+      'Replace the todos array in an existing plan file. Omit planPath to use the active plan awaiting Go.',
+      [
+        {
+          planPath: '.pyrola/plans/harness-tool-examples-2026-08-06-221900/PLAN.md',
+          todos: [
+            {
+              id: 'helper',
+              content: 'Add with-tool-examples helper',
+              status: 'completed',
+            },
+            {
+              id: 'builtin-examples',
+              content: 'Add examples to high-friction tools',
+              status: 'in_progress',
+            },
+          ],
+        },
+      ],
+    ),
     inputSchema: z.object({
-      planPath: z.string().describe('Path to PLAN.md'),
+      planPath: z
+        .string()
+        .optional()
+        .describe('Path to PLAN.md; omit to use the active plan awaiting Go'),
       todos: z.array(
         z.object({
           id: z.string().describe('Stable todo id'),
@@ -1409,20 +1418,70 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       ),
     }),
     execute: async ({ planPath, todos }) => {
-      const existing = await fsReadFile({ projectRoot: ctx.projectRoot, path: planPath })
+      const session = getPlanExecutionSession(ctx.projectSlug, ctx.chatId)
+      const resolvedPlanPath = resolveUpdatePlanTodoPath(
+        planPath,
+        session.awaitingPlanGo,
+      )
+      const existing = await fsReadFile({
+        projectRoot: ctx.projectRoot,
+        path: resolvedPlanPath,
+      })
       const parsed = parsePlan(existing.content)
       if (parsed.parseError) {
         throw new Error(parsed.parseError)
       }
       const nextContent = updatePlanTodos(existing.content, todos)
-      await fsWriteFile({ projectRoot: ctx.projectRoot, path: planPath, content: nextContent })
+      await fsWriteFile({
+        projectRoot: ctx.projectRoot,
+        path: resolvedPlanPath,
+        content: nextContent,
+      })
       const workbench = useWorkbenchStore()
       const projectId = workbench.resolveProjectIdByRoot(ctx.projectRoot)
       if (projectId) {
-        workbench.openPlan(projectId, parsed.frontmatter!.id, planPath, parsed.frontmatter!.title)
+        workbench.openPlan(
+          projectId,
+          parsed.frontmatter!.id,
+          resolvedPlanPath,
+          parsed.frontmatter!.title,
+        )
         workbench.refreshPlanStudioTabs()
       }
-      return { planPath, todos }
+      return { planPath: resolvedPlanPath, todos }
+    },
+  }),
+  write_todos: tool({
+    description: withToolExamples(
+      'Replace the in-chat todo list shown in Tasks. Full-array replace; does not create a plan file.',
+      [
+        {
+          todos: [
+            {
+              id: 'review',
+              content: 'Review harness tool wiring',
+              status: 'completed',
+            },
+            {
+              id: 'implement',
+              content: 'Add write_todos tool',
+              status: 'in_progress',
+            },
+            {
+              id: 'tests',
+              content: 'Cover write_todos in tests',
+              status: 'pending',
+            },
+          ],
+        },
+      ],
+    ),
+    inputSchema: z.object({
+      todos: z.array(planTodoItemSchema).describe('Full todo list to show in chat Tasks'),
+    }),
+    execute: async ({ todos }) => {
+      const normalized = z.array(planTodoItemSchema).parse(todos)
+      return { todos: normalized }
     },
   }),
   write_studio_artifact: tool({

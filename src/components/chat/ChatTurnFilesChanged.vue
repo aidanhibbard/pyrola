@@ -25,6 +25,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/shadcn/ui/collapsible'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/shadcn/ui/tooltip'
 import { summarizeMutationCounts } from '@/services/harness/restore-file-checkpoints'
 
 const props = defineProps<{
@@ -76,31 +81,48 @@ const handleConfirmRestore = (): void => {
     class="w-full min-w-0 max-w-full"
   >
     <Collapsible v-model:open="open" class="w-full min-w-0">
-      <CollapsibleTrigger
-        class="flex w-full max-w-full cursor-pointer items-center gap-2 rounded-md py-0.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronRightIcon
-          class="size-3.5 shrink-0 transition-transform"
-          :class="open ? 'rotate-90' : ''"
-        />
-        <span class="shrink-0">
-          {{ changes.length }} file{{ changes.length === 1 ? '' : 's' }} changed
-        </span>
-        <span
-          v-if="totals.additions > 0 || totals.deletions > 0"
-          class="flex shrink-0 items-center gap-1.5 tabular-nums"
+      <div class="flex w-full max-w-full items-center gap-1">
+        <CollapsibleTrigger
+          class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-0.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          <CommitFileAdditions
-            :count="totals.additions"
-            class="inline-flex items-center gap-0.5 text-[11px]"
+          <ChevronRightIcon
+            class="size-3.5 shrink-0 transition-transform"
+            :class="open ? 'rotate-90' : ''"
           />
-          <CommitFileDeletions
-            :count="totals.deletions"
-            class="inline-flex items-center gap-0.5 text-[11px]"
-          />
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent class="mt-1 space-y-2">
+          <span class="shrink-0">
+            {{ changes.length }} file{{ changes.length === 1 ? '' : 's' }} changed
+          </span>
+          <span
+            v-if="totals.additions > 0 || totals.deletions > 0"
+            class="flex shrink-0 items-center gap-1.5 tabular-nums"
+          >
+            <CommitFileAdditions
+              :count="totals.additions"
+              class="inline-flex items-center gap-0.5 text-[11px]"
+            />
+            <CommitFileDeletions
+              :count="totals.deletions"
+              class="inline-flex items-center gap-0.5 text-[11px]"
+            />
+          </span>
+        </CollapsibleTrigger>
+        <Tooltip v-if="restoreEnabled">
+          <TooltipTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="size-7 shrink-0 text-muted-foreground"
+              aria-label="Restore files"
+              @click="handleRestoreClick"
+            >
+              <Undo2Icon class="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Restore files</TooltipContent>
+        </Tooltip>
+      </div>
+      <CollapsibleContent class="mt-1">
         <CommitFiles>
           <CommitFile
             v-for="change in changes"
@@ -126,17 +148,6 @@ const handleConfirmRestore = (): void => {
             </span>
           </CommitFile>
         </CommitFiles>
-        <Button
-          v-if="restoreEnabled"
-          type="button"
-          variant="outline"
-          size="sm"
-          class="w-fit gap-1.5"
-          @click="handleRestoreClick"
-        >
-          <Undo2Icon class="size-3.5" />
-          Restore files
-        </Button>
       </CollapsibleContent>
     </Collapsible>
 

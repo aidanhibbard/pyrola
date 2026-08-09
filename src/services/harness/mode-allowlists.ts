@@ -49,6 +49,7 @@ const ORCHESTRATOR_TOOLS = [
   'get_mcp_prompt',
   'create_plan',
   'update_plan_todo',
+  'write_todos',
   'spawn_subagent',
 ] as const
 
@@ -99,6 +100,7 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'get_mcp_prompt',
     'create_plan',
     'update_plan_todo',
+    'write_todos',
     'write_studio_artifact',
     'spawn_subagent',
   ],
