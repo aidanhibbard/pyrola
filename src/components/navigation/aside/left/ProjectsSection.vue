@@ -57,32 +57,34 @@ watch(
 
 <template>
   <SidebarGroup>
-    <NavigationAsideLeftProjectsSectionHeader />
-    <div
-      v-if="searchOpen"
-      class="flex items-center gap-1 px-2 pb-1"
-    >
-      <Input
-        ref="searchInputEl"
-        v-model="searchQuery"
-        type="search"
-        placeholder="Filter projects and chats…"
-        class="h-7 flex-1 text-xs"
-      />
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-6 shrink-0"
-            aria-label="Close search"
-            @click="closeSearch"
-          >
-            <X class="size-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Close search</TooltipContent>
-      </Tooltip>
+    <div class="sticky top-0 z-10 bg-sidebar">
+      <NavigationAsideLeftProjectsSectionHeader />
+      <div
+        v-if="searchOpen"
+        class="flex items-center gap-1 px-2 pb-1"
+      >
+        <Input
+          ref="searchInputEl"
+          v-model="searchQuery"
+          type="search"
+          placeholder="Filter projects and chats…"
+          class="h-7 flex-1 text-xs"
+        />
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-6 shrink-0"
+              aria-label="Close search"
+              @click="closeSearch"
+            >
+              <X class="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close search</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
     <SidebarMenu>
       <template
