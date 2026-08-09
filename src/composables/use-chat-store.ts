@@ -1461,6 +1461,12 @@ export default () => {
     return Boolean(session?.warm)
   }
 
+  const selectChat = (projectSlug: string, chatIdValue: string): SessionMutations => {
+    const session = getOrCreateSession(projectSlug, chatIdValue)
+    activeKey.value = session.key
+    return bindSessionMutations(session)
+  }
+
   const dropSession = (projectSlug: string, chatIdValue: string): void => {
     const key = makeSessionKey(projectSlug, chatIdValue)
     sessions.delete(key)
@@ -1469,29 +1475,61 @@ export default () => {
     }
   }
 
-  const loadChat = async (projectSlug: string, chatIdValue: string): Promise<void> => {
+  const ensureChatHydrated = async (
+    projectSlug: string,
+    chatIdValue: string,
+  ): Promise<'keepLive' | 'warmIdle' | 'cold'> => {
     const session = getOrCreateSession(projectSlug, chatIdValue)
     activeKey.value = session.key
-    session.loading.value = true
-    try {
-      const keepLive =
-        session.warm &&
-        (session.meta.value?.status === 'running' || session.activeTurnId.value !== null)
 
-      if (keepLive) {
+    const keepLive =
+      session.warm &&
+      (session.meta.value?.status === 'running' || session.activeTurnId.value !== null)
+
+    if (keepLive) {
+      session.loading.value = true
+      try {
         const metaRecord = await readChatMeta(projectSlug, chatIdValue)
         session.meta.value = mapMeta(metaRecord)
         await clearCompletedOrErrorAttention(session)
         restorePendingQuestion(session)
-        return
+      } finally {
+        session.loading.value = false
       }
+      return 'keepLive'
+    }
 
+    // Idle warm: in-memory timeline is already the navigation cache. Skip
+    // full jsonl rebuild. Optional meta refresh stays off the paint path.
+    if (session.warm) {
+      return 'warmIdle'
+    }
+
+    session.loading.value = true
+    try {
       await hydrateSessionFromDisk(session)
       await clearCompletedOrErrorAttention(session)
       restorePendingQuestion(session)
     } finally {
       session.loading.value = false
     }
+    return 'cold'
+  }
+
+  const refreshChatMeta = async (
+    projectSlug: string,
+    chatIdValue: string,
+  ): Promise<void> => {
+    const session = getOrCreateSession(projectSlug, chatIdValue)
+    const metaRecord = await readChatMeta(projectSlug, chatIdValue)
+    session.meta.value = mapMeta(metaRecord)
+    await clearCompletedOrErrorAttention(session)
+    restorePendingQuestion(session)
+  }
+
+  const loadChat = async (projectSlug: string, chatIdValue: string): Promise<void> => {
+    selectChat(projectSlug, chatIdValue)
+    await ensureChatHydrated(projectSlug, chatIdValue)
   }
 
   const createNewChat = async (args: {
@@ -1749,7 +1787,10 @@ export default () => {
     forChat,
     isSessionActive,
     isSessionWarm,
+    selectChat,
     dropSession,
+    ensureChatHydrated,
+    refreshChatMeta,
     loadChat,
     createNewChat,
     listProjectChats,

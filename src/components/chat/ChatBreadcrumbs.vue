@@ -52,9 +52,13 @@ const projectName = computed(() => {
 })
 
 const chatTitle = computed(() => {
-  const meta = chatStore.meta.value
-  if (meta?.id === chatId.value && meta.title) {
-    return meta.title
+  if (!chatId.value) {
+    return 'Chat'
+  }
+
+  const routeMeta = chatStore.forChat(projectSlug.value, chatId.value).meta.value
+  if (routeMeta?.title) {
+    return routeMeta.title
   }
 
   if (isStandalone.value) {
@@ -81,7 +85,7 @@ const subagentTitle = computed(() => {
   if (!subagentId.value) {
     return null
   }
-  const item = chatStore.getSubagent(subagentId.value)
+  const item = chatStore.forChat(projectSlug.value, chatId.value).getSubagent(subagentId.value)
   const name = item?.name?.trim() || 'Sub-agent'
   const modelLabel = formatModelLabelFromRef(item?.model)
   if (!modelLabel) {

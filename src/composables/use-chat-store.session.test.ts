@@ -107,4 +107,36 @@ describe('chat session registry isolation', () => {
       ),
     ).toBe(true)
   })
+
+  it('selectChat flips focus sync and warm idle skips message hydrate', async () => {
+    const pyrola = await import('@/services/pyrola/pyrola-tauri')
+    const { default: useChatStore, resetChatSessionsForTests } = await import(
+      '@/composables/use-chat-store'
+    )
+    resetChatSessionsForTests()
+    const store = useChatStore()
+
+    await store.loadChat('proj', 'chat-a')
+    const warm = store.forChat('proj', 'chat-a')
+    warm.startAgentTurn('turn-a')
+    warm.appendLocalTextDelta('cached', 'turn-a')
+    warm.finishAgentTurn()
+    expect(store.isSessionWarm('proj', 'chat-a')).toBe(true)
+
+    vi.mocked(pyrola.readChatMessages).mockClear()
+    vi.mocked(pyrola.readChatMeta).mockClear()
+
+    store.selectChat('proj', 'chat-b')
+    expect(store.activeKey.value).toBe('proj::chat-b')
+
+    store.selectChat('proj', 'chat-a')
+    const path = await store.ensureChatHydrated('proj', 'chat-a')
+    expect(path).toBe('warmIdle')
+    expect(pyrola.readChatMessages).not.toHaveBeenCalled()
+    expect(
+      store.forChat('proj', 'chat-a').timeline.value.some(
+        (item) => item.type === 'agent-turn' && item.turn.id === 'turn-a',
+      ),
+    ).toBe(true)
+  })
 })

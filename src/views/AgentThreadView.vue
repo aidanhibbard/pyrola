@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, unref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, unref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
@@ -54,6 +54,7 @@ const threadReady = ref(false)
 const loadedThreadKey = ref<string | null>(null)
 const loadGeneration = ref(0)
 const homeRoot = ref<string | null>(null)
+const paintedSession = shallowRef<ReturnType<typeof chatStore.forChat> | null>(null)
 const sessionPermissionLevel = ref<PermissionLevel>(
   config.effectiveSettings.value['agent.permissionLevel'] ?? 'allowlist',
 )
@@ -71,19 +72,22 @@ const projectSlug = computed(() =>
 const chatId = computed(() => String(route.params.chatId ?? ''))
 const subagentId = computed(() => String(route.params.subagentId ?? ''))
 const isSubagentView = computed(() => Boolean(subagentId.value))
+const threadKey = computed(() =>
+  chatId.value ? `${projectSlug.value}:${chatId.value}` : '',
+)
 const project = computed(
   () => fleet.projects.value.find((item) => item.slug === projectSlug.value) ?? null,
 )
 const harnessStatus = computed((): ChatStatus => {
   if (isSubagentView.value) {
-    const subagent = chatStore.getSubagent(subagentId.value)
+    const subagent = paintedSession.value?.getSubagent(subagentId.value) ?? null
     return subagent?.status === 'running' ? 'streaming' : 'ready'
   }
   const status = unref(harness.value?.status) ?? 'ready'
   if (status === 'streaming' || status === 'submitted') {
     return status
   }
-  const hasRunningSubagent = chatStore.timeline.value.some(
+  const hasRunningSubagent = (paintedSession.value?.timeline.value ?? []).some(
     (item) => item.type === 'subagent' && item.status === 'running',
   )
   return hasRunningSubagent ? 'streaming' : status
@@ -94,19 +98,21 @@ const harnessPendingApprovals = computed(
 const harnessPendingMcpAuth = computed(
   () => unref(harness.value?.pendingMcpAuth) ?? [],
 )
-const pendingQuestion = computed(() => chatStore.pendingQuestion.value)
+const pendingQuestion = computed(
+  () => paintedSession.value?.pendingQuestion.value ?? null,
+)
 const timeline = computed(() => {
   if (!isSubagentView.value) {
-    return chatStore.timeline.value
+    return paintedSession.value?.timeline.value ?? []
   }
-  const subagent = chatStore.getSubagent(subagentId.value)
+  const subagent = paintedSession.value?.getSubagent(subagentId.value) ?? null
   if (!subagent) {
     return []
   }
   return buildSubagentTimeline(subagent)
 })
 const todos = computed(() =>
-  isSubagentView.value ? [] : chatStore.todos.value,
+  isSubagentView.value ? [] : (paintedSession.value?.todos.value ?? []),
 )
 
 const runningShells = computed(() => {
@@ -200,73 +206,88 @@ const loadThread = async (): Promise<void> => {
     return
   }
 
-  const threadKey = `${projectSlug.value}:${chatId.value}`
-  if (loadedThreadKey.value === threadKey && harness.value) {
+  const nextThreadKey = threadKey.value
+  if (loadedThreadKey.value === nextThreadKey && harness.value) {
     harness.value.restorePendingApprovals()
     await flushPendingChatMessage()
     return
   }
 
-  const gen = ++loadGeneration.value
-  const isStale = (): boolean => gen !== loadGeneration.value
-
-  const alreadyWarm = chatStore.isSessionWarm(projectSlug.value, chatId.value)
-
-  // Cold chats disable the prompt until hydrate finishes. Timeline still
-  // swaps as soon as loadChat flips activeKey below.
-  if (!alreadyWarm) {
-    threadReady.value = false
+  if (!isStandalone.value && !project.value) {
+    toast.error('Project not found', {
+      description: `No project registered for slug "${projectSlug.value}"`,
+    })
+    return
   }
 
+  const gen = ++loadGeneration.value
+  const isStale = (): boolean => gen !== loadGeneration.value
+  const slug = isStandalone.value ? HOME_CHAT_SLUG : projectSlug.value
+
+  // Sync paint claim: leave chat A immediately; title/timeline/harness bind to B.
+  const session = chatStore.selectChat(slug, chatId.value)
+  paintedSession.value = session
+  const alreadyWarm = chatStore.isSessionWarm(slug, chatId.value)
+  threadReady.value = alreadyWarm
+
   if (isStandalone.value) {
-    if (!homeRoot.value) {
-      homeRoot.value = await getUserHomeDir()
-      if (isStale()) {
-        return
-      }
+    if (homeRoot.value) {
+      initHarness(homeRoot.value, 'Home')
+    } else {
+      harness.value = null
     }
-    await chatStore.loadChat(HOME_CHAT_SLUG, chatId.value)
+  } else if (project.value) {
+    initHarness(project.value.rootPath, project.value.name)
+  }
+
+  // Resolve home root if needed (timeline already paints without it).
+  if (isStandalone.value && !homeRoot.value) {
+    homeRoot.value = await getUserHomeDir()
     if (isStale()) {
       return
     }
     initHarness(homeRoot.value, 'Home')
-  } else {
-    if (!project.value) {
-      toast.error('Project not found', {
-        description: `No project registered for slug "${projectSlug.value}"`,
+  }
+
+  const hydratePath = await chatStore.ensureChatHydrated(slug, chatId.value)
+  if (isStale()) {
+    return
+  }
+
+  // Idle warm: soft meta refresh in the background, never blocks paint.
+  if (hydratePath === 'warmIdle') {
+    chatStore.refreshChatMeta(slug, chatId.value).catch((error) => {
+      toast.error('Failed to refresh chat', {
+        description: error instanceof Error ? error.message : 'Unknown error',
       })
-      return
-    }
+    })
+  }
+
+  loadedThreadKey.value = nextThreadKey
+  threadReady.value = true
+
+  // Deferred: project activation, sidebar list, budget, pending flush.
+  if (!isStandalone.value && project.value) {
     const targetProject = project.value
-    // Flip the visible timeline before any project activation work.
-    await chatStore.loadChat(projectSlug.value, chatId.value)
-    if (isStale()) {
-      return
-    }
     if (fleet.activeProjectId.value !== targetProject.id) {
       await fleet.setActiveProject(targetProject.id)
       if (isStale()) {
         return
       }
     }
-    initHarness(targetProject.rootPath, targetProject.name)
   }
 
-  await fleetSidebar.refreshSlug(projectSlug.value)
-  if (isStale()) {
-    return
-  }
-  loadedThreadKey.value = threadKey
-  threadReady.value = true
+  fleetSidebar.refreshSlug(projectSlug.value).catch((error) => {
+    toast.error('Failed to refresh chat list', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  })
 
-  await contextBudgetSync.refreshContextBudget().catch((error) => {
+  contextBudgetSync.refreshContextBudget().catch((error) => {
     toast.error('Failed to refresh context usage', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   })
-  if (isStale()) {
-    return
-  }
 
   await flushPendingChatMessage()
 }
@@ -412,8 +433,8 @@ const handleRetry = async (): Promise<void> => {
     })
     return
   }
-  const model = chatStore.meta.value?.model
-  const mode = chatStore.meta.value?.mode ?? 'agent'
+  const model = paintedSession.value?.meta.value?.model
+  const mode = paintedSession.value?.meta.value?.mode ?? 'agent'
   if (!model) {
     toast.error('Select a model before retrying')
     return
@@ -559,6 +580,7 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       </div>
     </div>
     <ChatThread
+      :key="threadKey"
       class="min-h-0 flex-1"
       :timeline="timeline"
       :status="harnessStatus"
@@ -591,6 +613,7 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
         @stop-shell="handleKillShell"
       />
       <ChatPromptInput
+        :key="threadKey"
         :status="harnessStatus"
         :disabled="!threadReady"
         :permission-level="activePermissionLevel"
