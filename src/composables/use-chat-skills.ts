@@ -2,7 +2,8 @@ import { ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { pyrolaFileChangeToken } from '@/composables/use-pyrola-live-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
-import { listUserAndProjectSkillIndex } from '@/services/skills/skill-registry'
+import { listSlashSkillIndex } from '@/services/skills/skill-registry'
+import formatUnknownError from '@/utils/format-unknown-error'
 import type { SkillIndexEntry } from '@/types/skills/skill'
 
 export default () => {
@@ -11,18 +12,14 @@ export default () => {
   const pending = ref(false)
 
   const refresh = async (): Promise<void> => {
-    const project = fleet.activeProject.value
-    if (!project) {
-      skills.value = []
-      return
-    }
-
     pending.value = true
     try {
-      skills.value = await listUserAndProjectSkillIndex(project.rootPath)
+      skills.value = await listSlashSkillIndex(
+        fleet.activeProject.value?.rootPath ?? null,
+      )
     } catch (error) {
       toast.error('Failed to load skills', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatUnknownError(error),
       })
     } finally {
       pending.value = false
@@ -34,7 +31,7 @@ export default () => {
     () => {
       refresh().catch((error) => {
         toast.error('Failed to load skills', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: formatUnknownError(error),
         })
       })
     },

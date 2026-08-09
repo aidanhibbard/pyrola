@@ -132,3 +132,57 @@ html {
   }
 }
 
+/* Chat prompt TipTap editor */
+.chat-prompt-editor .ProseMirror {
+  min-height: 2.5rem;
+  max-height: 7rem;
+  overflow-y: auto;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-prompt-editor .ProseMirror p {
+  margin: 0;
+}
+
+.chat-prompt-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.chat-prompt-mention,
+.chat-mention {
+  display: inline;
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, #b89ad4 24%, transparent);
+  padding: 0.05rem 0.3rem;
+  font-weight: 500;
+  color: #c4b5fd;
+  box-decoration-break: clone;
+}
+
+.chat-prompt-skill,
+.chat-skill {
+  display: inline;
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, #7ec9a0 24%, transparent);
+  padding: 0.05rem 0.3rem;
+  font-weight: 500;
+  color: #86efac;
+  box-decoration-break: clone;
+}
+
+.chat-mention-match {
+  font-weight: 600;
+  color: #c4b5fd;
+}
+
+.chat-skill-match {
+  font-weight: 600;
+  color: #86efac;
+}
+

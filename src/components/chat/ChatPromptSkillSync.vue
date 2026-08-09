@@ -2,9 +2,11 @@
 import { watch } from 'vue'
 import { usePromptInput } from '@/components/ai-elements/prompt-input/context'
 import useChatPromptBridge from '@/composables/use-chat-prompt-bridge'
+import useChatPromptEditor from '@/composables/use-chat-prompt-editor'
 
 const { textInput, setTextInput } = usePromptInput()
 const chatPromptBridge = useChatPromptBridge()
+const chatPromptEditor = useChatPromptEditor()
 
 watch(
   () => chatPromptBridge.skillAppendToken.value,
@@ -14,8 +16,17 @@ watch(
       return
     }
 
+    const name = skill.replace(/^\//, '').trim()
+    if (!name) {
+      return
+    }
+
+    if (chatPromptEditor.insertMention({ type: 'skill', name })) {
+      return
+    }
+
     const current = textInput.value.trim()
-    const next = current.length > 0 ? `${current} ${skill} ` : `${skill} `
+    const next = current.length > 0 ? `${current} /${name} ` : `/${name} `
     setTextInput(next)
   },
 )

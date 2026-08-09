@@ -1,21 +1,21 @@
 import { ref } from 'vue'
+import type { ContextMention } from '@/types/harness/context-mention'
 
 const mentionAppendToken = ref(0)
-const pendingMention = ref<string | null>(null)
+const pendingMention = ref<ContextMention | null>(null)
 const skillAppendToken = ref(0)
 const pendingSkill = ref<string | null>(null)
 
 const appendMention = (path: string): void => {
-  const trimmed = path.trim()
+  const trimmed = path.trim().replace(/^@/, '')
   if (!trimmed) {
     return
   }
-  const mention = trimmed.startsWith('@') ? trimmed : `@${trimmed}`
-  pendingMention.value = mention
+  pendingMention.value = { type: 'file', path: trimmed }
   mentionAppendToken.value += 1
 }
 
-const consumePendingMention = (): string | null => {
+const consumePendingMention = (): ContextMention | null => {
   const mention = pendingMention.value
   pendingMention.value = null
   return mention

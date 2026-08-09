@@ -4,7 +4,6 @@ import { toast } from 'vue-sonner'
 import type { ChatStatus } from 'ai'
 import { FolderIcon, ChevronDownIcon, XIcon } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
-import { Badge } from '@/components/shadcn/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +20,6 @@ import {
   PromptInputBody,
   PromptInputFooter,
   PromptInputSubmit,
-  PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
 import ChatGitBranchSelect from '@/components/chat/GitBranchSelect.vue'
@@ -32,7 +30,7 @@ import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
-import ChatContextMentionPicker from '@/components/chat/ContextMentionPicker.vue'
+import ChatPromptEditor from '@/components/chat/prompt-editor/ChatPromptEditor.vue'
 import ModelsOptionsModelOptionsRow from '@/components/models/options/ModelOptionsRow.vue'
 import { CHAT_MODES, getChatModeMeta } from '@/constants/chat-modes'
 import useFleetRegistry from '@/composables/use-fleet-registry'
@@ -235,35 +233,6 @@ const handleModelChange = (value: string): void => {
 const handlePermissionLevelChange = (level: PermissionLevel): void => {
   localPermissionLevel.value = level
   emit('update:permissionLevel', level)
-}
-
-const mentionChipLabel = (mention: ContextMention): string => {
-  if (mention.type === 'file') {
-    return mention.path
-  }
-  if (mention.type === 'folder') {
-    return mention.path
-  }
-  if (mention.type === 'symbol') {
-    return mention.name
-  }
-  if (mention.type === 'codebase') {
-    return `codebase ${mention.query}`
-  }
-  if (mention.type === 'rule') {
-    return mention.name
-  }
-  return mention.name
-}
-
-const handleMentionSelect = (mention: ContextMention): void => {
-  contextBudgetSync.setDraftMentions([...draftMentions.value, mention])
-}
-
-const handleMentionRemove = (index: number): void => {
-  contextBudgetSync.setDraftMentions(
-    draftMentions.value.filter((_, itemIndex) => itemIndex !== index),
-  )
 }
 
 const enrichMentionsBeforeSend = async (
@@ -499,36 +468,14 @@ watch(
         @submit="handleSubmit"
       >
         <ChatPromptAttachments />
-        <div
-          v-if="draftMentions.length > 0"
-          class="flex flex-wrap gap-1.5 px-3 pt-2"
-        >
-          <Badge
-            v-for="(mention, index) in draftMentions"
-            :key="`${mention.type}:${mentionChipLabel(mention)}:${index}`"
-            variant="secondary"
-            class="max-w-full gap-1 truncate pr-1 font-normal"
-          >
-            <span class="truncate">@{{ mentionChipLabel(mention) }}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="size-5 shrink-0 p-0"
-              :title="`Remove ${mentionChipLabel(mention)}`"
-              @click="handleMentionRemove(index)"
-            >
-              <XIcon class="size-3" />
-            </Button>
-          </Badge>
-        </div>
         <PromptInputBody>
           <ChatPromptEditSync />
           <ChatPromptMentionSync />
           <ChatPromptSkillSync />
-          <PromptInputTextarea
-            class="max-h-28 min-h-10 resize-none py-2.5"
+          <ChatPromptEditor
+            class="max-h-28 min-h-10"
             placeholder="Plan, build, / for skills, @ for context"
+            :project-root="promptWorkspaceRoot ?? null"
           />
         </PromptInputBody>
         <PromptInputFooter class="px-1 pb-1">
@@ -560,7 +507,6 @@ watch(
                 </PromptInputActionMenuItem>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-            <ChatContextMentionPicker @select="handleMentionSelect" />
           </PromptInputTools>
           <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
             <ModelsOptionsModelOptionsRow

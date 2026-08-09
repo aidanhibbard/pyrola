@@ -12,6 +12,7 @@ import AiElementsMessageMessage from '@/components/ai-elements/message/Message.v
 import AiElementsMessageMessageAction from '@/components/ai-elements/message/MessageAction.vue'
 import AiElementsMessageMessageActions from '@/components/ai-elements/message/MessageActions.vue'
 import AiElementsMessageMessageContent from '@/components/ai-elements/message/MessageContent.vue'
+import ChatMentionText from '@/components/chat/ChatMentionText.vue'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -143,7 +144,7 @@ const handleConfirmOpenChange = (open: boolean): void => {
         ]"
         @click="handleEditClick"
       >
-        {{ text }}
+        <ChatMentionText :text="text" />
       </AiElementsMessageMessageContent>
     </AiElementsMessageMessage>
 

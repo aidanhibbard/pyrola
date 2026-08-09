@@ -95,7 +95,8 @@ pub async fn workspace_glob(request: WorkspaceGlobRequest) -> Result<WorkspaceGl
       .await
       .map_err(|error| format!("Failed to wait for rg: {error}"))?;
 
-    if !status.success() {
+    // rg exits 1 when no files match the glob; treat as empty success.
+    if !status.success() && status.code() != Some(1) {
       let mut stderr_text = String::new();
       if let Some(stderr) = stderr {
         let _ = BufReader::new(stderr).read_to_string(&mut stderr_text).await;

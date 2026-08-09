@@ -1,6 +1,9 @@
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { LoadedSkill, SkillIndexEntry } from '@/types/skills/skill'
-import { listInternalSkillIndex, loadInternalSkill } from '@/services/skills/discover-internal-skills'
+import listAllInternalSkills, {
+  listInternalSkillIndex,
+  loadInternalSkill,
+} from '@/services/skills/discover-internal-skills'
 import {
   discoverProjectSkillIndex,
   loadProjectSkill,
@@ -14,6 +17,27 @@ export const listUserAndProjectSkillIndex = async (
   const user = await discoverUserSkillIndex()
   const project = await discoverProjectSkillIndex(projectRoot)
   const byName = new Map<string, SkillIndexEntry>()
+  for (const skill of user) {
+    byName.set(skill.name.toLowerCase(), skill)
+  }
+  for (const skill of project) {
+    byName.set(skill.name.toLowerCase(), skill)
+  }
+  return [...byName.values()]
+}
+
+export const listSlashSkillIndex = async (
+  projectRoot: string | null,
+): Promise<SkillIndexEntry[]> => {
+  const byName = new Map<string, SkillIndexEntry>()
+  for (const skill of listAllInternalSkills()) {
+    byName.set(skill.name.toLowerCase(), skill)
+  }
+  if (!projectRoot) {
+    return [...byName.values()]
+  }
+  const user = await discoverUserSkillIndex()
+  const project = await discoverProjectSkillIndex(projectRoot)
   for (const skill of user) {
     byName.set(skill.name.toLowerCase(), skill)
   }
