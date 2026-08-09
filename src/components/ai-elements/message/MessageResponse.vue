@@ -7,10 +7,14 @@ import 'vue-stream-markdown/index.css'
 
 interface Props {
   content?: string
+  /** When true, run streaming markdown preprocess (incomplete emphasis, etc.). */
+  streaming?: boolean
   class?: HTMLAttributes['class']
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  streaming: false,
+})
 
 const slots = useSlots()
 const slotContent = computed<string | undefined>(() => {
@@ -31,12 +35,15 @@ const slotContent = computed<string | undefined>(() => {
 })
 
 const md = computed(() => (props.content ?? slotContent.value ?? '') as string)
+
+const markdownMode = computed(() => (props.streaming ? 'streaming' : 'static'))
 </script>
 
 <template>
     <Markdown
       :content="md"
-      :enable-animate="true"
+      :mode="markdownMode"
+      :enable-animate="streaming"
       :class="
         cn(
           'w-full min-w-0 max-w-full overflow-hidden break-words [&_code]:break-words [&_p]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:w-full [&_table]:table-fixed',

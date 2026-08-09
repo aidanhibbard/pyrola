@@ -139,16 +139,21 @@ const hardenPyrolaMonacoThemes = (monacoApi: MonacoApi, highlighter: PyrolaHighl
     const converted = textmateThemeToMonacoTheme(
       highlighter.getTheme(themeId),
     ) as monaco.editor.IStandaloneThemeData
+    const isDark = themeId === PYROLA_CODE_THEME_DARK
     const themeData: monaco.editor.IStandaloneThemeData = {
       base: converted.base,
       inherit: true,
       rules: converted.rules,
       colors: {
         ...converted.colors,
-        'editor.background':
-          themeId === PYROLA_CODE_THEME_DARK ? '#252525' : '#ffffff',
-        'editor.foreground':
-          themeId === PYROLA_CODE_THEME_DARK ? '#d4d4d4' : '#252525',
+        'editor.background': isDark ? '#252525' : '#ffffff',
+        'editor.foreground': isDark ? '#d4d4d4' : '#252525',
+        'editorHoverWidget.background': isDark ? '#1e1e1e' : '#f3f3f3',
+        'editorHoverWidget.foreground': isDark ? '#d4d4d4' : '#252525',
+        'editorHoverWidget.border': isDark ? '#3c3c3c' : '#c8c8c8',
+        'editorSuggestWidget.background': isDark ? '#1e1e1e' : '#f3f3f3',
+        'editorSuggestWidget.foreground': isDark ? '#d4d4d4' : '#252525',
+        'editorSuggestWidget.border': isDark ? '#3c3c3c' : '#c8c8c8',
       },
     }
     monacoApi.editor.defineTheme(themeId, themeData)

@@ -2,6 +2,21 @@ html {
   background: transparent;
 }
 
+/*
+ * Monaco LSP hover / suggest / parameter hints live in overflowingContentWidgets.
+ * Without an explicit stacking context on that layer, view-lines can paint over
+ * them inside overflow:hidden / transformed workbench panels.
+ */
+.monaco-editor .overflowingContentWidgets,
+.monaco-editor .overflowingOverlayWidgets {
+  z-index: 40;
+}
+
+.monaco-editor .monaco-resizable-hover,
+.monaco-editor .monaco-hover {
+  z-index: 40;
+}
+
 .chat-markdown {
   min-width: 0;
   max-width: 100%;

@@ -119,6 +119,7 @@ const errorTitle = computed(() => {
       >
         <AiElementsMessageMessageResponse
           :content="step.text"
+          :streaming="isStepStreaming(index) && step.tools.length === 0"
           class="chat-markdown text-sm"
         />
       </AiElementsMessageMessage>
@@ -172,6 +173,7 @@ const errorTitle = computed(() => {
     >
       <AiElementsMessageMessageResponse
         :content="turn.text"
+        :streaming="isStreaming"
         class="chat-markdown text-sm"
       />
     </AiElementsMessageMessage>
