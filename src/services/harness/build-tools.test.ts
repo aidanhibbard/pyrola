@@ -83,25 +83,25 @@ vi.mock('@/services/mcp/mcp-runtime', () => ({
       args: Record<string, unknown>,
     ) => mcpCallTool(serverId, toolName, args),
     getStatus: (serverId: string, config?: unknown) => mcpGetStatus(serverId, config),
-    start: vi.fn(),
-    stop: vi.fn(),
+    start: vi.fn<() => Promise<void>>(),
+    stop: vi.fn<() => Promise<void>>(),
   },
 }))
 
 vi.mock('@/services/mcp/mcp-http-client', () => ({
-  setMcpElicitationHandler: vi.fn((handler: unknown) => handler),
+  setMcpElicitationHandler: vi.fn<(handler: unknown) => unknown>((handler) => handler),
 }))
 
 vi.mock('@/services/mcp/mcp-auth-gate', () => ({
-  requestMcpAuth: vi.fn(),
+  requestMcpAuth: vi.fn<() => Promise<void>>(),
 }))
 
 vi.mock('@/services/mcp/mcp-trust', () => ({
-  isMcpTrusted: vi.fn(() => true),
+  isMcpTrusted: vi.fn<() => boolean>(() => true),
   sessionTrusts: new Map(),
-  getMcpTrust: vi.fn(),
-  upsertMcpTrustRecord: vi.fn(),
-  clearSessionTrust: vi.fn(),
+  getMcpTrust: vi.fn<() => unknown>(),
+  upsertMcpTrustRecord: vi.fn<() => void>(),
+  clearSessionTrust: vi.fn<() => void>(),
 }))
 
 
