@@ -61,12 +61,13 @@ const handleSkillSelect = (name: string): void => {
       <Button
         variant="ghost"
         size="sm"
-        class="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        class="h-7 min-w-0 gap-1.5 px-2 text-xs text-muted-foreground"
         :disabled="pending"
         :title="`${skills.length} skills available`"
+        aria-label="Skills"
       >
         <SparklesIcon class="size-3.5 shrink-0" />
-        <span class="max-w-32 truncate">
+        <span class="max-w-32 min-w-0 truncate @max-[22rem]/composer:hidden">
           Skills
           <template v-if="skills.length > 0">({{ skills.length }})</template>
         </span>

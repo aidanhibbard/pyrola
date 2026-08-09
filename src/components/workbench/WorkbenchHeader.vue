@@ -144,7 +144,7 @@ const handleDragEnd = (): void => {
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
 
-    <div v-else class="h-full min-w-0 flex-1" />
+    <div v-else class="pointer-events-auto h-full min-w-0 flex-1" data-tauri-drag-region />
 
     <div class="pointer-events-auto mr-3 flex shrink-0 items-center gap-0.5">
       <WorkbenchTabMenu v-if="hasTabs" />

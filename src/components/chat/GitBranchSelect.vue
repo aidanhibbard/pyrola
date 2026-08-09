@@ -43,11 +43,13 @@ const handleBranchSelect = async (branch: string): Promise<void> => {
       <Button
         variant="ghost"
         size="sm"
-        class="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        class="h-7 min-w-0 gap-1.5 px-2 text-xs text-muted-foreground"
         :disabled="git.pending.value || git.checkoutPending.value"
+        :title="git.currentBranch.value ?? 'Git branch'"
+        aria-label="Git branch"
       >
         <GitBranchIcon class="size-3.5 shrink-0" />
-        <span class="max-w-48 truncate">
+        <span class="max-w-24 min-w-0 truncate @max-[22rem]/composer:hidden">
           {{ git.currentBranch.value ?? 'Branch' }}
         </span>
         <ChevronDownIcon class="size-3 shrink-0 opacity-60" />

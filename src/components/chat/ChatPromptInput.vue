@@ -170,8 +170,6 @@ const activeProjectName = computed(() => {
   )
 })
 
-const submitControlStatus = computed((): ChatStatus => 'ready')
-
 const isWaitingOnReply = computed(
   () => props.status === 'submitted' || props.status === 'streaming',
 )
@@ -447,7 +445,7 @@ watch(
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-3xl flex-col">
+  <div class="@container/composer mx-auto flex w-full max-w-3xl flex-col">
     <DropdownMenu v-if="showProjectSelect">
       <DropdownMenuTrigger as-child>
         <Button
@@ -511,8 +509,8 @@ watch(
             :project-root="promptWorkspaceRoot"
           />
         </PromptInputBody>
-        <PromptInputFooter class="px-1 pb-1">
-          <PromptInputTools class="min-w-0 flex-1 gap-1">
+        <PromptInputFooter class="w-full min-w-0 flex-nowrap px-1 pb-1">
+          <PromptInputTools class="shrink-0 gap-1">
             <PromptInputActionMenu>
               <PromptInputActionMenuTrigger />
               <PromptInputActionMenuContent>
@@ -526,7 +524,7 @@ watch(
                 :title="`${selectedModeMeta.label} mode`"
               >
                 <component :is="selectedModeMeta.icon" class="size-4 shrink-0" />
-                <span class="text-sm">{{ selectedModeMeta.label }}</span>
+                <span class="text-sm @max-[22rem]/composer:hidden">{{ selectedModeMeta.label }}</span>
               </PromptInputActionMenuTrigger>
               <PromptInputActionMenuContent>
                 <PromptInputActionMenuItem
@@ -541,7 +539,7 @@ watch(
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
           </PromptInputTools>
-          <PromptInputTools class="ml-auto shrink-0 items-center gap-2">
+          <PromptInputTools class="ml-auto min-w-0 items-center gap-2">
             <ModelsOptionsModelOptionsRow
               :model-value="session.selectedModelRef"
               compact
@@ -551,36 +549,38 @@ watch(
               @update:model-value="handleModelChange"
             />
             <PromptInputSubmit
-              class="ml-1 shrink-0"
-              :status="submitControlStatus"
+              v-if="!isWaitingOnReply && !waitingOnBackground"
+              class="shrink-0"
               :disabled="disabled"
             />
-            <Tooltip v-if="isWaitingOnReply || waitingOnBackground">
+            <Tooltip v-else>
               <TooltipTrigger as-child>
                 <Button
                   type="button"
                   variant="secondary"
                   size="icon-sm"
-                  class="ml-1 shrink-0 rounded-full"
+                  class="shrink-0 rounded-full"
                   aria-label="Stop generating"
                   @click="emit('stop')"
                 >
                   <SquareIcon class="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent class="z-[100]">Stop generating</TooltipContent>
+              <TooltipContent>Stop generating</TooltipContent>
             </Tooltip>
           </PromptInputTools>
         </PromptInputFooter>
       </PromptInput>
     </div>
-    <div class="mt-1 flex items-center gap-2 px-1">
-      <ChatPermissionDial
-        :model-value="localPermissionLevel"
-        @update:model-value="handlePermissionLevelChange"
-      />
-      <ChatGitBranchSelect v-if="showGitBranch" />
-      <div class="ml-auto flex items-center gap-2">
+    <div class="mt-1 flex w-full min-w-0 items-center justify-between gap-1 px-1">
+      <div class="flex min-w-0 items-center gap-1">
+        <ChatPermissionDial
+          :model-value="localPermissionLevel"
+          @update:model-value="handlePermissionLevelChange"
+        />
+        <ChatGitBranchSelect v-if="showGitBranch" />
+      </div>
+      <div class="flex min-w-0 items-center gap-1">
         <ChatMcpServerPicker />
         <ChatSkillsPicker :mode="session.selectedMode" />
       </div>

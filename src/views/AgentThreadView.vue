@@ -771,35 +771,37 @@ watch([projectSlug, chatId, () => fleet.loaded.value, isStandalone], () => {
       v-if="!isSubagentView"
       class="shrink-0 px-4 pb-4 pt-2"
     >
-      <ChatTodoTimeline
-        v-if="todos.length > 0"
-        :todos="todos"
-        class="mx-auto mb-2 w-full max-w-3xl"
-      />
-      <RunningTerminalsPanel
-        :shells="runningShells"
-        @stop-shell="handleKillShell"
-      />
-      <ChatMessageQueue
-        v-if="queuedMessages.length > 0"
-        :items="queuedMessages"
-        class="mx-auto mb-2 w-full max-w-3xl"
-        @edit="handleQueueEdit"
-        @force="handleQueueForce"
-        @remove="handleQueueRemove"
-      />
-      <ChatPromptInput
-        ref="chatPromptInputRef"
-        :key="threadKey"
-        :status="harnessStatus"
-        :disabled="!threadReady"
-        :permission-level="activePermissionLevel"
-        :waiting-on-background="isWaitingOnBackground"
-        @submit="handleSubmit"
-        @submit-edit="handleSubmitEdit"
-        @stop="handleStop"
-        @update:permission-level="handlePermissionLevelChange"
-      />
+      <div class="mx-auto flex w-full max-w-3xl flex-col">
+        <ChatTodoTimeline
+          v-if="todos.length > 0"
+          :todos="todos"
+          class="mb-2 w-full"
+        />
+        <RunningTerminalsPanel
+          :shells="runningShells"
+          @stop-shell="handleKillShell"
+        />
+        <ChatMessageQueue
+          v-if="queuedMessages.length > 0"
+          :items="queuedMessages"
+          class="mb-2 w-full"
+          @edit="handleQueueEdit"
+          @force="handleQueueForce"
+          @remove="handleQueueRemove"
+        />
+        <ChatPromptInput
+          ref="chatPromptInputRef"
+          :key="threadKey"
+          :status="harnessStatus"
+          :disabled="!threadReady"
+          :permission-level="activePermissionLevel"
+          :waiting-on-background="isWaitingOnBackground"
+          @submit="handleSubmit"
+          @submit-edit="handleSubmitEdit"
+          @stop="handleStop"
+          @update:permission-level="handlePermissionLevelChange"
+        />
+      </div>
     </div>
   </ChatChatPanelContextMenu>
 </template>

@@ -254,16 +254,17 @@ const handleLogin = async (server: EffectiveMcpServer): Promise<void> => {
       <Button
         variant="ghost"
         size="sm"
-        class="h-7 gap-1.5 px-2 text-xs"
+        class="h-7 min-w-0 gap-1.5 px-2 text-xs"
         :class="
           hasAuthRequired
             ? 'text-amber-600 dark:text-amber-400'
             : 'text-muted-foreground'
         "
         :title="`${connectedCount} of ${effectiveServers.length} MCP servers connected`"
+        aria-label="MCP servers"
       >
         <ServerIcon class="size-3.5 shrink-0" />
-        <span class="max-w-32 truncate">
+        <span class="max-w-32 min-w-0 truncate @max-[22rem]/composer:hidden">
           MCP
           <template v-if="effectiveServers.length > 0">
             ({{ connectedCount }}/{{ effectiveServers.length }})
