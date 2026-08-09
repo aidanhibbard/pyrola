@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import ChatUsageTokenMetrics from '@/components/chat/ChatUsageTokenMetrics.vue'
 import type { ContextBucket } from '@/types/harness/context-bucket'
 import { CONTEXT_BUCKET_META } from '@/types/harness/context-bucket-meta'
 import useChatStore from '@/composables/use-chat-store'
@@ -115,24 +116,6 @@ const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
 const safetyBufferLabel = computed(() => formatTokens(safetyBuffer.value))
 const reservedOutputLabel = computed(() => formatTokens(reservedOutput.value))
 const freeLabel = computed(() => formatTokens(free.value))
-
-const lastStepLabel = computed(() => {
-  const usage = lastStepUsage.value
-  if (!usage) {
-    return ''
-  }
-  const parts = [
-    `${formatTokens(usage.inputTokens)} in`,
-    `${formatTokens(usage.outputTokens)} out`,
-  ]
-  if (usage.cacheReadTokens > 0) {
-    parts.push(`${formatTokens(usage.cacheReadTokens)} cache read`)
-  }
-  if (usage.cacheWriteTokens > 0) {
-    parts.push(`${formatTokens(usage.cacheWriteTokens)} cache write`)
-  }
-  return parts.join(', ')
-})
 
 const showManageActions = computed(
   () =>
@@ -320,12 +303,18 @@ const handleHandoff = (): void => {
           </li>
         </ul>
 
-        <p
-          v-if="lastStepLabel"
-          class="text-xs text-muted-foreground"
+        <div
+          v-if="lastStepUsage"
+          class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
         >
-          Last API step (provider-reported): {{ lastStepLabel }}
-        </p>
+          <span>Last API step (provider-reported):</span>
+          <ChatUsageTokenMetrics
+            :input-tokens="lastStepUsage.inputTokens"
+            :output-tokens="lastStepUsage.outputTokens"
+            :cache-read-tokens="lastStepUsage.cacheReadTokens"
+            :cache-write-tokens="lastStepUsage.cacheWriteTokens"
+          />
+        </div>
 
         <p
           v-if="visibleBuckets.length === 0"

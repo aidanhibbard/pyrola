@@ -8,6 +8,7 @@ import useAgentHarness from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import { HOME_CHAT_SLUG, isHomeChatSlug } from '@/constants/home-chat'
+import ChatUsageTokenMetrics from '@/components/chat/ChatUsageTokenMetrics.vue'
 import {
   Tooltip,
   TooltipContent,
@@ -43,10 +44,6 @@ const harness = useAgentHarness({
   standalone: isStandalone,
 })
 
-const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact' })
-
-const formatTokens = (tokens: number): string => compactFormatter.format(tokens)
-
 const formatCostUsd = (cost: number): string =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -68,24 +65,6 @@ const costLabel = computed(() => {
     return 'Cost unknown'
   }
   return formatCostUsd(usage.costUSD)
-})
-
-const tokenSummary = computed(() => {
-  const usage = aggregate.value
-  if (!usage) {
-    return ''
-  }
-  const parts = [
-    `${formatTokens(usage.inputTokens)}in`,
-    `${formatTokens(usage.outputTokens)}out`,
-  ]
-  if (usage.cacheReadTokens > 0) {
-    parts.push(`${formatTokens(usage.cacheReadTokens)} cache read`)
-  }
-  if (usage.cacheWriteTokens > 0) {
-    parts.push(`${formatTokens(usage.cacheWriteTokens)} cache write`)
-  }
-  return parts.join(' ')
 })
 
 const showWarning = computed(() => {
@@ -140,21 +119,6 @@ const partCostLabel = (part: BillableUsageRecord): string => {
   return formatCostUsd(part.costUSD)
 }
 
-const partTokenSummary = (part: BillableUsageRecord): string => {
-  const input = part.usage.inputTokens ?? 0
-  const output = part.usage.outputTokens ?? 0
-  const cacheRead = part.usage.cacheReadTokens ?? 0
-  const cacheWrite = part.usage.cacheWriteTokens ?? 0
-  const parts = [`${formatTokens(input)}in`, `${formatTokens(output)}out`]
-  if (cacheRead > 0) {
-    parts.push(`${formatTokens(cacheRead)} cache read`)
-  }
-  if (cacheWrite > 0) {
-    parts.push(`${formatTokens(cacheWrite)} cache write`)
-  }
-  return parts.join(' ')
-}
-
 const showTooltip = computed(
   () => showWarning.value || (aggregate.value?.parts.length ?? 0) > 0,
 )
@@ -169,12 +133,12 @@ const showTooltip = computed(
       <TooltipTrigger as-child>
         <div class="inline-flex min-w-0 items-center gap-1.5">
           <span class="tabular-nums">{{ costLabel }}</span>
-          <span
-            v-if="tokenSummary"
-            class="tabular-nums"
-          >
-            {{ tokenSummary }}
-          </span>
+          <ChatUsageTokenMetrics
+            :input-tokens="aggregate.inputTokens"
+            :output-tokens="aggregate.outputTokens"
+            :cache-read-tokens="aggregate.cacheReadTokens"
+            :cache-write-tokens="aggregate.cacheWriteTokens"
+          />
           <AlertTriangle
             v-if="showWarning"
             class="size-3 shrink-0 text-amber-600 dark:text-amber-400"
@@ -199,9 +163,14 @@ const showTooltip = computed(
             class="flex flex-col gap-0.5"
           >
             <span class="font-medium">{{ partLabel(part) }}</span>
-            <span class="tabular-nums text-muted-foreground">
-              {{ partCostLabel(part) }}
-              {{ partTokenSummary(part) }}
+            <span class="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+              <span class="tabular-nums">{{ partCostLabel(part) }}</span>
+              <ChatUsageTokenMetrics
+                :input-tokens="part.usage.inputTokens ?? 0"
+                :output-tokens="part.usage.outputTokens ?? 0"
+                :cache-read-tokens="part.usage.cacheReadTokens ?? 0"
+                :cache-write-tokens="part.usage.cacheWriteTokens ?? 0"
+              />
             </span>
           </li>
         </ul>
@@ -209,12 +178,12 @@ const showTooltip = computed(
     </Tooltip>
     <template v-else>
       <span class="tabular-nums">{{ costLabel }}</span>
-      <span
-        v-if="tokenSummary"
-        class="tabular-nums"
-      >
-        {{ tokenSummary }}
-      </span>
+      <ChatUsageTokenMetrics
+        :input-tokens="aggregate.inputTokens"
+        :output-tokens="aggregate.outputTokens"
+        :cache-read-tokens="aggregate.cacheReadTokens"
+        :cache-write-tokens="aggregate.cacheWriteTokens"
+      />
     </template>
   </div>
 </template>
