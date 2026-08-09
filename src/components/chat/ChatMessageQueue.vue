@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { FileUIPart } from 'ai'
 import type { QueuedChatMessage } from '@/types/chat/queued-chat-message'
-import { ArrowUpIcon, PencilIcon, Trash2Icon } from '@lucide/vue'
+import {
+  ArrowUpIcon,
+  ListOrderedIcon,
+  PencilIcon,
+  Trash2Icon,
+} from '@lucide/vue'
 import {
   Queue,
   QueueItem,
@@ -11,7 +16,6 @@ import {
   QueueItemContent,
   QueueItemFile,
   QueueItemImage,
-  QueueItemIndicator,
   QueueSection,
   QueueSectionContent,
   QueueSectionLabel,
@@ -67,7 +71,17 @@ const handleRemove = (id: string): void => {
             :key="item.id"
           >
             <div class="flex w-full items-start gap-2">
-              <QueueItemIndicator class="mt-1 shrink-0" />
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <span
+                    aria-label="Queued"
+                    class="mt-0.5 inline-flex shrink-0 text-muted-foreground"
+                  >
+                    <ListOrderedIcon class="size-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Queued</TooltipContent>
+              </Tooltip>
               <QueueItemContent
                 class="line-clamp-3 min-w-0 flex-1 whitespace-normal break-words"
               >
