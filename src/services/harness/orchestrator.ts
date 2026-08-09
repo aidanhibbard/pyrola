@@ -6,6 +6,7 @@ import type { ContextMention } from '@/types/harness/context-mention'
 import type { ChatTimelineItem } from '@/types/chat/chat-timeline-item'
 import type { PyrolaChatMode, PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
+import { isReasoningLevel } from '@/types/models/reasoning-level'
 import type { SubagentResult } from '@/types/harness/subagent-record'
 import type { PermissionCapabilityKey, PermissionLevel } from '@/types/harness/permission'
 import type { SystemPromptParts } from '@/services/context/system-prompt-parts'
@@ -65,6 +66,7 @@ import {
   resolveCatalogReasoning,
   resolveReasoningForRole,
 } from '@/services/models/resolve-reasoning-for-call'
+import resolveModelRefForCall from '@/services/models/resolve-model-ref-for-call'
 import { toast } from 'vue-sonner'
 import truncateToolResult from '@/utils/truncate-tool-result'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
@@ -471,9 +473,15 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
   })
   await updateChatMeta(projectSlug, chatId, { status: 'running', attention: null })
 
+  const callModel = resolveModelRefForCall(settings, { providerId, modelId })
+
   const [existingMeta, model] = await Promise.all([
     readChatMeta(projectSlug, chatId).catch(() => null),
-    createModel({ providerId, modelId, settings }),
+    createModel({
+      providerId: callModel.createRef.providerId,
+      modelId: callModel.createRef.modelId,
+      settings,
+    }),
   ])
 
   const planSession = beginPlanExecutionTurn(projectSlug, chatId)
@@ -481,14 +489,16 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     hydratePlanExecutionSession(projectSlug, chatId, {
       awaitingPlanGo: existingMeta.awaitingPlanGo ?? null,
       subagentModel: existingMeta.subagentModel ?? null,
-      subagentReasoning: existingMeta.subagentReasoning ?? null,
+      subagentReasoning: isReasoningLevel(existingMeta.subagentReasoning)
+        ? existingMeta.subagentReasoning
+        : null,
     })
   }
 
   const supportsVision = await resolveModelVision({
     model,
-    providerId,
-    modelId,
+    providerId: callModel.createRef.providerId,
+    modelId: callModel.createRef.modelId,
     settings,
   })
 
@@ -564,11 +574,11 @@ const runHarnessStream = async (input: HarnessStreamInput): Promise<void> => {
     buckets: budget.buckets,
   })
 
-  const callOptions = resolveModelCallOptions(settings, { providerId, modelId }, {
+  const callOptions = resolveModelCallOptions(settings, callModel.optionRef, {
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     reasoning: pickResolvedReasoning([
       input.reasoning,
-      resolveCatalogReasoning(settings, { providerId, modelId }),
+      resolveCatalogReasoning(settings, callModel.optionRef),
       resolveReasoningForRole(mode, settings),
     ]),
   })

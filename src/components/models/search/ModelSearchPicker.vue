@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronDownIcon, Settings2Icon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -28,12 +28,22 @@ import type { ModelRef } from '@/types/models/model-ref'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import parseModelRef from '@/utils/parse-model-ref'
+import humanizeModelId from '@/utils/humanize-model-id'
+import {
+  modelShortId,
+  modelVendorId,
+  modelVendorLabel,
+} from '@/utils/model-vendor'
 import {
   getModelCatalogOption,
   isModelAllowed,
   mergeModelCatalogOption,
 } from '@/services/models/model-catalog-options'
 import resolveReasoningCapability from '@/services/models/resolve-reasoning-capability'
+import {
+  canonicalizeModelRef,
+} from '@/services/models/resolve-model-ref-for-call'
+import { isFastModelId } from '@/services/models/parse-model-variant'
 
 const props = withDefaults(
   defineProps<{
@@ -71,10 +81,13 @@ const settingsSource = computed(
 )
 
 const extraModelRefs = computed(() => {
-  if (!props.modelValue.trim()) {
-    return []
+  const parsed = parseModelRef(props.modelValue)
+  if (!parsed) {
+    return props.modelValue.trim() ? [props.modelValue] : []
   }
-  return [props.modelValue]
+  const canonical = canonicalizeModelRef(parsed)
+  const serialized = serializeModelRef(canonical)
+  return serialized === props.modelValue ? [props.modelValue] : [serialized, props.modelValue]
 })
 
 const catalog = useProviderModelsCatalog({
@@ -83,16 +96,17 @@ const catalog = useProviderModelsCatalog({
 })
 
 const modelDisplayName = (model: ModelRef): string =>
-  model.name?.trim() || model.modelId.split('/').pop() || model.modelId
+  humanizeModelId(modelShortId(model.modelId))
 
-type NamedGroup = {
+type VendorGroup = {
+  vendorId: string
   name: string
-  models: Array<ModelRef & { providerName: string }>
+  models: Array<ModelRef & { providerName: string; label: string }>
 }
 
-const filteredGroups = computed((): NamedGroup[] => {
+const filteredGroups = computed((): VendorGroup[] => {
   const providerGroups = catalog.filterGroups(searchQuery.value)
-  const byName = new Map<string, NamedGroup>()
+  const byVendor = new Map<string, VendorGroup>()
 
   for (const group of providerGroups) {
     for (const model of group.models) {
@@ -102,53 +116,84 @@ const filteredGroups = computed((): NamedGroup[] => {
       ) {
         continue
       }
-      const name = modelDisplayName(model)
-      const existing = byName.get(name)
-      const entry = { ...model, providerName: group.providerName }
+      const vendorId = modelVendorId(model.modelId)
+      const existing = byVendor.get(vendorId)
+      const entry = {
+        ...model,
+        providerName: group.providerName,
+        label: modelDisplayName(model),
+      }
       if (existing) {
         existing.models.push(entry)
       } else {
-        byName.set(name, { name, models: [entry] })
+        byVendor.set(vendorId, {
+          vendorId,
+          name: modelVendorLabel(model.modelId),
+          models: [entry],
+        })
       }
     }
   }
 
-  return [...byName.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )
+  const groups = [...byVendor.values()]
+  for (const group of groups) {
+    group.models.sort((left, right) => {
+      const byLabel = left.label.localeCompare(right.label)
+      if (byLabel !== 0) {
+        return byLabel
+      }
+      return left.providerName.localeCompare(right.providerName)
+    })
+  }
+
+  return groups.sort((left, right) => left.name.localeCompare(right.name))
+})
+
+const canonicalSelection = computed(() => {
+  const parsed = parseModelRef(props.modelValue)
+  if (!parsed) {
+    return null
+  }
+  return canonicalizeModelRef(parsed)
 })
 
 const displayLabel = computed(() => {
   if (!props.modelValue) {
     return props.placeholder
   }
-  return catalog.labelForSerialized(props.modelValue)
+  const canonical = canonicalSelection.value
+  if (!canonical) {
+    return catalog.labelForSerialized(props.modelValue)
+  }
+  return catalog.labelForSerialized(serializeModelRef(canonical))
 })
 
 const compactLabel = computed(() => {
   if (!props.modelValue) {
     return props.placeholder
   }
-  const parsed = parseModelRef(props.modelValue)
-  if (!parsed) {
+  const canonical = canonicalSelection.value
+  if (!canonical) {
     const segments = props.modelValue.split('/')
     return segments[segments.length - 1] ?? props.modelValue
   }
-  const segments = parsed.modelId.split('/')
-  return segments[segments.length - 1] ?? parsed.modelId
+  return humanizeModelId(canonical.modelId)
 })
 
 const selectedSuffix = computed(() => {
-  const parsed = parseModelRef(props.modelValue)
-  if (!parsed) {
+  const canonical = canonicalSelection.value
+  if (!canonical) {
     return ''
   }
-  const option = getModelCatalogOption(settingsSource.value, parsed)
+  const option = getModelCatalogOption(settingsSource.value, canonical)
   const bits: string[] = []
   if (option.reasoning && option.reasoning !== 'provider-default') {
     bits.push(option.reasoning)
   }
-  if (option.fast) {
+  if (
+    option.fast === true ||
+    isFastModelId(parseModelRef(props.modelValue)?.modelId ?? '')
+  ) {
     bits.push('fast')
   }
   return bits.length > 0 ? bits.join(', ') : ''
@@ -178,8 +223,19 @@ const openProvidersSettings = async (): Promise<void> => {
 const serializedFor = (model: ModelRef): string =>
   serializeModelRef({ providerId: model.providerId, modelId: model.modelId })
 
-const optionFor = (model: ModelRef): ModelCatalogOption =>
-  getModelCatalogOption(settingsSource.value, model)
+const optionFor = (model: ModelRef): ModelCatalogOption => {
+  const option = getModelCatalogOption(settingsSource.value, model)
+  const selected = canonicalSelection.value
+  if (
+    selected &&
+    selected.providerId === model.providerId &&
+    selected.modelId === model.modelId &&
+    isFastModelId(parseModelRef(props.modelValue)?.modelId ?? '')
+  ) {
+    return { ...option, fast: true }
+  }
+  return option
+}
 
 const capabilityFor = (model: ModelRef) =>
   resolveReasoningCapability(settingsSource.value, model)
@@ -195,12 +251,53 @@ const handleOptionChange = async (
   const nextMap = mergeModelCatalogOption(settingsSource.value, model, patch)
   try {
     await config.updateSetting(props.optionsTab, 'models.catalogOptions', nextMap)
+    if (
+      patch.fast !== undefined &&
+      canonicalSelection.value &&
+      canonicalSelection.value.providerId === model.providerId &&
+      canonicalSelection.value.modelId === model.modelId &&
+      isFastModelId(parseModelRef(props.modelValue)?.modelId ?? '')
+    ) {
+      emit('update:modelValue', serializeModelRef(model))
+    }
   } catch (error) {
     toast.error('Failed to save model options', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
   }
 }
+
+watch(
+  () => [props.modelValue, catalog.loading.value] as const,
+  async ([value, loading]) => {
+    if (loading || !value.trim()) {
+      return
+    }
+    const parsed = parseModelRef(value)
+    if (!parsed || !isFastModelId(parsed.modelId)) {
+      return
+    }
+    const canonical = canonicalizeModelRef(parsed)
+    const nextSerialized = serializeModelRef(canonical)
+    if (nextSerialized === value) {
+      return
+    }
+    const nextMap = mergeModelCatalogOption(settingsSource.value, canonical, {
+      ...getModelCatalogOption(settingsSource.value, parsed),
+      ...getModelCatalogOption(settingsSource.value, canonical),
+      fast: true,
+    })
+    try {
+      await config.updateSetting(props.optionsTab, 'models.catalogOptions', nextMap)
+      emit('update:modelValue', nextSerialized)
+    } catch (error) {
+      toast.error('Failed to normalize model selection', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -237,7 +334,7 @@ const handleOptionChange = async (
       />
       <ModelsSearchModelSelectorList>
         <template v-if="catalog.loading.value">
-          <ModelsSearchModelSelectorEmpty>Loading models…</ModelsSearchModelSelectorEmpty>
+          <ModelsSearchModelSelectorEmpty>Loading models...</ModelsSearchModelSelectorEmpty>
         </template>
         <template v-else-if="!catalog.hasProviders.value">
           <ModelsSearchModelSelectorEmpty>
@@ -255,19 +352,25 @@ const handleOptionChange = async (
         <template v-else>
           <ModelsSearchModelSelectorGroup
             v-for="group in filteredGroups"
-            :key="group.name"
+            :key="group.vendorId"
             :heading="group.name"
           >
             <ModelsSearchModelSelectorItem
               v-for="model in group.models"
               :key="serializedFor(model)"
-              :value="serializedFor(model)"
+              :value="`${serializedFor(model)} ${model.modelId} ${model.label} ${model.providerName} ${group.name}`"
               class="group/item"
               @select="handleSelect(model.providerId, model.modelId)"
             >
+              <span class="sr-only">
+                {{ model.modelId }} {{ group.name }}
+              </span>
               <ModelsSearchModelSelectorLogo :provider="model.providerId" />
               <ModelsSearchModelSelectorName class="min-w-0 flex-1 truncate">
-                {{ model.providerName }}
+                <span class="truncate">{{ model.label }}</span>
+                <span class="ml-1.5 text-xs font-normal text-muted-foreground">
+                  {{ model.providerName }}
+                </span>
                 <span
                   v-if="optionFor(model).allowed === false"
                   class="ml-1 text-xs text-muted-foreground"
@@ -285,7 +388,7 @@ const handleOptionChange = async (
                     variant="ghost"
                     size="icon"
                     class="h-7 w-7 shrink-0"
-                    :title="`Options for ${group.name}`"
+                    :title="`Options for ${model.label}`"
                     @click.stop
                     @pointerdown.stop
                   >
@@ -302,6 +405,7 @@ const handleOptionChange = async (
                   <ModelsOptionsModelCatalogOptionsPanel
                     :option="optionFor(model)"
                     :capability="capabilityFor(model)"
+                    :supports-fast="model.supportsFast === true"
                     @change="handleOptionChange(model, $event)"
                   />
                 </PopoverContent>

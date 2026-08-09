@@ -34,14 +34,18 @@ export const resolveReasoningForRole = (
   if (!definition?.reasoningSettingsKey) {
     return undefined
   }
-  const roleValue = normalizeEffort(settings[definition.reasoningSettingsKey])
+  const roleRaw = settings[definition.reasoningSettingsKey]
+  const roleValue = normalizeEffort(
+    typeof roleRaw === 'string' ? roleRaw : undefined,
+  )
   if (roleValue) {
     return roleValue
   }
   if (role === 'default') {
     return undefined
   }
-  return normalizeEffort(settings['models.defaultReasoning'])
+  const defaultRaw = settings['models.defaultReasoning']
+  return normalizeEffort(typeof defaultRaw === 'string' ? defaultRaw : undefined)
 }
 
 export const resolveCatalogReasoning = (

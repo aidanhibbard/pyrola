@@ -16,7 +16,8 @@ Guide: [Providers and BYOK](../guide/providers-and-byok.md).
 
 - Open Settings, Personal, Models.
 - Assign a model for each internal agent: Default, Ask, Plan, Studio, Agent, Orchestrator (parent and subagent), Title, and Compaction.
-- In the model picker, models are grouped by name. Use the gear on a row to set reasoning (when the provider supports effort), fast mode, and whether the model is allowed in chat.
+- In the model picker, models are grouped by vendor (OpenAI, Anthropic, Moonshot, and so on). Fast variants (for example `kimi-k3-fast`) collapse into the base model; use the gear menu Fast toggle instead of picking a separate row.
+- Use the gear on a row to set reasoning (when the provider supports effort), fast mode (when a fast tier exists), and whether the model is allowed in chat.
 - Chat and orchestrate pickers hide models marked not allowed.
 - Title and Compaction warn when they inherit the default model; prefer a small low-cost model for those tasks.
 - Markdown agents under `.pyrola/agents/` set their own `model` and `reasoning` in frontmatter; they are not listed here.

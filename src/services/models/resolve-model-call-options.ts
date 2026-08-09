@@ -40,10 +40,17 @@ const applyFastOption = (
   if (!fast) {
     return
   }
+  // AI Gateway: providerOptions.gateway.speed. Anthropic native: anthropic.speed.
+  // Other providers use a -fast model id rewrite in resolveModelRefForCall.
   const key =
-    ref.providerId === 'anthropic' || ref.providerId === 'gateway'
-      ? 'anthropic'
-      : ref.providerId
+    ref.providerId === 'gateway'
+      ? 'gateway'
+      : ref.providerId === 'anthropic'
+        ? 'anthropic'
+        : null
+  if (!key) {
+    return
+  }
   const existing = options.providerOptions?.[key] ?? {}
   options.providerOptions = {
     ...options.providerOptions,

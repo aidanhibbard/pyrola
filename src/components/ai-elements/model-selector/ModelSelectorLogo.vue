@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
+import { computed } from 'vue'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -8,6 +9,11 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+/** models.dev "gateway" mark is a 4-spark glyph that reads as tildes; use Vercel. */
+const logoId = computed(() =>
+  props.provider === 'gateway' ? 'vercel' : props.provider,
+)
 </script>
 
 <template>
@@ -16,7 +22,7 @@ const props = defineProps<Props>()
     :alt="`${props.provider} logo`"
     :class="cn('size-3 dark:invert', props.class)"
     height="12"
-    :src="`https://models.dev/logos/${props.provider}.svg`"
+    :src="`https://models.dev/logos/${logoId}.svg`"
     width="12"
   >
 </template>

@@ -81,5 +81,7 @@ export type PyrolaSettings = {
   'models.catalogOptions'?: ModelCatalogOptionsMap
   [key: `providers.${string}.apiKeyRef`]: string | undefined
   [key: `providers.custom.${string}`]: PyrolaCustomProvider | undefined
-  [key: `models.${string}`]: string | undefined
+  // String model refs and reasoning levels. catalogOptions is declared above and
+  // must stay compatible with this index (object values allowed for that key only).
+  [key: `models.${string}`]: string | ModelCatalogOptionsMap | undefined
 }

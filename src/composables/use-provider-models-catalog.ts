@@ -2,8 +2,11 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ProviderModelGroup } from '@/types/models/provider-model-group'
 import listAllProviderModels from '@/services/providers/list-all-provider-models'
+import collapseProviderModelGroups from '@/services/models/collapse-provider-model-groups'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import formatModelRefLabel from '@/utils/format-model-ref-label'
+import { canonicalizeModelRef } from '@/services/models/resolve-model-ref-for-call'
+import parseModelRef from '@/utils/parse-model-ref'
 
 export type UseProviderModelsCatalogOptions = {
   settings: Ref<PyrolaSettings> | ComputedRef<PyrolaSettings>
@@ -90,7 +93,7 @@ export default (options: UseProviderModelsCatalogOptions) => {
         return
       }
       const extra = options.extraModelRefs?.value ?? []
-      groups.value = mergeExtraModels(loaded, extra)
+      groups.value = collapseProviderModelGroups(mergeExtraModels(loaded, extra))
     } finally {
       if (generation === loadGeneration) {
         loading.value = false
@@ -104,17 +107,31 @@ export default (options: UseProviderModelsCatalogOptions) => {
       return groups.value
     }
 
+    const wantsFast = normalized === 'fast'
+
     return groups.value
       .map((group) => {
         const providerMatches =
           group.providerName.toLowerCase().includes(normalized) ||
           group.providerId.toLowerCase().includes(normalized)
 
-        const matchingModels = group.models.filter((model) =>
-          model.modelId.toLowerCase().includes(normalized),
-        )
+        const matchingModels = group.models.filter((model) => {
+          if (wantsFast) {
+            return model.supportsFast === true
+          }
+          const haystack = [
+            model.modelId,
+            model.name ?? '',
+            model.fastModelId ?? '',
+            group.providerName,
+            group.providerId,
+          ]
+            .join(' ')
+            .toLowerCase()
+          return haystack.includes(normalized)
+        })
 
-        if (providerMatches) {
+        if (providerMatches && !wantsFast) {
           return group
         }
 
@@ -133,22 +150,23 @@ export default (options: UseProviderModelsCatalogOptions) => {
   const hasProviders = computed(() => groups.value.length > 0)
 
   const labelForSerialized = (serialized: string): string => {
-    const separatorIndex = serialized.indexOf('::')
-    if (separatorIndex <= 0) {
+    const parsed = parseModelRef(serialized)
+    if (!parsed) {
       return serialized
     }
-    const providerId = serialized.slice(0, separatorIndex)
-    const modelId = serialized.slice(separatorIndex + 2)
+    const canonical = canonicalizeModelRef(parsed)
     for (const group of groups.value) {
-      if (group.providerId !== providerId) {
+      if (group.providerId !== canonical.providerId) {
         continue
       }
-      const match = group.models.find((model) => model.modelId === modelId)
+      const match = group.models.find(
+        (model) => model.modelId === canonical.modelId,
+      )
       if (match) {
         return formatModelRefLabel(match, group.providerName)
       }
     }
-    return formatModelRefLabel({ providerId, modelId })
+    return formatModelRefLabel(canonical)
   }
 
   const serializedValueForModel = (providerId: string, modelId: string): string =>

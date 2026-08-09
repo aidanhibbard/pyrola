@@ -13,6 +13,7 @@ import {
   resolveCatalogReasoning,
   resolveReasoningForRole,
 } from '@/services/models/resolve-reasoning-for-call'
+import resolveModelRefForCall from '@/services/models/resolve-model-ref-for-call'
 import resolveAgentDefinition from '@/services/agents/resolve-agent-definition'
 import parseModelRef from '@/utils/parse-model-ref'
 import gitRepoInfo from '@/services/git/git-repo-info'
@@ -1500,19 +1501,20 @@ const runSubagentGenerate = async (args: {
     resolveReasoningForRole('subagent', ctx.settings),
   ])
 
+  const callModel = resolveModelRefForCall(ctx.settings, modelRef)
   const model = await createModel({
-    providerId: modelRef.providerId,
-    modelId: modelRef.modelId,
+    providerId: callModel.createRef.providerId,
+    modelId: callModel.createRef.modelId,
     settings: ctx.settings,
   })
-  const callOptions = resolveModelCallOptions(ctx.settings, modelRef, {
+  const callOptions = resolveModelCallOptions(ctx.settings, callModel.optionRef, {
     maxOutputTokens: SUBAGENT_MAX_OUTPUT_TOKENS,
     reasoning,
   })
   const supportsVision = await resolveModelVision({
     model,
-    providerId: modelRef.providerId,
-    modelId: modelRef.modelId,
+    providerId: callModel.createRef.providerId,
+    modelId: callModel.createRef.modelId,
     settings: ctx.settings,
   })
 

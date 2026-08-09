@@ -12,7 +12,10 @@ const isChatMode = (role: ModelRoleId): role is PyrolaChatMode =>
 const readSettingsModel = (
   settings: PyrolaSettings,
   key: `models.${string}`,
-): string | undefined => settings[key]
+): string | undefined => {
+  const value = settings[key]
+  return typeof value === 'string' ? value : undefined
+}
 
 export const resolveModelForRole = (
   role: ModelRoleId,

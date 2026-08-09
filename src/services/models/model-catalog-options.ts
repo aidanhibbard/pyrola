@@ -42,7 +42,7 @@ export const mergeModelCatalogOption = (
       ? ref
       : serializeModelRef({ providerId: ref.providerId, modelId: ref.modelId })
   const current = getModelCatalogOptionsMap(settings)
-  const next: ModelCatalogOption = { ...(current[key] ?? {}) }
+  const next: ModelCatalogOption = { ...current[key] }
 
   for (const [field, value] of Object.entries(patch) as Array<
     [keyof ModelCatalogOption, ModelCatalogOption[keyof ModelCatalogOption]]

@@ -37,11 +37,15 @@ const roles = MODEL_ROLE_REGISTRY.filter((role) => role.id !== 'subagent')
 
 const subagentRole = MODEL_ROLE_REGISTRY.find((role) => role.id === 'subagent')!
 
-const roleModelValue = (role: ModelRoleDefinition): string =>
-  settings.value[role.settingsKey] ?? ''
+const roleModelValue = (role: ModelRoleDefinition): string => {
+  const value = settings.value[role.settingsKey]
+  return typeof value === 'string' ? value : ''
+}
 
-const isRoleOverridden = (role: ModelRoleDefinition): boolean =>
-  Boolean(settings.value[role.settingsKey])
+const isRoleOverridden = (role: ModelRoleDefinition): boolean => {
+  const value = settings.value[role.settingsKey]
+  return typeof value === 'string' && value.length > 0
+}
 
 const showDefaultWarning = (role: ModelRoleDefinition): boolean =>
   Boolean(role.recommendCheapModel) &&
