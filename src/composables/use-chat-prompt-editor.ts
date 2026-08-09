@@ -1,11 +1,11 @@
 import type { Editor } from '@tiptap/core'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import type { ContextMention } from '@/types/harness/context-mention'
 
 type InsertMentionFn = (mention: ContextMention) => void
 type InsertTextFn = (text: string) => void
 
-const editorRef = ref<Editor | null>(null)
+const editorRef = shallowRef<Editor | null>(null)
 const insertMentionRef = ref<InsertMentionFn | null>(null)
 const insertTextRef = ref<InsertTextFn | null>(null)
 
