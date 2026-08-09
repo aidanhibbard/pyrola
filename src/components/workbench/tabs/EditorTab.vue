@@ -59,6 +59,7 @@ import {
 import WorkbenchEditorFileSearchDialog from '@/components/workbench/EditorFileSearchDialog.vue'
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
 import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
+import WorkbenchLspStatus from '@/components/workbench/WorkbenchLspStatus.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
@@ -682,6 +683,8 @@ watch(
               </TooltipTrigger>
               <TooltipContent class="z-60">File actions</TooltipContent>
             </Tooltip>
+
+            <WorkbenchLspStatus />
 
             <Tooltip>
               <TooltipTrigger as-child>

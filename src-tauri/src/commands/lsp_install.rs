@@ -953,6 +953,12 @@ pub fn managed_vue_plugin_path(app: &AppHandle) -> Option<PathBuf> {
   let spec = builtin_spec_by_id("vue")?;
   let key = version_key_for_spec(spec);
   let dir = managed_server_dir(app, "vue", &key).ok()?;
+  // Official Vue LS 3 / Neovim wiki: plugin `location` is the @vue/language-server
+  // package root (tsserver resolves @vue/typescript-plugin from there).
+  let language_server = dir.join("node_modules/@vue/language-server");
+  if language_server.is_dir() {
+    return Some(language_server);
+  }
   let plugin = dir.join("node_modules/@vue/typescript-plugin");
   if plugin.is_dir() {
     Some(plugin)

@@ -595,11 +595,16 @@ fn build_initialization_options(
 
   if server_id == "typescript" {
     let plugin_path = if trusted {
-      let project = Path::new(workspace_root).join("node_modules/@vue/typescript-plugin");
-      if project.is_dir() {
-        Some(project)
+      let language_server = Path::new(workspace_root).join("node_modules/@vue/language-server");
+      if language_server.is_dir() {
+        Some(language_server)
       } else {
-        managed_vue_plugin_path(app)
+        let project = Path::new(workspace_root).join("node_modules/@vue/typescript-plugin");
+        if project.is_dir() {
+          Some(project)
+        } else {
+          managed_vue_plugin_path(app)
+        }
       }
     } else {
       managed_vue_plugin_path(app)
@@ -623,10 +628,14 @@ fn build_initialization_options(
     }
   }
 
-  // @vue/language-server@2.x requires initializationOptions.typescript.tsdk
-  // (see options.typescript.tsdk in its initialize handler).
+  // @vue/language-server v3: typescript.tsdk init option was dropped; pass --tsdk.
+  // Prefer the TypeScript bundled with the managed Vue server over the
+  // workspace copy (this repo may be on TS 6 while the language server
+  // expects the TS 5.x it was installed with).
   if server_id == "vue" {
-    let tsdk = typescript_tsdk_path(app, workspace_root, trusted);
+    let tsdk = managed_vue_typescript_lib(app)
+      .map(|path| path.to_string_lossy().replace('\\', "/"))
+      .unwrap_or_else(|| typescript_tsdk_path(app, workspace_root, trusted));
     if let Some(obj) = base.as_object_mut() {
       let typescript = obj
         .entry("typescript")
@@ -644,6 +653,29 @@ fn build_initialization_options(
   }
 
   base
+}
+
+fn inject_vue_tsdk_arg(
+  app: &AppHandle,
+  server_id: &str,
+  workspace_root: &str,
+  trusted: bool,
+  resolved: &mut ResolvedLspCommand,
+) {
+  if server_id != "vue" {
+    return;
+  }
+  if resolved
+    .args
+    .iter()
+    .any(|arg| arg == "--tsdk" || arg.starts_with("--tsdk="))
+  {
+    return;
+  }
+  let tsdk = managed_vue_typescript_lib(app)
+    .map(|path| path.to_string_lossy().replace('\\', "/"))
+    .unwrap_or_else(|| typescript_tsdk_path(app, workspace_root, trusted));
+  resolved.args.push(format!("--tsdk={tsdk}"));
 }
 
 fn workspace_configuration_response(
@@ -756,11 +788,175 @@ async fn send_notification(
   write_lsp_message(&mut guard.stdin, &message).await
 }
 
+fn tsserver_request_body(result: serde_json::Value) -> serde_json::Value {
+  result
+    .get("body")
+    .cloned()
+    .unwrap_or(result)
+}
+
+/// Vue LS / vscode-jsonrpc sends array notification params wrapped as a single
+/// positional argument: `[[id, command, args]]`. Nvim unwraps the same way.
+fn unwrap_tsserver_request_tuple(params: &serde_json::Value) -> Option<&[serde_json::Value]> {
+  let outer = params.as_array()?;
+  if outer.len() == 1 {
+    if let Some(inner) = outer[0].as_array() {
+      return Some(inner.as_slice());
+    }
+  }
+  Some(outer.as_slice())
+}
+
+/// Vue language server v3 hybrid mode: forward `tsserver/request` notifications to
+/// typescript-language-server via `typescript.tsserverRequest`, then reply with
+/// `tsserver/response`. Without this bridge, Vue features that call into TS hang.
+async fn forward_vue_tsserver_request(
+  app: &AppHandle,
+  vue_process: Arc<Mutex<LspProcess>>,
+  params: serde_json::Value,
+) {
+  let Some(items) = unwrap_tsserver_request_tuple(&params) else {
+    return;
+  };
+  let Some(request_id) = items.first().cloned() else {
+    return;
+  };
+  let command = items
+    .get(1)
+    .and_then(|value| value.as_str())
+    .unwrap_or_default()
+    .to_string();
+  let args = items
+    .get(2)
+    .cloned()
+    .unwrap_or(serde_json::Value::Null);
+
+  let body = match forward_vue_tsserver_request_inner(app, &vue_process, &command, args).await {
+    Ok(value) => tsserver_request_body(value),
+    Err(_) => serde_json::Value::Null,
+  };
+
+  // Match Vue/vscode-jsonrpc array-param wrapping used on the request path.
+  let _ = send_notification(
+    &vue_process,
+    "tsserver/response",
+    serde_json::json!([[request_id, body]]),
+  )
+  .await;
+}
+
+async fn forward_vue_tsserver_request_inner(
+  app: &AppHandle,
+  vue_process: &Mutex<LspProcess>,
+  command: &str,
+  args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+  if command.is_empty() {
+    return Err("empty tsserver command".to_string());
+  }
+
+  let workspace_root = {
+    let guard = vue_process.lock().await;
+    guard.workspace_root.clone()
+  };
+
+  let execute = |process: Arc<Mutex<LspProcess>>, command: String, args: serde_json::Value| async move {
+    json_rpc_request(
+      &process,
+      "workspace/executeCommand",
+      serde_json::json!({
+        "command": "typescript.tsserverRequest",
+        "arguments": [command, args]
+      }),
+    )
+    .await
+  };
+
+  let _ = ensure_running_server(app, "ts", Some(workspace_root.clone())).await?;
+
+  let ts_managed = {
+    let servers = LSP_SERVERS.lock().await;
+    servers.get("typescript").cloned()
+  }
+  .ok_or_else(|| "TypeScript language server is not running".to_string())?;
+
+  match execute(ts_managed.process.clone(), command.to_string(), args.clone()).await {
+    Ok(value) => Ok(value),
+    Err(error) => {
+      let lower = error.to_ascii_lowercase();
+      let needs_restart = lower.contains("unknown command")
+        || lower.contains("tsserverrequest")
+        || lower.contains("method not found");
+      if !needs_restart {
+        return Err(error);
+      }
+
+      // Old typescript-language-server builds lack typescript.tsserverRequest.
+      stop_server_internal("typescript").await.ok();
+      let _ = ensure_running_server(app, "ts", Some(workspace_root)).await?;
+      let ts_managed = {
+        let servers = LSP_SERVERS.lock().await;
+        servers.get("typescript").cloned()
+      }
+      .ok_or_else(|| "TypeScript language server is not running".to_string())?;
+      execute(ts_managed.process.clone(), command.to_string(), args).await
+    }
+  }
+}
+
+async fn mirror_vue_document_to_typescript(
+  app: &AppHandle,
+  workspace_root: &str,
+  path: &str,
+  content: Option<&str>,
+  op: &str,
+) {
+  let ts_status = ensure_running_server(app, "ts", Some(workspace_root.to_string())).await;
+  if ts_status.map(|status| status.running).unwrap_or(false) == false {
+    return;
+  }
+
+  let Some(ts_managed) = ({
+    let servers = LSP_SERVERS.lock().await;
+    servers.get("typescript").cloned()
+  }) else {
+    return;
+  };
+
+  match op {
+    "open" | "change" => {
+      if let Some(text) = content {
+        let _ =
+          sync_document_change_with_content(&ts_managed.process, workspace_root, path, text).await;
+      } else {
+        let _ = ensure_document_open(&ts_managed.process, workspace_root, path, None).await;
+      }
+    }
+    "close" => {
+      if let Ok(absolute) = resolve_workspace_path(workspace_root, path) {
+        let uri = path_to_uri(&absolute);
+        let _ = close_document(&ts_managed.process, &uri).await;
+      }
+    }
+    _ => {}
+  }
+}
+
 async fn json_rpc_request(
   process: &Mutex<LspProcess>,
   method: &str,
   params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+  let timeout_secs = match method {
+    "textDocument/hover"
+    | "textDocument/definition"
+    | "textDocument/references"
+    | "textDocument/completion"
+    | "textDocument/documentSymbol"
+    | "workspace/symbol" => 12u64,
+    _ => 30u64,
+  };
+
   let id = {
     let guard = process.lock().await;
     let mut next = guard.next_id.lock().await;
@@ -786,9 +982,17 @@ async fn json_rpc_request(
     write_lsp_message(&mut guard.stdin, &message).await?;
   }
 
-  let response = rx
-    .await
-    .map_err(|_| "LSP request cancelled".to_string())?;
+  let response = match tokio::time::timeout(Duration::from_secs(timeout_secs), rx).await {
+    Ok(Ok(response)) => response,
+    Ok(Err(_)) => return Err("LSP request cancelled".to_string()),
+    Err(_) => {
+      let guard = process.lock().await;
+      guard.pending.lock().await.remove(&id);
+      return Err(format!(
+        "LSP request timed out after {timeout_secs}s ({method})"
+      ));
+    }
+  };
 
   if let Some(error) = response.get("error") {
     let message = error
@@ -863,6 +1067,19 @@ fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String, app: AppHand
 
       if message.get("id").is_none() {
         if let Some(method) = message.get("method").and_then(|value| value.as_str()) {
+          if method == "tsserver/request" && server_id == "vue" {
+            let params = message
+              .get("params")
+              .cloned()
+              .unwrap_or(serde_json::Value::Null);
+            let vue_process = process.clone();
+            let app_handle = app.clone();
+            tokio::spawn(async move {
+              forward_vue_tsserver_request(&app_handle, vue_process, params).await;
+            });
+            continue;
+          }
+
           if method == "textDocument/publishDiagnostics" {
             let params = message
               .get("params")
@@ -894,7 +1111,10 @@ fn spawn_reader(process: Arc<Mutex<LspProcess>>, server_id: String, app: AppHand
         }
       }
 
-      if let Some(id) = message.get("id").and_then(|value| value.as_u64()) {
+      if let Some(id) = message
+        .get("id")
+        .and_then(|value| value.as_u64().or_else(|| value.as_i64().and_then(|v| u64::try_from(v).ok())))
+      {
         let sender = {
           let guard = process.lock().await;
           let mut pending = guard.pending.lock().await;
@@ -1081,7 +1301,8 @@ async fn start_server(
   app: AppHandle,
 ) -> Result<Arc<Mutex<LspProcess>>, String> {
   let trusted = workspace_is_trusted(&app, Some(workspace_root.as_str()));
-  let resolved = resolve_lsp_command(&app, &server_id, &entry, &workspace_root, trusted)?;
+  let mut resolved = resolve_lsp_command(&app, &server_id, &entry, &workspace_root, trusted)?;
+  inject_vue_tsdk_arg(&app, &server_id, &workspace_root, trusted, &mut resolved);
 
   let mut command = Command::new(&resolved.program);
   command
@@ -1274,7 +1495,7 @@ async fn ensure_running_server(
     false,
     None,
     Some(install_source_label(app, &server_id)),
-    Some("installing".to_string()),
+    Some("starting".to_string()),
   )
   .await;
 
@@ -1318,6 +1539,14 @@ async fn ensure_running_server(
       };
 
       if running {
+        set_state(
+          &server_id,
+          true,
+          None,
+          Some(install_source_label(app, &server_id)),
+          Some("ready".to_string()),
+        )
+        .await;
         return Ok(LspServerStatus {
           id: server_id.clone(),
           running: true,
@@ -1432,6 +1661,9 @@ pub async fn lsp_request(
       .ok_or_else(|| "path required for textDocument/didOpen".to_string())?;
     let content = params.get("content").and_then(|value| value.as_str());
     let uri = ensure_document_open(&process, &workspace_root, path, content).await?;
+    if server_id == "vue" {
+      mirror_vue_document_to_typescript(&_app, &workspace_root, path, content, "open").await;
+    }
     return Ok(serde_json::json!({ "uri": uri }));
   }
 
@@ -1441,9 +1673,19 @@ pub async fn lsp_request(
       .and_then(|value| value.as_str())
       .ok_or_else(|| "path required for textDocument/didChange".to_string())?;
     let uri = if let Some(content) = params.get("content").and_then(|value| value.as_str()) {
-      sync_document_change_with_content(&process, &workspace_root, path, content).await?
+      let uri =
+        sync_document_change_with_content(&process, &workspace_root, path, content).await?;
+      if server_id == "vue" {
+        mirror_vue_document_to_typescript(&_app, &workspace_root, path, Some(content), "change")
+          .await;
+      }
+      uri
     } else {
-      sync_document_change(&process, &workspace_root, path).await?
+      let uri = sync_document_change(&process, &workspace_root, path).await?;
+      if server_id == "vue" {
+        mirror_vue_document_to_typescript(&_app, &workspace_root, path, None, "change").await;
+      }
+      uri
     };
     return Ok(serde_json::json!({ "uri": uri }));
   }
@@ -1456,6 +1698,9 @@ pub async fn lsp_request(
     let absolute = resolve_workspace_path(&workspace_root, path)?;
     let uri = path_to_uri(&absolute);
     close_document(&process, &uri).await?;
+    if server_id == "vue" {
+      mirror_vue_document_to_typescript(&_app, &workspace_root, path, None, "close").await;
+    }
     return Ok(serde_json::json!({ "uri": uri }));
   }
 
@@ -1705,8 +1950,43 @@ pub async fn lsp_set_server_disabled(
 #[cfg(test)]
 mod tests {
   use super::{
-    apply_server_disabled_flag, resolve_lsp_servers, server_display_label,
+    apply_server_disabled_flag, resolve_lsp_servers, server_display_label, tsserver_request_body,
+    unwrap_tsserver_request_tuple,
   };
+
+  #[test]
+  fn unwraps_vscode_jsonrpc_wrapped_tsserver_tuple() {
+    let params = serde_json::json!([[1, "_vue:projectInfo", { "file": "/tmp/App.vue" }]]);
+    let items = unwrap_tsserver_request_tuple(&params).unwrap();
+    assert_eq!(items[0], serde_json::json!(1));
+    assert_eq!(items[1], serde_json::json!("_vue:projectInfo"));
+  }
+
+  #[test]
+  fn accepts_unwrapped_tsserver_tuple() {
+    let params = serde_json::json!([2, "_vue:quickinfo", { "file": "/tmp/App.vue" }]);
+    let items = unwrap_tsserver_request_tuple(&params).unwrap();
+    assert_eq!(items[0], serde_json::json!(2));
+    assert_eq!(items[1], serde_json::json!("_vue:quickinfo"));
+  }
+
+  #[test]
+  fn tsserver_request_body_prefers_nested_body() {
+    let value = serde_json::json!({
+      "type": "response",
+      "body": { "displayString": "string" }
+    });
+    assert_eq!(
+      tsserver_request_body(value),
+      serde_json::json!({ "displayString": "string" })
+    );
+  }
+
+  #[test]
+  fn tsserver_request_body_falls_back_to_whole_value() {
+    let value = serde_json::json!({ "ok": true });
+    assert_eq!(tsserver_request_body(value), serde_json::json!({ "ok": true }));
+  }
 
   #[test]
   fn resolve_true_keeps_builtins() {

@@ -13,6 +13,7 @@ import {
   lspRequest,
 } from '@/services/pyrola/pyrola-tauri'
 import useWorkbenchStore from '@/composables/use-workbench-store'
+import useLspStatus from '@/composables/use-lsp-status'
 import {
   fileExtension,
   LSP_MARKER_OWNER,
@@ -54,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 const workbench = useWorkbenchStore()
+const lspStatus = useLspStatus()
 const containerRef = ref<HTMLDivElement | null>(null)
 const saving = ref(false)
 
@@ -71,6 +73,7 @@ const originalModels = new Map<string, monaco.editor.ITextModel>()
 const pathByModel = new Map<monaco.editor.ITextModel, string>()
 const lspServerByPath = new Map<string, string>()
 const dirtyByPath = new Map<string, boolean>()
+const lastLspContentByPath = new Map<string, string>()
 
 const lspActive = computed(() => isTauri())
 
@@ -406,13 +409,48 @@ const clearLspMarkers = (model: monaco.editor.ITextModel): void => {
 
 const getLspServerId = (path: string): string | null => lspServerByPath.get(path) ?? null
 
+/** Vue LS 3 hybrid mode: script hover/defs/completion come from TypeScript + plugin. */
+const serversForLspFeature = (path: string, primaryId: string): string[] => {
+  if (primaryId === 'vue' || fileExtension(path) === 'vue') {
+    return primaryId === 'vue' ? ['typescript', 'vue'] : ['typescript', primaryId]
+  }
+  return [primaryId]
+}
+
+const withLspTimeout = async <T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${label} timed out`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer)
+    }
+  }
+}
+
 const syncDocumentToLsp = async (path: string, content: string): Promise<void> => {
   const serverId = getLspServerId(path)
   if (!lspActive.value || !serverId) {
     return
   }
 
+  if (lastLspContentByPath.get(path) === content) {
+    return
+  }
+
   await lspRequest(serverId, 'textDocument/didChange', { path, content })
+  lastLspContentByPath.set(path, content)
 }
 
 const applyDiagnostics = (
@@ -500,6 +538,7 @@ const closeLspDocument = async (path: string): Promise<void> => {
     await lspRequest(serverId, 'textDocument/didClose', { path })
   } finally {
     lspServerByPath.delete(path)
+    lastLspContentByPath.delete(path)
   }
 }
 
@@ -543,10 +582,26 @@ const setupLspForPath = async (
     }
 
     lspServerByPath.set(path, server.id)
+    if (server.id === 'vue' || server.id === 'typescript') {
+      lspStatus.markAwaitingProjectLoad(server.id)
+    }
+    // Vue LS 3 hybrid: script features need TypeScript + @vue/typescript-plugin.
+    if (server.id === 'vue') {
+      try {
+        await lspEnsureServer('ts', root)
+      } catch (error) {
+        toast.error('TypeScript language server unavailable', {
+          description:
+            formatError(error) +
+            '. Vue script hover and completions need TypeScript with the Vue plugin.',
+        })
+      }
+    }
     await lspRequest(server.id, 'textDocument/didOpen', {
       path,
       content: model.getValue(),
     })
+    lastLspContentByPath.set(path, model.getValue())
     await refreshDiagnostics(path, model)
   } catch (error) {
     lspServerByPath.delete(path)
@@ -582,20 +637,49 @@ const registerLspProviders = (): void => {
         }
 
         const path = resolvePathForModel(model)
-        const serverId = path ? getLspServerId(path) : null
-        if (!path || !serverId) {
+        if (!path) {
+          return null
+        }
+
+        let primaryId = getLspServerId(path)
+        if (!primaryId) {
+          try {
+            await setupLspForPath(path, model)
+          } catch {
+            return null
+          }
+          primaryId = getLspServerId(path)
+        }
+        if (!primaryId) {
           return null
         }
 
         try {
-          await syncDocumentToLsp(path, model.getValue())
-          const result = await lspRequest(serverId, 'hover', {
-            path,
-            position: {
-              line: position.lineNumber - 1,
-              character: position.column - 1,
-            },
-          })
+          const result = await withLspTimeout(
+            (async () => {
+              await syncDocumentToLsp(path, model.getValue())
+              const positionPayload = {
+                line: position.lineNumber - 1,
+                character: position.column - 1,
+              }
+              for (const serverId of serversForLspFeature(path, primaryId)) {
+                try {
+                  const candidate = await lspRequest(serverId, 'hover', {
+                    path,
+                    position: positionPayload,
+                  })
+                  if (parseLspHoverContents(candidate).length > 0) {
+                    return candidate
+                  }
+                } catch {
+                  // Try the next capable server (Vue hybrid: TS then Vue).
+                }
+              }
+              return null
+            })(),
+            10_000,
+            'Hover',
+          )
 
           const contents = parseLspHoverContents(result)
           if (contents.length === 0) {
@@ -626,22 +710,32 @@ const registerLspProviders = (): void => {
         }
 
         const path = resolvePathForModel(model)
-        const serverId = path ? getLspServerId(path) : null
-        if (!path || !serverId) {
+        const primaryId = path ? getLspServerId(path) : null
+        if (!path || !primaryId) {
           return null
         }
 
         try {
           await syncDocumentToLsp(path, model.getValue())
-          const result = await lspRequest(serverId, 'goToDefinition', {
-            path,
-            position: {
-              line: position.lineNumber - 1,
-              character: position.column - 1,
-            },
-          })
-
-          const locations = parseLspLocations(result)
+          const positionPayload = {
+            line: position.lineNumber - 1,
+            character: position.column - 1,
+          }
+          let locations: ReturnType<typeof parseLspLocations> = []
+          for (const serverId of serversForLspFeature(path, primaryId)) {
+            try {
+              const result = await lspRequest(serverId, 'goToDefinition', {
+                path,
+                position: positionPayload,
+              })
+              locations = parseLspLocations(result)
+              if (locations.length > 0) {
+                break
+              }
+            } catch {
+              // Try the next capable server.
+            }
+          }
           if (locations.length === 0) {
             return null
           }
@@ -671,24 +765,32 @@ const registerLspProviders = (): void => {
         }
 
         const path = resolvePathForModel(model)
-        const serverId = path ? getLspServerId(path) : null
-        if (!path || !serverId) {
+        const primaryId = path ? getLspServerId(path) : null
+        if (!path || !primaryId) {
           return { suggestions: [] }
         }
 
         try {
           await syncDocumentToLsp(path, model.getValue())
-          const result = await lspRequest(serverId, 'textDocument/completion', {
-            path,
-            position: {
-              line: position.lineNumber - 1,
-              character: position.column - 1,
-            },
-          })
-
-          return {
-            suggestions: parseLspCompletionItems(result, monaco),
+          const positionPayload = {
+            line: position.lineNumber - 1,
+            character: position.column - 1,
           }
+          for (const serverId of serversForLspFeature(path, primaryId)) {
+            try {
+              const result = await lspRequest(serverId, 'textDocument/completion', {
+                path,
+                position: positionPayload,
+              })
+              const suggestions = parseLspCompletionItems(result, monaco)
+              if (suggestions.length > 0) {
+                return { suggestions }
+              }
+            } catch {
+              // Try the next capable server.
+            }
+          }
+          return { suggestions: [] }
         } catch {
           return { suggestions: [] }
         }
@@ -806,6 +908,7 @@ const disposeModel = (path: string): void => {
   model.dispose()
   models.delete(path)
   dirtyByPath.delete(path)
+  lastLspContentByPath.delete(path)
 }
 
 const syncOpenModels = (openPaths: string[]): void => {
@@ -980,6 +1083,7 @@ onBeforeUnmount(() => {
   models.clear()
   lspServerByPath.clear()
   dirtyByPath.clear()
+  lastLspContentByPath.clear()
   resizeObserver?.disconnect()
   resizeObserver = null
   disposeDiffEditorInstance()

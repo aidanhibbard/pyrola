@@ -168,6 +168,9 @@ const loadTree = async (): Promise<void> => {
   try {
     await revealPath(path)
   } catch (error) {
+    if (error instanceof Error && error.message.includes('__vnode')) {
+      return
+    }
     toast.error('Failed to reveal file in tree', {
       description: treeErrorMessage(error),
     })
@@ -230,7 +233,15 @@ const revealPath = async (path: string): Promise<void> => {
   }
   expandedPaths.value = nextExpanded
 
-  await scrollPathIntoView(path)
+  try {
+    await scrollPathIntoView(path)
+  } catch (error) {
+    // Tree expand can race with teleported menus unmounting; scroll is best-effort.
+    if (error instanceof Error && error.message.includes('__vnode')) {
+      return
+    }
+    throw error
+  }
 }
 
 const refresh = async (): Promise<void> => {
@@ -479,9 +490,16 @@ watch(
       return
     }
     selectedPath.value = path
-    revealPath(path).catch((error) => {
-      toast.error('Failed to reveal file in tree', {
-        description: treeErrorMessage(error),
+    // Defer reveal so teleported menus (LSP status, etc.) can finish unmounting
+    // before the tree expands and re-renders the toolbar slot.
+    nextTick(() => {
+      revealPath(path).catch((error) => {
+        if (error instanceof Error && error.message.includes('__vnode')) {
+          return
+        }
+        toast.error('Failed to reveal file in tree', {
+          description: treeErrorMessage(error),
+        })
       })
     })
   },

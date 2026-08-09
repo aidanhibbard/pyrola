@@ -276,7 +276,8 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
     &["typescript", "typescriptreact", "javascript", "javascriptreact", "javascript", "javascript", "typescript", "typescript"],
     LspTier::A,
-    &["typescript-language-server@4.3.3", "typescript@5.8.2"],
+    // 4.4+ required for typescript.tsserverRequest (Vue LS 3 hybrid bridge).
+    &["typescript-language-server@5.3.0", "typescript@5.8.2"],
     "node_modules/typescript-language-server/lib/cli.mjs",
     &[
       "package.json",
@@ -294,7 +295,7 @@ static BUILTINS: &[BuiltinLspSpec] = &[
     &[".vue"],
     &["vue"],
     LspTier::A,
-    &["@vue/language-server@2.2.8", "@vue/typescript-plugin@2.2.8", "typescript@5.8.2"],
+    &["@vue/language-server@3.3.9", "@vue/typescript-plugin@3.3.9", "typescript@5.8.2"],
     "node_modules/@vue/language-server/bin/vue-language-server.js",
     &[
       "package.json",
@@ -915,9 +916,9 @@ pub fn builtin_server_map() -> HashMap<String, (Vec<String>, Vec<String>, serde_
     let command = spec.command.iter().map(|s| (*s).to_string()).collect();
     let extensions = spec.extensions.iter().map(|s| (*s).to_string()).collect();
     let initialization = if spec.id == "vue" {
-      // typescript.tsdk is filled in at process start by build_initialization_options.
+      // Vue LS 3 hybrid mode: script/TS features come from typescript-language-server
+      // + @vue/typescript-plugin. The client must bridge tsserver/request notifications.
       serde_json::json!({
-        "typescript": {},
         "vue": { "complete": { "codelenses": true } }
       })
     } else {
