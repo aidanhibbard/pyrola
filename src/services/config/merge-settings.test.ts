@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   isPersonalOnlyProjectKey,
+  mergeKeyedSettingRecords,
   mergeSettings,
   stripPersonalOnlyProjectOverrides,
 } from '@/services/config/merge-settings'
 import { parseProjectOverrides } from '@/services/config/pyrola-config'
 import { defaultPyrolaSettings } from '@/schemas/pyrola-settings'
+import type {
+  McpTrustRecord,
+  PermissionRecord,
+} from '@/types/harness/permission'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 
 describe('isPersonalOnlyProjectKey', () => {
@@ -91,6 +96,205 @@ describe('mergeSettings with stripped project overrides', () => {
     expect(effective['providers.openai.apiKeyRef']).toBe('openai')
     expect(effective['lsp.autoDownload']).toBe(true)
     expect(effective['appearance.theme']).toBe('dark')
+  })
+})
+
+describe('mergeSettings keyed grant arrays', () => {
+  it('unions personal Always MCP trust with project CodeGraph leftover', () => {
+    const personal: PyrolaSettings = {
+      ...defaultPyrolaSettings(),
+      'agent.mcp.trust': [
+        {
+          serverId: 'brave',
+          scope: 'always',
+          fingerprint: 'fp-brave',
+        },
+      ],
+    }
+    const project: PyrolaSettings = {
+      version: 1,
+      'agent.mcp.trust': [
+        {
+          serverId: 'codegraph',
+          scope: 'workspace',
+          fingerprint: 'fp-codegraph',
+        },
+      ],
+    }
+
+    const effective = mergeSettings(personal, project)
+    const trust = effective['agent.mcp.trust'] ?? []
+
+    expect(trust).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ serverId: 'brave', scope: 'always' }),
+        expect.objectContaining({ serverId: 'codegraph', scope: 'workspace' }),
+      ]),
+    )
+    expect(trust).toHaveLength(2)
+  })
+
+  it('lets project MCP trust win for the same serverId unless personal is never', () => {
+    const personal: PyrolaSettings = {
+      ...defaultPyrolaSettings(),
+      'agent.mcp.trust': [
+        { serverId: 'brave', scope: 'always', fingerprint: 'fp-old' },
+        { serverId: 'blocked', scope: 'never', fingerprint: 'fp-blocked' },
+      ],
+    }
+    const project: PyrolaSettings = {
+      version: 1,
+      'agent.mcp.trust': [
+        { serverId: 'brave', scope: 'workspace', fingerprint: 'fp-new' },
+        { serverId: 'blocked', scope: 'workspace', fingerprint: 'fp-blocked' },
+      ],
+    }
+
+    const effective = mergeSettings(personal, project)
+    const byId = new Map(
+      (effective['agent.mcp.trust'] ?? []).map((record) => [record.serverId, record]),
+    )
+
+    expect(byId.get('brave')).toEqual({
+      serverId: 'brave',
+      scope: 'workspace',
+      fingerprint: 'fp-new',
+    })
+    expect(byId.get('blocked')).toEqual({
+      serverId: 'blocked',
+      scope: 'never',
+      fingerprint: 'fp-blocked',
+    })
+  })
+
+  it('unions personal Always permissions with project workspace grants', () => {
+    const personal: PyrolaSettings = {
+      ...defaultPyrolaSettings(),
+      'agent.permissions': [
+        {
+          capability: 'fs.write:src/a.ts',
+          verdict: 'allow',
+          scope: 'always',
+        },
+      ],
+    }
+    const project: PyrolaSettings = {
+      version: 1,
+      'agent.permissions': [
+        {
+          capability: 'git.commit',
+          verdict: 'allow',
+          scope: 'workspace',
+        },
+      ],
+    }
+
+    const effective = mergeSettings(personal, project)
+    const permissions = effective['agent.permissions'] ?? []
+
+    expect(permissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ capability: 'fs.write:src/a.ts', scope: 'always' }),
+        expect.objectContaining({ capability: 'git.commit', scope: 'workspace' }),
+      ]),
+    )
+    expect(permissions).toHaveLength(2)
+  })
+
+  it('lets deny win over allow for the same capability', () => {
+    const personal: PyrolaSettings = {
+      ...defaultPyrolaSettings(),
+      'agent.permissions': [
+        {
+          capability: 'fs.write:src/secret.ts',
+          verdict: 'deny',
+          scope: 'always',
+        },
+      ],
+    }
+    const project: PyrolaSettings = {
+      version: 1,
+      'agent.permissions': [
+        {
+          capability: 'fs.write:src/secret.ts',
+          verdict: 'allow',
+          scope: 'workspace',
+        },
+      ],
+    }
+
+    const effective = mergeSettings(personal, project)
+    expect(effective['agent.permissions']).toEqual([
+      {
+        capability: 'fs.write:src/secret.ts',
+        verdict: 'deny',
+        scope: 'always',
+      },
+    ])
+  })
+
+  it('unions autoApproveGlobs without dropping personal entries', () => {
+    const personal: PyrolaSettings = {
+      ...defaultPyrolaSettings(),
+      'agent.autoApproveGlobs': ['src/**', 'docs/**'],
+    }
+    const project: PyrolaSettings = {
+      version: 1,
+      'agent.autoApproveGlobs': ['docs/**', 'tmp/**'],
+    }
+
+    const effective = mergeSettings(personal, project)
+    expect(effective['agent.autoApproveGlobs']).toEqual(['src/**', 'docs/**', 'tmp/**'])
+  })
+})
+
+describe('mergeKeyedSettingRecords', () => {
+  it('uses resolveConflict only when keys collide', () => {
+    const personal: McpTrustRecord[] = [
+      { serverId: 'a', scope: 'always', fingerprint: '1' },
+    ]
+    const project: McpTrustRecord[] = [
+      { serverId: 'b', scope: 'workspace', fingerprint: '2' },
+      { serverId: 'a', scope: 'workspace', fingerprint: '3' },
+    ]
+
+    const merged = mergeKeyedSettingRecords(
+      personal,
+      project,
+      (record) => record.serverId,
+      (personalRecord, projectRecord) => {
+        expect(personalRecord.serverId).toBe(projectRecord.serverId)
+        return projectRecord
+      },
+    )
+
+    expect(merged).toEqual([
+      { serverId: 'a', scope: 'workspace', fingerprint: '3' },
+      { serverId: 'b', scope: 'workspace', fingerprint: '2' },
+    ])
+  })
+
+  it('merges permission records by capability', () => {
+    const personal: PermissionRecord[] = [
+      { capability: 'shell', verdict: 'deny', scope: 'always' },
+    ]
+    const project: PermissionRecord[] = [
+      { capability: 'shell', verdict: 'allow', scope: 'workspace' },
+      { capability: 'git.commit', verdict: 'allow', scope: 'workspace' },
+    ]
+
+    const merged = mergeKeyedSettingRecords(
+      personal,
+      project,
+      (record) => record.capability,
+      (personalRecord, projectRecord) =>
+        personalRecord.verdict === 'deny' ? personalRecord : projectRecord,
+    )
+
+    expect(merged).toEqual([
+      { capability: 'shell', verdict: 'deny', scope: 'always' },
+      { capability: 'git.commit', verdict: 'allow', scope: 'workspace' },
+    ])
   })
 })
 

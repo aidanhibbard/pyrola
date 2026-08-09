@@ -250,6 +250,7 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
           ),
         )
       }
+      sessionTrusts.set(pending.serverId, pending.fingerprint)
     } else {
       const existing = config.personalSettings.value['agent.mcp.trust'] ?? []
       await config.updateSetting(
@@ -262,6 +263,7 @@ const handleTrustChoice = async (scope: McpTrustScope): Promise<void> => {
           pending.fingerprint,
         ),
       )
+      sessionTrusts.set(pending.serverId, pending.fingerprint)
     }
 
     await pending.action()

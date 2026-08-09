@@ -60,6 +60,32 @@ vi.mock('@/services/harness/gate-tool-permission', () => ({
   gateToolPermission,
 }))
 
+const mcpCallTool = vi.fn<
+  (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<unknown>
+>()
+
+vi.mock('@/services/mcp/mcp-runtime', () => ({
+  default: {
+    callTool: (
+      serverId: string,
+      toolName: string,
+      args: Record<string, unknown>,
+    ) => mcpCallTool(serverId, toolName, args),
+    getStatus: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+  },
+}))
+
+vi.mock('@/services/mcp/mcp-http-client', () => ({
+  setMcpElicitationHandler: vi.fn((handler: unknown) => handler),
+}))
+
+vi.mock('@/services/mcp/mcp-auth-gate', () => ({
+  requestMcpAuth: vi.fn(),
+}))
+
+
 const createAgentShell = vi.fn<
   (args: { chatId: string; projectRoot: string; command: string }) => Promise<{
     shellId: string
@@ -432,5 +458,95 @@ title: Brief
 
     expect(result).toMatchObject({ error: expect.stringMatching(/slug/i) })
     expect(fsWriteFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('build-tools CodeGraph first-party tools', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    gateToolPermission.mockResolvedValue(true)
+    mcpCallTool.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: [
+            '**CodeGraph Status**',
+            '',
+            '**Files indexed:** 12',
+            '**Total nodes:** 100',
+            '**Total edges:** 40',
+          ].join('\n'),
+        },
+      ],
+    })
+  })
+
+  const ctx = {
+    projectRoot: '/project',
+    projectSlug: 'project',
+    chatId: 'chat-1',
+    settings: { version: 1 } as PyrolaSettings,
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    supportsVision: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
+  }
+
+  const runTool = async (
+    execute: unknown,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<unknown> => {
+    const runner = execute as (
+      value: Record<string, unknown>,
+      options: { toolCallId: string },
+    ) => Promise<unknown>
+    return runner(input, { toolCallId })
+  }
+
+  it('calls codegraph_status without disk MCP trust or permission gate', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(tools.codebase_status.execute, {}, 'tc-cg-status')
+
+    expect(mcpCallTool).toHaveBeenCalledWith('codegraph', 'codegraph_status', {})
+    expect(gateToolPermission).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ ready: true, filesIndexed: 12 })
+  })
+
+  it('calls codegraph_explore without requiring user MCP config', async () => {
+    mcpCallTool.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: [
+            '## AuthService',
+            '',
+            '```typescript',
+            '// File: src/auth.ts',
+            'export class AuthService {}',
+            '```',
+          ].join('\n'),
+        },
+      ],
+    })
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.codebase_explore.execute,
+      { query: 'AuthService' },
+      'tc-cg-explore',
+    )
+
+    expect(mcpCallTool).toHaveBeenCalledWith('codegraph', 'codegraph_explore', {
+      query: 'AuthService',
+    })
+    expect(gateToolPermission).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      summary: expect.any(String),
+      results: expect.any(Array),
+    })
   })
 })

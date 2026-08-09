@@ -1,6 +1,10 @@
 import useMcpServers from '@/composables/use-mcp-servers'
 import { migrateMcpConfig } from '@/schemas/mcp-config'
 import stripCodegraphMcpServer from '@/services/codegraph/strip-codegraph-mcp-server'
+import {
+  loadProjectSettings,
+  saveSettings,
+} from '@/services/config/pyrola-config'
 import mcpRuntime from '@/services/mcp/mcp-runtime'
 import { sessionTrusts } from '@/services/mcp/mcp-trust'
 import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
@@ -41,6 +45,30 @@ const persistStrippedMcpConfig = async (
   await writeMcpConfig(scope, cleaned, root)
 }
 
+const pruneObsoleteCodegraphTrust = async (root: string): Promise<void> => {
+  const projectSettings = await loadProjectSettings(root)
+  const existing = projectSettings['agent.mcp.trust'] ?? []
+  const next = existing.filter((record) => record.serverId !== CODEGRAPH_SERVER_ID)
+  if (next.length === existing.length) {
+    return
+  }
+  if (next.length === 0) {
+    const rest = { ...projectSettings }
+    delete rest['agent.mcp.trust']
+    await saveSettings('project', { ...rest, version: 1 }, root)
+    return
+  }
+  await saveSettings(
+    'project',
+    {
+      ...projectSettings,
+      version: 1,
+      'agent.mcp.trust': next,
+    },
+    root,
+  )
+}
+
 const ensureCodeGraphOnce = async (root: string): Promise<void> => {
   const dbStat = await fsStat(root, relativeDbPath)
   if (!dbStat.exists) {
@@ -49,6 +77,7 @@ const ensureCodeGraphOnce = async (root: string): Promise<void> => {
 
   await persistStrippedMcpConfig('project', root)
   await persistStrippedMcpConfig('personal', null)
+  await pruneObsoleteCodegraphTrust(root)
 
   const server = buildCodegraphServer(root)
   sessionTrusts.set(CODEGRAPH_SERVER_ID, mcpServerFingerprint(server))

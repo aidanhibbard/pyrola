@@ -100,7 +100,11 @@ import {
   markCreatedPlanThisTurn,
 } from '@/services/harness/plan-execution-session'
 import linkAbortSignal from '@/utils/link-abort-signal'
-import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
+import {
+  CODEGRAPH_SERVER_ID,
+  buildCodegraphServer,
+  isInternalMcpServer,
+} from '@/types/codegraph/managed-codegraph'
 import normalizeCodegraphResult from '@/services/codegraph/normalize-codegraph-result'
 
 export type HarnessToolContext = {
@@ -320,6 +324,14 @@ const resolveTrustedMcpServer = async (
   trusted: boolean
   config?: import('@/types/pyrola/mcp-config').McpServerConfig
 }> => {
+  // First-party CodeGraph is in-memory only (stripped from user mcp.json).
+  if (isInternalMcpServer(serverId)) {
+    return {
+      trusted: true,
+      config: buildCodegraphServer(ctx.projectRoot),
+    }
+  }
+
   const personal = migrateMcpConfig(await readMcpConfig('personal', null))
   const projectRaw = await readMcpConfig('project', ctx.projectRoot).catch(() => null)
   const project = projectRaw ? migrateMcpConfig(projectRaw) : null
@@ -348,34 +360,8 @@ const callManagedCodegraphTool = async (
   },
 ): Promise<ManagedCodegraphCallResult> => {
   const serverId = CODEGRAPH_SERVER_ID
-  const trust = await resolveTrustedMcpServer(ctx, serverId)
-  if (!trust.trusted) {
-    return {
-      ok: false,
-      payload: {
-        error: `MCP server "${serverId}" has not been granted trust. Open Settings → MCP and start the server to grant trust before the agent can call its tools.`,
-      },
-    }
-  }
-
-  const allowed = await gateToolPermission({
-    ctx: toPermCtx(ctx),
-    toolCallId: args.toolCallId,
-    name: args.firstPartyName,
-    kind: 'mcp',
-    action: 'mcp.call',
-    capability: mcpCapability(serverId, args.mcpToolName),
-    title: ctx.subagentLabel
-      ? `${ctx.subagentLabel}: ${args.firstPartyName}`
-      : args.firstPartyName,
-    serverId,
-  })
-  if (!allowed) {
-    return {
-      ok: false,
-      payload: { rejected: true, error: `${args.firstPartyName} denied` },
-    }
-  }
+  // Product-owned CodeGraph tools skip user MCP trust and per-tool permission cards.
+  // Lifecycle is owned by ensureCodeGraph + the status chip runtime path.
 
   const invokeTool = async (): Promise<unknown> => {
     const previous = setMcpElicitationHandler(async (request) => {
