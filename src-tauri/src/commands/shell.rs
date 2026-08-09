@@ -258,8 +258,57 @@ async fn pump_shell_stream(
   }
 }
 
+/// Resolve bash for `pipefail` honest pipeline exit codes.
+/// Cached once. Returns `None` when bash is unavailable (caller falls back to `sh`).
+fn resolve_bash() -> Option<&'static str> {
+  static BASH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+  BASH
+    .get_or_init(|| {
+      if std::path::Path::new("/bin/bash").exists() {
+        return Some("/bin/bash".to_string());
+      }
+      std::process::Command::new("which")
+        .arg("bash")
+        .output()
+        .ok()
+        .and_then(|out| {
+          if !out.status.success() {
+            return None;
+          }
+          let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+          if path.is_empty() {
+            None
+          } else {
+            Some(path)
+          }
+        })
+    })
+    .as_deref()
+}
+
+/// Append shell invocation args: `bash -o pipefail -c <command>`, or `sh -c <command>`.
+/// Used when the shell binary is an argument (sandbox-exec / bwrap), not Command::new.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn append_shell_command(cmd: &mut Command, command: &str) {
+  match resolve_bash() {
+    Some(bash) => {
+      cmd.arg(bash).arg("-o").arg("pipefail").arg("-c").arg(command);
+    }
+    None => {
+      cmd.arg("sh").arg("-c").arg(command);
+    }
+  }
+}
+
 fn build_tracked_command(project_root: &str, command: &str) -> Command {
-  let mut cmd = Command::new("sh");
+  let mut cmd = match resolve_bash() {
+    Some(bash) => {
+      let mut cmd = Command::new(bash);
+      cmd.arg("-o").arg("pipefail");
+      cmd
+    }
+    None => Command::new("sh"),
+  };
   cmd
     .arg("-c")
     .arg(command)
@@ -286,13 +335,13 @@ fn build_tracked_command(project_root: &str, command: &str) -> Command {
 fn build_sandboxed_command(project_root: &str, command: &str, allow_network: bool) -> Command {
   use std::env;
 
-  let profile = generate_seatbelt_profile(allow_network);
   let home = env::var("HOME").unwrap_or_default();
   let tmpdir_raw = env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
   let tmpdir = std::fs::canonicalize(&tmpdir_raw)
     .map(|p| p.to_string_lossy().to_string())
     .unwrap_or(tmpdir_raw);
   let project_root_clean = project_root.trim_end_matches('/').to_string();
+  let profile = generate_seatbelt_profile(allow_network, &home, &project_root_clean);
 
   let mut cmd = Command::new("/usr/bin/sandbox-exec");
   cmd
@@ -303,10 +352,9 @@ fn build_sandboxed_command(project_root: &str, command: &str, allow_network: boo
     .arg("-D")
     .arg(format!("TMPDIR={tmpdir}"))
     .arg("-p")
-    .arg(profile)
-    .arg("sh")
-    .arg("-c")
-    .arg(command)
+    .arg(profile);
+  append_shell_command(&mut cmd, command);
+  cmd
     .current_dir(project_root)
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
@@ -397,11 +445,9 @@ fn build_bubblewrap_command(bwrap: &str, project_root: &str, command: &str, allo
   cmd.arg("--die-with-parent");
 
   // The actual command
+  cmd.arg("--");
+  append_shell_command(&mut cmd, command);
   cmd
-    .arg("--")
-    .arg("sh")
-    .arg("-c")
-    .arg(command)
     .current_dir(project_root)
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
