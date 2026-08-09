@@ -22,6 +22,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/ui/tabs'
 import useCommandPalette from '@/composables/use-command-palette'
 import {
+  COMMAND_PALETTE_GROUP_ORDER,
   COMMAND_PALETTE_TABS,
   getCommandPaletteTab,
   type CommandPaletteItem,
@@ -48,6 +49,13 @@ const filteredItems = computed(() => {
     (item) => getCommandPaletteTab(item) === activeTab.value,
   )
 })
+
+const groupedItems = computed(() =>
+  COMMAND_PALETTE_GROUP_ORDER.map((group) => ({
+    group,
+    items: filteredItems.value.filter((item) => item.group === group),
+  })).filter((section) => section.items.length > 0),
+)
 
 const itemIcon = (item: CommandPaletteItem) => {
   if (item.action === 'new-agent') {
@@ -162,7 +170,30 @@ const handleSelect = async (item: CommandPaletteItem): Promise<void> => {
     </Tabs>
     <CommandList>
       <CommandEmpty>No results found.</CommandEmpty>
-      <CommandGroup>
+      <template v-if="activeTab === 'All'">
+        <CommandGroup
+          v-for="section in groupedItems"
+          :key="section.group"
+          :heading="section.group"
+        >
+          <CommandItem
+            v-for="item in section.items"
+            :key="item.id"
+            :value="item.subtitle ? `${item.label} ${item.subtitle}` : item.label"
+            @select="handleSelect(item)"
+          >
+            <component :is="itemIcon(item)" />
+            <span class="truncate">{{ item.label }}</span>
+            <span
+              v-if="item.subtitle"
+              class="ml-auto truncate text-xs text-muted-foreground"
+            >
+              {{ item.subtitle }}
+            </span>
+          </CommandItem>
+        </CommandGroup>
+      </template>
+      <CommandGroup v-else>
         <CommandItem
           v-for="item in filteredItems"
           :key="item.id"

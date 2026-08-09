@@ -7,6 +7,14 @@ export type CommandPaletteGroup =
   | 'Pinned'
   | 'Settings'
 
+export const COMMAND_PALETTE_GROUP_ORDER: CommandPaletteGroup[] = [
+  'Actions',
+  'Projects',
+  'Chats',
+  'Pinned',
+  'Settings',
+]
+
 export type CommandPaletteAction =
   | 'new-agent'
   | 'open-settings'
