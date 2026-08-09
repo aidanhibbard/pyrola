@@ -35,6 +35,10 @@ const lspRequest = vi.fn<() => Promise<unknown>>()
 
 const gateToolPermission = vi.fn<() => Promise<boolean>>().mockResolvedValue(true)
 
+const readMcpConfig = vi.fn<
+  (scope: string, projectRoot: string | null) => Promise<unknown>
+>()
+
 vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   fsReadFile: vi.fn<() => Promise<string>>(),
   fsListDir: vi.fn<() => Promise<unknown>>(),
@@ -53,6 +57,7 @@ vi.mock('@/services/pyrola/pyrola-tauri', () => ({
   lspRequest,
   mcpCallTool: vi.fn<() => Promise<unknown>>(),
   httpProxyRequest: vi.fn<() => Promise<unknown>>(),
+  readMcpConfig,
 }))
 
 vi.mock('@/services/git/git-repo-info', () => ({
@@ -66,6 +71,9 @@ vi.mock('@/services/harness/gate-tool-permission', () => ({
 const mcpCallTool = vi.fn<
   (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<unknown>
 >()
+const mcpGetStatus = vi.fn<
+  (serverId: string, config?: unknown) => Promise<unknown>
+>()
 
 vi.mock('@/services/mcp/mcp-runtime', () => ({
   default: {
@@ -74,7 +82,7 @@ vi.mock('@/services/mcp/mcp-runtime', () => ({
       toolName: string,
       args: Record<string, unknown>,
     ) => mcpCallTool(serverId, toolName, args),
-    getStatus: vi.fn(),
+    getStatus: (serverId: string, config?: unknown) => mcpGetStatus(serverId, config),
     start: vi.fn(),
     stop: vi.fn(),
   },
@@ -86,6 +94,14 @@ vi.mock('@/services/mcp/mcp-http-client', () => ({
 
 vi.mock('@/services/mcp/mcp-auth-gate', () => ({
   requestMcpAuth: vi.fn(),
+}))
+
+vi.mock('@/services/mcp/mcp-trust', () => ({
+  isMcpTrusted: vi.fn(() => true),
+  sessionTrusts: new Map(),
+  getMcpTrust: vi.fn(),
+  upsertMcpTrustRecord: vi.fn(),
+  clearSessionTrust: vi.fn(),
 }))
 
 
@@ -688,5 +704,103 @@ describe('build-tools lsp', () => {
       error: 'query is required for workspaceSymbol',
     })
     expect(lspRequest).not.toHaveBeenCalled()
+  })
+})
+
+describe('build-tools call_mcp_tool args normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    gateToolPermission.mockResolvedValue(true)
+    readMcpConfig.mockImplementation(async (scope: string) => {
+      if (scope === 'personal') {
+        return {
+          servers: {
+            brave: { command: 'npx', args: ['-y', '@brave/brave-search-mcp-server'] },
+          },
+        }
+      }
+      return null
+    })
+    mcpGetStatus.mockResolvedValue({
+      serverId: 'brave',
+      status: 'connected',
+      tools: [
+        {
+          name: 'brave_web_search',
+          description: 'Search the web',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string' },
+            },
+          },
+        },
+      ],
+      error: null,
+    })
+    mcpCallTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
+  })
+
+  const ctx = {
+    projectRoot: '/project',
+    projectSlug: 'project',
+    chatId: 'chat-1',
+    settings: { version: 1 } as PyrolaSettings,
+    permissionLevel: 'ask' as const,
+    sessionAllows: new Set<string>(),
+    sessionDenies: new Set<string>(),
+    sandboxEnabled: false,
+    supportsVision: false,
+    onPendingApproval: vi.fn<(entry: PendingApprovalView) => void>(),
+  }
+
+  const runTool = async (
+    execute: unknown,
+    input: Record<string, unknown>,
+    toolCallId: string,
+  ): Promise<unknown> => {
+    const runner = execute as (
+      value: Record<string, unknown>,
+      options: { toolCallId: string },
+    ) => Promise<unknown>
+    return runner(input, { toolCallId })
+  }
+
+  it('returns a clear validation error and skips MCP for nested string args', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const result = await runTool(
+      tools.call_mcp_tool.execute,
+      {
+        serverId: 'brave',
+        tool: 'brave_web_search',
+        args: { query: { test: 'search' } },
+      },
+      'tc-mcp-nested',
+    )
+
+    expect(result).toMatchObject({
+      isError: true,
+      error: expect.stringContaining('Expected args.query to be string, got object'),
+    })
+    expect(mcpCallTool).not.toHaveBeenCalled()
+  })
+
+  it('unwraps self-nested string args before calling MCP', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    await runTool(
+      tools.call_mcp_tool.execute,
+      {
+        serverId: 'brave',
+        tool: 'brave_web_search',
+        args: { query: { query: 'Brave Search API' } },
+      },
+      'tc-mcp-unwrap',
+    )
+
+    expect(mcpCallTool).toHaveBeenCalledWith('brave', 'brave_web_search', {
+      query: 'Brave Search API',
+    })
   })
 })

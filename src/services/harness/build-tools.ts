@@ -61,6 +61,7 @@ import { listEffectiveMcpServers, listUserMcpServers } from '@/services/mcp/merg
 import { isMcpTrusted, sessionTrusts } from '@/services/mcp/mcp-trust'
 import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import mcpRuntime from '@/services/mcp/mcp-runtime'
+import normalizeMcpToolArgs from '@/services/mcp/normalize-mcp-tool-args'
 import { requestMcpAuth } from '@/services/mcp/mcp-auth-gate'
 import { setMcpElicitationHandler } from '@/services/mcp/mcp-http-client'
 import { UnauthorizedError } from '@ai-sdk/mcp'
@@ -1026,7 +1027,8 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
       serverId: z.string().describe('MCP server id from config / get_mcp_tools'),
       tool: z.string().describe('Tool name from that server'),
       args: z
-        .record(z.unknown())
+        .object({})
+        .passthrough()
         .default({})
         .describe(
           'Flat object matching that MCP tool inputSchema exactly. Example for brave_web_search: {"query":"search text"} where query is a string. Never wrap values as {"query":{"query":"..."}}.',
@@ -1055,6 +1057,17 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
         return { rejected: true, error: 'MCP call denied' }
       }
 
+      const status = await mcpRuntime.getStatus(serverId, trust.config)
+      const toolInfo = status.tools.find((item) => item.name === toolName)
+      const normalized = normalizeMcpToolArgs(
+        (args ?? {}) as Record<string, unknown>,
+        toolInfo?.inputSchema ?? null,
+      )
+      if (!normalized.ok) {
+        return { error: normalized.error, isError: true }
+      }
+      const toolArgs = normalized.args
+
       const invokeTool = async (): Promise<unknown> => {
         const previous = setMcpElicitationHandler(async (request) => {
           const decision = await requestQuestion(
@@ -1080,11 +1093,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
           }
         })
         try {
-          return await mcpRuntime.callTool(
-            serverId,
-            toolName,
-            args as Record<string, unknown>,
-          )
+          return await mcpRuntime.callTool(serverId, toolName, toolArgs)
         } finally {
           setMcpElicitationHandler(previous)
         }
