@@ -17,6 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import useAppUpdater from '@/composables/use-app-updater'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
@@ -117,131 +118,131 @@ const shortcuts = [
 </script>
 
 <template>
-  <section class="space-y-6">
-    <h2 class="text-lg font-medium">General</h2>
-
-    <div class="space-y-2">
-      <Label>Machine label</Label>
-      <p class="text-sm text-muted-foreground">Shown in chat context bar</p>
-      <Input
-        :model-value="machineLabel"
-        @update:model-value="updateMachineLabel"
-      />
-    </div>
-
-    <div class="flex items-center gap-1">
-      <Label>Theme</Label>
-      <Tooltip
-        v-for="option in themeOptions"
-        :key="option.value"
-      >
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-7 w-7"
-            :class="theme === option.value ? 'bg-muted text-foreground' : 'text-muted-foreground'"
-            :aria-label="option.label"
-            :aria-pressed="theme === option.value"
-            @click="setTheme(option.value)"
-          >
-            <component
-              :is="option.icon"
-              class="h-4 w-4"
-            />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{{ option.label }}</TooltipContent>
-      </Tooltip>
-    </div>
-
-    <div class="space-y-2">
-      <div class="flex items-center gap-1">
-        <Label>Keyboard shortcuts</Label>
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-7 w-7"
-              aria-label="View shortcuts"
-              @click="shortcutsOpen = true"
-            >
-              <Keyboard class="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>View shortcuts</TooltipContent>
-        </Tooltip>
+  <SettingsSectionScroll title="General">
+    <div class="space-y-6">
+      <div class="space-y-2">
+        <Label>Machine label</Label>
+        <p class="text-sm text-muted-foreground">Shown in chat context bar</p>
+        <Input
+          :model-value="machineLabel"
+          @update:model-value="updateMachineLabel"
+        />
       </div>
-      <p class="text-sm text-muted-foreground">Cmd+K search, Cmd+N new agent, ...</p>
-    </div>
 
-    <div class="space-y-2">
       <div class="flex items-center gap-1">
-        <Label>Updates</Label>
-        <Tooltip>
+        <Label>Theme</Label>
+        <Tooltip
+          v-for="option in themeOptions"
+          :key="option.value"
+        >
           <TooltipTrigger as-child>
             <Button
               variant="ghost"
               size="icon"
               class="h-7 w-7"
-              aria-label="Check for updates"
-              :disabled="updater.checking.value"
-              @click="handleCheckForUpdates"
+              :class="theme === option.value ? 'bg-muted text-foreground' : 'text-muted-foreground'"
+              :aria-label="option.label"
+              :aria-pressed="theme === option.value"
+              @click="setTheme(option.value)"
             >
-              <Loader2
-                v-if="updater.checking.value"
-                class="h-4 w-4 animate-spin"
-              />
-              <RefreshCw
-                v-else
+              <component
+                :is="option.icon"
                 class="h-4 w-4"
               />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Check for updates</TooltipContent>
+          <TooltipContent>{{ option.label }}</TooltipContent>
         </Tooltip>
       </div>
-      <p class="text-sm text-muted-foreground">
-        Check for a new version. Install only when you choose to.
-      </p>
 
-      <div
-        v-if="updater.updateAvailable.value"
-        class="space-y-3 rounded-md border border-border bg-muted/30 p-3"
-      >
-        <p class="text-sm font-medium">
-          Update available: v{{ updater.updateAvailable.value.version }}
-        </p>
-        <p
-          v-if="updater.updateAvailable.value.body"
-          class="whitespace-pre-wrap text-sm text-muted-foreground"
-        >
-          {{ updater.updateAvailable.value.body }}
-        </p>
-        <Button
-          size="sm"
-          class="w-fit"
-          :disabled="updater.downloading.value"
-          @click="handleDownloadAndRestart"
-        >
-          {{ updater.downloading.value ? 'Downloading...' : 'Download and restart' }}
-        </Button>
-        <div v-if="updater.downloading.value" class="space-y-2">
-          <Progress
-            v-if="updater.progress.value && updater.progress.value.contentLength > 0"
-            :model-value="downloadProgressPercent"
-          />
-          <p class="text-xs text-muted-foreground">{{ downloadProgressLabel }}</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-1">
+          <Label>Keyboard shortcuts</Label>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7"
+                aria-label="View shortcuts"
+                @click="shortcutsOpen = true"
+              >
+                <Keyboard class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>View shortcuts</TooltipContent>
+          </Tooltip>
         </div>
+        <p class="text-sm text-muted-foreground">Cmd+K search, Cmd+N new agent, ...</p>
       </div>
 
-      <p
-        v-else-if="lastCheckedLabel"
-        class="text-sm text-muted-foreground"
-      >
-        Last checked: {{ lastCheckedLabel }}
-      </p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-1">
+          <Label>Updates</Label>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7"
+                aria-label="Check for updates"
+                :disabled="updater.checking.value"
+                @click="handleCheckForUpdates"
+              >
+                <Loader2
+                  v-if="updater.checking.value"
+                  class="h-4 w-4 animate-spin"
+                />
+                <RefreshCw
+                  v-else
+                  class="h-4 w-4"
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Check for updates</TooltipContent>
+          </Tooltip>
+        </div>
+        <p class="text-sm text-muted-foreground">
+          Check for a new version. Install only when you choose to.
+        </p>
+
+        <div
+          v-if="updater.updateAvailable.value"
+          class="space-y-3 rounded-md border border-border bg-muted/30 p-3"
+        >
+          <p class="text-sm font-medium">
+            Update available: v{{ updater.updateAvailable.value.version }}
+          </p>
+          <p
+            v-if="updater.updateAvailable.value.body"
+            class="whitespace-pre-wrap text-sm text-muted-foreground"
+          >
+            {{ updater.updateAvailable.value.body }}
+          </p>
+          <Button
+            size="sm"
+            class="w-fit"
+            :disabled="updater.downloading.value"
+            @click="handleDownloadAndRestart"
+          >
+            {{ updater.downloading.value ? 'Downloading...' : 'Download and restart' }}
+          </Button>
+          <div v-if="updater.downloading.value" class="space-y-2">
+            <Progress
+              v-if="updater.progress.value && updater.progress.value.contentLength > 0"
+              :model-value="downloadProgressPercent"
+            />
+            <p class="text-xs text-muted-foreground">{{ downloadProgressLabel }}</p>
+          </div>
+        </div>
+
+        <p
+          v-else-if="lastCheckedLabel"
+          class="text-sm text-muted-foreground"
+        >
+          Last checked: {{ lastCheckedLabel }}
+        </p>
+      </div>
     </div>
 
     <Dialog :open="shortcutsOpen" @update:open="(open) => (shortcutsOpen = open)">
@@ -261,5 +262,5 @@ const shortcuts = [
         </div>
       </DialogContent>
     </Dialog>
-  </section>
+  </SettingsSectionScroll>
 </template>
