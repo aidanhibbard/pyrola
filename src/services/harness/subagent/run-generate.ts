@@ -19,6 +19,7 @@ import parseModelRef from '@/utils/parse-model-ref'
 import { getPlanExecutionSession } from '@/services/harness/plan-execution-session'
 import resolveModelVision from '@/services/harness/resolve-model-vision'
 import buildHarnessTools from '@/services/harness/build-harness-tools'
+import intersectToolAllowlist from '@/services/harness/intersect-tool-allowlist'
 import { SUBAGENT_READ_ONLY_TOOLS } from '@/services/harness/subagent/constants'
 import { sanitizeSubagentName } from '@/services/harness/subagent/helpers'
 import type { HarnessEvent } from '@/types/harness/harness-event'
@@ -99,7 +100,11 @@ const runSubagentGenerate = async (args: {
     subagentId,
     subagentLabel: safeName,
   }
-  const allow = new Set<string>(SUBAGENT_READ_ONLY_TOOLS)
+  const allowedTools = intersectToolAllowlist(
+    SUBAGENT_READ_ONLY_TOOLS,
+    agentDefinition?.tools,
+  )
+  const allow = new Set<string>(allowedTools)
   const nestedTools = Object.fromEntries(
     Object.entries(buildHarnessTools(nestedCtx)).filter(([name]) => allow.has(name)),
   )

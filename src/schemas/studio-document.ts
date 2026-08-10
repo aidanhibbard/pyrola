@@ -26,5 +26,13 @@ export const studioFrontmatterSchema = z
     }
   })
 
+export const createStudioInputSchema = z.object({
+  title: z.string().min(1),
+  slug: z.string().optional(),
+  content: z.string(),
+})
+
+export type CreateStudioInput = z.infer<typeof createStudioInputSchema>
+
 export const formatStudioSchemaError = (error: z.ZodError): string =>
   error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')

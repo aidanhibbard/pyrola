@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { ExternalLink, Folder } from '@lucide/vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { FileText, Folder, MessageSquare, Plus } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/shadcn/ui/dropdown-menu'
 import {
   Empty,
   EmptyHeader,
@@ -14,9 +20,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import PyrolaFileCreateHost from '@/components/settings/pyrola-files/PyrolaFileCreateHost.vue'
+import PyrolaFileListItem from '@/components/settings/pyrola-files/PyrolaFileListItem.vue'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import useFleetRegistry from '@/composables/use-fleet-registry'
+import useStartPyrolaFilesChat from '@/composables/use-start-pyrola-files-chat'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import type { SettingsTab } from '@/composables/use-pyrola-config'
 import {
@@ -25,6 +34,7 @@ import {
 } from '@/composables/use-pyrola-live-sync'
 import type { PyrolaFilesKind } from '@/services/pyrola/pyrola-tauri'
 import {
+  fsMkdir,
   getPyrolaDir,
   listPyrolaFiles,
   revealInFolder,
@@ -43,6 +53,40 @@ const config = usePyrolaConfig()
 const fleet = useFleetRegistry()
 const workbench = useWorkbenchStore()
 const files = ref<ProjectFileEntry[]>([])
+const formOpen = ref(false)
+
+const scope = computed<'personal' | 'project'>(() =>
+  props.tab === 'personal' ? 'personal' : 'project',
+)
+
+const { handleSelectChat } = useStartPyrolaFilesChat({
+  scope,
+  kind: toRef(props, 'kind'),
+})
+
+const projectRoot = computed(() =>
+  props.tab === 'project' ? (config.activeRootPath.value ?? undefined) : undefined,
+)
+
+const usesCreateMenu = computed(
+  () => props.kind === 'plans' || props.kind === 'studio',
+)
+
+const NEW_ITEM_TOOLTIPS: Record<PyrolaFilesKind, string> = {
+  plans: 'New plan',
+  studio: 'New studio',
+  skills: 'New skill',
+  agents: 'New agent',
+  rules: 'New rule',
+}
+
+const newItemTooltip = computed(() => NEW_ITEM_TOOLTIPS[props.kind] ?? 'New')
+
+const toastLoadError = (error: unknown): void => {
+  toast.error('Failed to load files', {
+    description: error instanceof Error ? error.message : 'Unknown error',
+  })
+}
 
 const load = async (): Promise<void> => {
   if (props.tab === 'project' && !config.activeRootPath.value) {
@@ -57,53 +101,27 @@ const load = async (): Promise<void> => {
   )
 }
 
-onMounted(async () => {
+const refresh = async (): Promise<void> => {
   try {
     await load()
   } catch (error) {
-    toast.error('Failed to load files', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
+    toastLoadError(error)
   }
-})
-
-watch(
-  () => [props.tab, config.activeRootPath.value] as const,
-  async () => {
-    try {
-      await load()
-    } catch (error) {
-      toast.error('Failed to load files', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  },
-)
-
-watch(pyrolaFileChangeToken, async () => {
-  const change = lastPyrolaFileChange.value
-  if (change?.kind !== props.kind) {
-    return
-  }
-  if (change.scope === 'personal' && props.tab !== 'personal') {
-    return
-  }
-  if (change.scope === 'project' && props.tab !== 'project') {
-    return
-  }
-  try {
-    await load()
-  } catch (error) {
-    toast.error('Failed to load files', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-})
+}
 
 const revealRoot = async (): Promise<void> => {
-  const scope = props.tab === 'personal' ? 'personal' : 'project'
-  const dir = await getPyrolaDir(scope, config.activeRootPath.value)
-  await revealInFolder(`${dir}/${props.folderLabel}`)
+  try {
+    const dir = await getPyrolaDir(scope.value, config.activeRootPath.value)
+    const folderPath = `${dir}/${props.folderLabel}`
+    await fsMkdir({ projectRoot: dir, path: props.folderLabel }).catch(() => {
+      // Best-effort create; reveal will surface real errors.
+    })
+    await revealInFolder(folderPath)
+  } catch (error) {
+    toast.error('Failed to reveal folder', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
 }
 
 const toRelativePath = (absolutePath: string): string => {
@@ -150,17 +168,108 @@ const openInEditor = (file: ProjectFileEntry): void => {
 
   workbench.openEditor(projectId, relativePath)
 }
+
+const handleSelectForm = (): void => {
+  formOpen.value = true
+}
+
+const handleSubmitted = async (): Promise<void> => {
+  await refresh()
+}
+
+onMounted(async () => {
+  await refresh()
+})
+
+watch(
+  () => [props.tab, config.activeRootPath.value] as const,
+  async () => {
+    await refresh()
+  },
+)
+
+watch(pyrolaFileChangeToken, async () => {
+  const change = lastPyrolaFileChange.value
+  if (change?.kind !== props.kind) {
+    return
+  }
+  if (change.scope === 'personal' && props.tab !== 'personal') {
+    return
+  }
+  if (change.scope === 'project' && props.tab !== 'project') {
+    return
+  }
+  await refresh()
+})
 </script>
 
 <template>
   <SettingsSectionScroll :title="title">
     <template #actions>
-      <Button variant="outline" size="sm" @click="revealRoot">Reveal in folder</Button>
+      <Tooltip v-if="usesCreateMenu" :disable-closing-trigger="true">
+        <TooltipTrigger as-child>
+          <span class="inline-flex shrink-0">
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-8 w-8"
+                  :aria-label="newItemTooltip"
+                >
+                  <Plus class="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" class="w-40">
+                <DropdownMenuItem @click="handleSelectChat">
+                  <MessageSquare class="mr-2 h-4 w-4" />
+                  Chat
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="handleSelectForm">
+                  <FileText class="mr-2 h-4 w-4" />
+                  Form
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{{ newItemTooltip }}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip v-else>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8"
+            :aria-label="newItemTooltip"
+            @click="handleSelectForm"
+          >
+            <Plus class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{{ newItemTooltip }}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8"
+            aria-label="Reveal in folder"
+            @click="revealRoot"
+          >
+            <Folder class="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Reveal in folder</TooltipContent>
+      </Tooltip>
     </template>
 
     <Empty
       v-if="files.length === 0"
-      class="border border-border/60 py-12"
+      class="flex-1 min-h-0 border border-border/60"
     >
       <EmptyHeader>
         <EmptyMedia variant="icon">
@@ -170,52 +279,22 @@ const openInEditor = (file: ProjectFileEntry): void => {
       </EmptyHeader>
     </Empty>
 
-    <div v-else class="space-y-2">
-      <div
+    <div v-else class="flex flex-1 min-h-0 flex-col gap-2">
+      <PyrolaFileListItem
         v-for="file in files"
         :key="file.path"
-        class="flex items-center justify-between rounded-lg border border-border/50 px-4 py-2"
-      >
-        <div>
-          <p class="font-medium">{{ file.description ?? file.name }}</p>
-          <p
-            v-if="kind === 'studio' && file.description && file.description !== file.name"
-            class="text-xs text-muted-foreground"
-          >
-            {{ file.name }}
-          </p>
-        </div>
-        <div class="flex items-center gap-0.5">
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="h-8 w-8"
-                aria-label="Open in editor"
-                @click="openInEditor(file)"
-              >
-                <ExternalLink class="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Open in editor</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="h-8 w-8"
-                aria-label="Reveal in folder"
-                @click="revealInFolder(file.path)"
-              >
-                <Folder class="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Reveal in folder</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
+        :file="file"
+        :kind="kind"
+        @open="openInEditor"
+      />
     </div>
+
+    <PyrolaFileCreateHost
+      v-model:open="formOpen"
+      :kind="kind"
+      :scope="scope"
+      :project-root="projectRoot"
+      @submitted="handleSubmitted"
+    />
   </SettingsSectionScroll>
 </template>

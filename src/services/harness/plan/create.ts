@@ -1,7 +1,6 @@
 import { tool } from 'ai'
-import { z } from 'zod'
 import createPlan from '@/services/plans/write-plan'
-import { planTodoItemSchema } from '@/schemas/plan-document'
+import createPlanInputSchema from '@/schemas/plans/create-plan-input'
 import { fsWriteFile, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import {
@@ -25,11 +24,7 @@ const createPlanTool = (ctx: HarnessToolContext) =>
         },
       ],
     ),
-    inputSchema: z.object({
-      title: z.string().describe('Plan title'),
-      body: z.string().describe('Markdown plan body'),
-      todos: z.array(planTodoItemSchema).optional().describe('Initial todo items'),
-    }),
+    inputSchema: createPlanInputSchema,
     execute: async ({ title, body, todos }) => {
       assertCreatePlanNotAwaitingPlanGo(ctx.projectSlug, ctx.chatId)
       const planTodos = todos ?? []

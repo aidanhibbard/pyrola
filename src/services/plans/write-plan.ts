@@ -1,16 +1,9 @@
+import slugify from 'slugify'
 import { planFrontmatterSchema, parsedPlanSchema, formatPlanSchemaError } from '@/schemas/plan-document'
 import parsePlan from '@/services/plans/parse-plan'
-import assertPlanHasMermaid from '@/services/plans/validate-plan'
 import type { PlanTodoItem } from '@/types/plans/plan-document'
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
-
-const slugify = (title: string): string =>
-  title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48) || 'plan'
 
 const formatTimestamp = (date: Date): string => {
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -56,13 +49,11 @@ const validatePlanDocument = (frontmatter: unknown, body: string): void => {
   if (!parsedResult.success) {
     throw new Error(`Invalid plan document: ${formatPlanSchemaError(parsedResult.error)}`)
   }
-
-  assertPlanHasMermaid(body)
 }
 
 export default (input: CreatePlanInput): CreatePlanResult => {
   const now = new Date()
-  const planId = `${slugify(input.title)}-${formatTimestamp(now)}`
+  const planId = `${slugify(input.title, { lower: true, strict: true }).slice(0, 48) || 'plan'}-${formatTimestamp(now)}`
   const path = `.pyrola/plans/${planId}/PLAN.md`
   const todos = input.todos ?? []
   const body = input.body.trim()

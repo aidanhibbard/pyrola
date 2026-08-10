@@ -8,6 +8,7 @@ export type ResolvedAgentDefinition = {
   description: string
   model?: string
   reasoning?: ReasoningLevel
+  tools?: string[]
   body: string
   path: string
 }
@@ -56,6 +57,7 @@ export const listAgentDefinitions = async (
       description,
       model: parsed.frontmatter.model?.trim() || undefined,
       reasoning: parsed.frontmatter.reasoning,
+      tools: parsed.frontmatter.tools,
       body: parsed.body,
       path: entry.path,
     })

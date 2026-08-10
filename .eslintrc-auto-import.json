@@ -309,6 +309,7 @@
     "useSpeechRecognition": true,
     "useSpeechSynthesis": true,
     "useStartPlanBuild": true,
+    "useStartPyrolaFilesChat": true,
     "useStepper": true,
     "useStorage": true,
     "useStorageAsync": true,
