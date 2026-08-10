@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import DOMPurify from 'dompurify'
 import mermaid from 'mermaid'
 
 const props = defineProps<{
@@ -10,10 +11,7 @@ const container = ref<HTMLElement | null>(null)
 const rendered = ref('')
 
 const sanitizeMermaidSvg = (svg: string): string => {
-  return svg
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<script\b[^>]*\/>/gi, '')
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+  return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } })
 }
 
 const removeMermaidTempNode = (id: string): void => {

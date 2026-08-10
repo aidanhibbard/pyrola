@@ -1,3 +1,4 @@
+import picomatch from 'picomatch'
 import type { FileDiff } from '@/types/harness/file-diff'
 import type {
   ApprovalKind,
@@ -66,14 +67,12 @@ export const resetApprovalGateForTests = (): void => {
 }
 
 export const matchesAutoApproveGlob = (path: string, globs: string[]): boolean =>
-  globs.some((glob) => {
-    const pattern = glob
-      .replace(/\./g, '\\.')
-      .replace(/\*\*/g, '<<GLOBSTAR>>')
-      .replace(/\*/g, '[^/]*')
-      .replace(/<<GLOBSTAR>>/g, '.*')
-    return new RegExp(`^${pattern}$`).test(path)
-  })
+  globs.some((glob) =>
+    picomatch.isMatch(path, glob, {
+      dot: true,
+      windows: true,
+    }),
+  )
 
 export const shouldAutoApprove = (
   paths: string[],
