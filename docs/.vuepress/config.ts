@@ -54,6 +54,7 @@ export default defineUserConfig({
       { text: 'Settings', link: '/settings/overview.html' },
       { text: 'Architecture', link: '/architecture/overview.html' },
       { text: 'Compare', link: '/compare/agents-uis.html' },
+      { text: 'Security posture', link: '/security-posture.html' },
       { text: 'FAQ', link: '/faq.html' },
     ],
     sidebar: {
@@ -83,8 +84,8 @@ export default defineUserConfig({
       ],
       '/': [
         {
-          text: 'FAQ',
-          children: ['faq.md'],
+          text: 'Docs',
+          children: ['security-posture.md', 'faq.md'],
         },
       ],
     },

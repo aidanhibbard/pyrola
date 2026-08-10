@@ -56,11 +56,10 @@ export const resolveParsedModelForRole = (
   role: ModelRoleId,
   settings: PyrolaSettings,
   chatOverride?: string,
-  legacyProviderId?: string,
 ): ReturnType<typeof parseModelRef> => {
   const serialized = resolveModelForRole(role, settings, chatOverride)
   if (!serialized) {
     return null
   }
-  return parseModelRef(serialized, { legacyProviderId })
+  return parseModelRef(serialized)
 }

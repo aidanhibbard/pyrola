@@ -97,7 +97,7 @@ fn build_client(request_timeout: Option<Duration>) -> Result<reqwest::Client, St
   builder.build().map_err(|e| e.to_string())
 }
 
-fn is_blocked_ip(ip: IpAddr) -> bool {
+pub fn is_blocked_ip(ip: IpAddr) -> bool {
   match ip {
     IpAddr::V4(v4) => {
       if v4.is_unspecified() || v4.is_broadcast() || v4.is_link_local() {
@@ -139,7 +139,7 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
   }
 }
 
-fn is_blocked_proxy_host(host: &str) -> bool {
+pub fn is_blocked_proxy_host(host: &str) -> bool {
   let trimmed = host.trim().trim_matches(|c| c == '[' || c == ']');
   if trimmed.is_empty() {
     return true;
@@ -375,28 +375,4 @@ async fn run_proxy_stream(
 
   let _ = on_event.send(HttpProxyStreamEvent::End);
   Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use std::net::{Ipv4Addr, Ipv6Addr};
-
-  #[test]
-  fn blocks_metadata_and_link_local() {
-    assert!(is_blocked_proxy_host("169.254.169.254"));
-    assert!(is_blocked_proxy_host("metadata.google.internal"));
-    assert!(is_blocked_proxy_host("fe80::1"));
-    assert!(is_blocked_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1))));
-    assert!(is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
-  }
-
-  #[test]
-  fn allows_loopback_and_public() {
-    assert!(!is_blocked_proxy_host("127.0.0.1"));
-    assert!(!is_blocked_proxy_host("localhost"));
-    assert!(!is_blocked_proxy_host("api.openai.com"));
-    assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
-    assert!(!is_blocked_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
-  }
 }

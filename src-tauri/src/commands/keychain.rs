@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 const SERVICE: &str = "pyrola";
 const KEY_PREFIX: &str = "pyrola:";
-const VAULT_ACCOUNT: &str = "pyrola:vault";
+pub const VAULT_ACCOUNT: &str = "pyrola:vault";
 
-type VaultMap = HashMap<String, String>;
+pub type VaultMap = HashMap<String, String>;
 
 struct VaultState {
   loaded: bool,
@@ -27,7 +27,7 @@ lazy_static! {
   static ref VAULT: Mutex<VaultState> = Mutex::new(VaultState::empty());
 }
 
-fn require_pyrola_key(key: &str) -> Result<(), String> {
+pub fn require_pyrola_key(key: &str) -> Result<(), String> {
   if !key.starts_with(KEY_PREFIX) {
     return Err("Keychain key must start with 'pyrola:'".to_string());
   }
@@ -62,7 +62,7 @@ fn legacy_entry(key: &str) -> Result<Entry, String> {
   Entry::new(SERVICE, key).map_err(map_keyring_error)
 }
 
-fn parse_vault(payload: &str) -> Result<VaultMap, String> {
+pub fn parse_vault(payload: &str) -> Result<VaultMap, String> {
   if payload.trim().is_empty() {
     return Ok(VaultMap::new());
   }
@@ -74,13 +74,13 @@ fn parse_vault(payload: &str) -> Result<VaultMap, String> {
   Ok(map)
 }
 
-fn serialize_vault(map: &VaultMap) -> Result<String, String> {
+pub fn serialize_vault(map: &VaultMap) -> Result<String, String> {
   serde_json::to_string(map).map_err(|err| format!("Failed to serialize keychain vault ({err})"))
 }
 
 /// Insert a legacy keychain value into the vault map if the key is not already present.
 /// Returns the value that should be used for the key (existing vault value, or migrated).
-fn merge_legacy_into_map(
+pub fn merge_legacy_into_map(
   map: &mut VaultMap,
   key: &str,
   legacy_value: Option<String>,
@@ -187,92 +187,4 @@ pub fn delete_secret(key: String) -> Result<(), String> {
   persist_vault(&mut state)?;
   let _ = delete_legacy_secret(&key);
   Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn parse_vault_empty_payload() {
-    let map = parse_vault("").expect("empty vault");
-    assert!(map.is_empty());
-    let map = parse_vault("   ").expect("whitespace vault");
-    assert!(map.is_empty());
-  }
-
-  #[test]
-  fn parse_vault_round_trip() {
-    let mut expected = VaultMap::new();
-    expected.insert(
-      "pyrola:provider:openai".to_string(),
-      "sk-test".to_string(),
-    );
-    expected.insert(
-      "pyrola:mcp:github:input:token".to_string(),
-      "ghp_test".to_string(),
-    );
-    let payload = serialize_vault(&expected).expect("serialize");
-    let parsed = parse_vault(&payload).expect("parse");
-    assert_eq!(parsed, expected);
-  }
-
-  #[test]
-  fn parse_vault_rejects_vault_account_key() {
-    let payload = format!(r#"{{"{VAULT_ACCOUNT}":"nope"}}"#);
-    let err = parse_vault(&payload).expect_err("vault account key");
-    assert!(err.contains("must not contain the vault account key"));
-  }
-
-  #[test]
-  fn parse_vault_rejects_invalid_json() {
-    let err = parse_vault("{not-json").expect_err("invalid json");
-    assert!(err.contains("Invalid keychain vault JSON"));
-  }
-
-  #[test]
-  fn require_pyrola_key_rejects_prefix_and_vault_account() {
-    assert!(require_pyrola_key("other:key").is_err());
-    assert!(require_pyrola_key(VAULT_ACCOUNT).is_err());
-    assert!(require_pyrola_key("pyrola:provider:openai").is_ok());
-  }
-
-  #[test]
-  fn merge_legacy_prefers_existing_vault_value() {
-    let mut map = VaultMap::new();
-    map.insert(
-      "pyrola:provider:openai".to_string(),
-      "vault-value".to_string(),
-    );
-    let merged = merge_legacy_into_map(
-      &mut map,
-      "pyrola:provider:openai",
-      Some("legacy-value".to_string()),
-    );
-    assert_eq!(merged.as_deref(), Some("vault-value"));
-    assert_eq!(map.get("pyrola:provider:openai").map(String::as_str), Some("vault-value"));
-  }
-
-  #[test]
-  fn merge_legacy_inserts_when_missing() {
-    let mut map = VaultMap::new();
-    let merged = merge_legacy_into_map(
-      &mut map,
-      "pyrola:provider:anthropic",
-      Some("sk-legacy".to_string()),
-    );
-    assert_eq!(merged.as_deref(), Some("sk-legacy"));
-    assert_eq!(
-      map.get("pyrola:provider:anthropic").map(String::as_str),
-      Some("sk-legacy")
-    );
-  }
-
-  #[test]
-  fn merge_legacy_returns_none_when_absent() {
-    let mut map = VaultMap::new();
-    let merged = merge_legacy_into_map(&mut map, "pyrola:provider:missing", None);
-    assert!(merged.is_none());
-    assert!(map.is_empty());
-  }
 }

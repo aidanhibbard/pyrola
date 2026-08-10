@@ -9,13 +9,11 @@
 
 ## Components
 
-Vite/Vue projects do not auto-import components by default, so **use explicit `import` statements** for all components used in templates.
+First-party Vue SFCs under `src/components/**` (outside vendored trees) are auto-imported by `unplugin-vue-components`. **Do not** write manual `import` statements for first-party components used in templates.
 
-```ts
-import AppHeader from '@/components/navigation/header/AppHeader.vue'
-```
+Vendored shadcn components under `src/components/shadcn/**` are **not** auto-imported (excluded from the plugin scan). Import them via the existing `@/components/ui` alias.
 
-> If the project has added `unplugin-vue-components` (or similar) for auto-import, follow that plugin's own resolver/naming rules instead of the manual pattern below: don't mix both approaches in the same codebase.
+Do not mix: never both rely on auto-import and also write a manual import of the same component.
 
 ### Path-based names
 
@@ -26,23 +24,24 @@ src/components/navigation/header/AppHeader.vue  →  NavigationHeaderAppHeader
 src/components/posts/card/PostCard.vue          →  PostsCardPostCard
 ```
 
+Path-based conceptual names in docs may remain; runtime resolution follows the Components plugin (filename-based).
+
 - Use **lowercase folder segments** for namespaces (`navigation/`, `posts/`, `layout/`).
 - Use **PascalCase** for component files (`AppHeader.vue`, `PostCard.vue`).
 - Prefer filenames that read well with their path (e.g. `AppHeader` under `navigation/header/`, not a vague `Index.vue` unless the path already disambiguates).
-- Register the imported component under a local name matching this convention (`import NavigationHeaderAppHeader from ...`) when a file uses multiple components that could otherwise collide.
 
 ### Usage in templates and scripts
 
-- **Static usage:** import explicitly, then use the PascalCase tag in templates (`<NavigationHeaderAppHeader />`).
-- **Lazy / code-split:** use `defineAsyncComponent`:
+- **Static usage:** use the PascalCase filename tag in templates (e.g. `<AppHeader />`). First-party components resolve via auto-import; do not add a manual import for them.
+- **Lazy / code-split:** use `defineAsyncComponent` when an explicit async boundary is required:
 
 ```ts
-const NavigationHeaderAppHeader = defineAsyncComponent(
+const AppHeader = defineAsyncComponent(
   () => import('@/components/navigation/header/AppHeader.vue'),
 )
 ```
 
-- **Dynamic `:is`:** import the component and pass the reference directly to `:is` rather than resolving by string name.
+- **Dynamic `:is`:** pass a component reference directly to `:is` rather than resolving by string name. Prefer template tags for auto-imported first-party components; when a script reference is required for a non-auto-imported component (for example shadcn via `@/components/ui`), import it explicitly.
 - **Suspense boundaries:** wrap async component trees in `<Suspense>` with an explicit `#fallback` when a component uses `async setup()` or top-level `await`.
 
 ### Scope and vendored UI
@@ -66,12 +65,46 @@ This is a client-rendered Vite SPA by default, so there is no server/client spli
   - Vue single-file components (for example under `src/components`, `src/views` or `src/pages`)
 - Do not add new `PascalCase.ts` or `camelCase.ts` module names outside those exceptions.
 
+## File Layout (TypeScript and modules)
+
+In addition to kebab-case filenames (already covered), first-party service and composable code uses nested domain folders, not flat kebab filenames that encode a path in the name.
+
+### Good
+
+```text
+src/services/harness/write/file.ts
+src/services/harness/write/plan.ts
+src/services/harness/read/file.ts
+src/services/harness/git/status.ts
+```
+
+### Bad
+
+```text
+src/services/harness/write-file.ts
+src/services/harness/gate-tool-permission.ts
+```
+
+Nest by domain verb/object. One export per implementation file. Do one thing well; if a file needs "and", split it.
+
+### File size
+
+First-party TypeScript and Vue files must not exceed 300 lines (excluding blank lines and comments). Enforced by ESLint `max-lines`. Files exceeding this limit should be split by concern. Vendored shadcn components are excluded from this rule.
+
 ## Imports
 
 - **No dynamic imports.** Use static `import` statements at the top of the file. Do not use `await import()` or dynamic `import()` expressions.
-- All imports must be declared at the module level, before any other code.
+- All imports that are not covered by auto-import must be declared at the module level, before any other code.
 - This applies to all first-party code: composables, services, components, utilities, and stores.
 - **Exception:** Code-splitting for route-level components or heavy third-party libraries that are only needed on specific routes may use dynamic imports, but this should be rare and explicitly justified.
+
+### Auto-import
+
+`unplugin-auto-import` is installed and active. Vue APIs (`ref`, `computed`, `watch`, and related), `@vueuse/core` APIs, and first-party composables under `src/composables/**` are auto-imported.
+
+- **Do not** write manual imports for auto-imported symbols. Do not both auto-import and manually import the same symbol.
+- The "No dynamic `import()`" rule still applies. The plugin injects static imports at build time; that is not a dynamic import.
+- Services (`@/services/**`), utils (`@/utils/**`), schemas, and types **must** still be imported explicitly.
 
 ## Vue SFC Block Order
 
@@ -83,7 +116,7 @@ This is a client-rendered Vite SPA by default, so there is no server/client spli
 
 Group `script setup` content in this order:
 
-1. Imports
+1. Imports (only symbols that are not auto-imported: services, utils, schemas, types, shadcn, etc.)
 2. Types and interfaces
 3. Generic constants or static data: `const pageName = 'test'`
 4. Composables
@@ -126,7 +159,7 @@ async function handleSubmit(): Promise<void> {
 ## Composables
 
 - Name composable files in kebab-case, for example `use-example.ts`.
-- Use a **default export** and import it explicitly where needed; Vite has no auto-import for composables out of the box.
+- Use a **default export**. With auto-import `dirs: ['src/composables/**']`, composables are resolved automatically. **Do not** manually import composables that are covered by auto-import.
 
 ```ts
 // use-example.ts
@@ -136,9 +169,7 @@ export default () => {
 ```
 
 ```ts
-// consumer
-import useExample from '@/composables/use-example'
-
+// consumer (no manual import)
 const example = useExample()
 ```
 
@@ -180,9 +211,6 @@ For first-party tables, paginated lists, filters, search, and data browsing flow
 
 ```vue
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
-import useApi from '@/composables/use-api'
-
 // You handle component state.
 const state = reactive<{
   page: number
@@ -193,6 +221,7 @@ const state = reactive<{
 })
 
 // The composable handles fetching, loading state, and refetches.
+// reactive, computed, watch, and useApi are auto-imported.
 const {
   data: posts,
   status,
@@ -302,13 +331,14 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 
 ## Types And Interfaces
 
-- Reusable contracts must live in dedicated `types` or `interfaces` directories, not inside services, routes, or components.
+- Types and interfaces that are reused across files **must** live in dedicated `src/types/` or `src/interfaces/` directories, nested by domain (e.g. `src/types/harness/permission.ts`).
+- A Vue SFC or composable may keep a local `type State = { ... }` or computed helper type that is never imported elsewhere. The moment a second file imports it, move it under `src/types` or `src/interfaces`.
 - Do not use `any` types. Use precise types, existing inferred types, generics, `unknown` with narrowing, or small local interfaces instead.
 - Use:
   - `src/types` and `src/interfaces`
   - A shared package/directory (e.g. `shared/types`) if the frontend and backend live in the same repo and share contracts
 - Keep local inline typing minimal. It is fine to use small local param or return annotations for one-off helpers.
-- If a type or interface is reused or is part of a public contract, move it into the appropriate `types` or `interfaces` directory.
+- Types and interfaces directories also use barrels (`index.ts`) when they group siblings.
 - Do not export types from service implementation files.
 - Do not declare `interface` or `type` aliases in API client files, route handlers, or worker files. Put request bodies, job shapes, and other contracts in the appropriate `types` or `interfaces` directories.
 
@@ -326,11 +356,46 @@ These conventions apply to first-party app code. Do not rewrite vendored-style `
 - Services should not bundle multiple methods in a single implementation file.
 - For service modules, put each method in its own file and re-export from a barrel.
 
+## Barrels
+
+Domain folders that group sibling implementation files require an `index.ts` barrel (TypeScript) or `mod.rs` (Rust) that re-exports those siblings. Implementation files stay single-export; barrels only re-export.
+
+### Good
+
+```text
+src/services/harness/write/file.ts
+src/services/harness/write/plan.ts
+src/services/harness/write/index.ts
+```
+
+### Bad
+
+```text
+src/services/harness/write-file.ts
+src/services/harness/write/file.ts  (missing write/index.ts)
+```
+
+Assemblers and consumers import from the folder barrel (`@/services/harness/write`), not deep paths to every leaf, unless a deep import is justified.
+
+Example barrel:
+
+```ts
+// src/services/harness/write/index.ts
+export { default as writeFile } from './file'
+export { default as writePlan } from './plan'
+```
+
 ## Service/API Client File Structure
 
-- Service and API client filenames must use kebab-case, for example `my-service.ts`. The same kebab-case rule applies to `types` and `interfaces` module filenames (see **File naming (TypeScript and modules)** above).
-- Use directories for namespacing related files, for example `src/services/pusher/credits/team-channel.ts`.
+- Service and API client filenames must use kebab-case, for example `my-service.ts`. The same kebab-case rule applies to `types` and `interfaces` module filenames (see **File naming (TypeScript and modules)** and **File Layout** above).
+- Use directories for namespacing related files, for example `src/services/pusher/credits/team-channel.ts`. Prefer nested domain folders over flat kebab names that encode a path (see **File Layout**).
 - Client modules such as S3 or Pusher clients should default export the configured client instance from a dedicated file rather than exporting getter helpers.
+
+## Rust / Tauri
+
+- Rust domain folders use `mod.rs` (or a thin parent module file) as the barrel, re-exporting public items from sibling modules.
+- Prefer one primary item per file where practical (one command fn, one struct, one pure helper module).
+- Stable `#[tauri::command]` names and payloads must not change during refactoring.
 
 ## Environment / config (`import.meta.env`)
 

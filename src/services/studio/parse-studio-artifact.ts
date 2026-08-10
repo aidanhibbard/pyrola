@@ -2,10 +2,7 @@ import {
   formatStudioSchemaError,
   studioFrontmatterSchema,
 } from '@/schemas/studio-document'
-import type {
-  ParsedStudioArtifact,
-  StudioArtifactFrontmatter,
-} from '@/types/studio/studio-artifact'
+import type { ParsedStudioArtifact } from '@/types/studio/studio-artifact'
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
@@ -63,50 +60,3 @@ const parseStudioArtifact = (content: string): ParsedStudioArtifact => {
 }
 
 export default parseStudioArtifact
-
-export const serializeStudioArtifact = (
-  frontmatter: StudioArtifactFrontmatter,
-  body: string,
-): string => {
-  const lines = ['---']
-  if (frontmatter.title) {
-    lines.push(`title: ${frontmatter.title}`)
-  }
-  if (frontmatter.subtitle) {
-    lines.push(`subtitle: ${frontmatter.subtitle}`)
-  }
-  if (frontmatter.status) {
-    lines.push(`status: ${frontmatter.status}`)
-  }
-  if (frontmatter.dateRange) {
-    lines.push(`dateRange: ${frontmatter.dateRange}`)
-  }
-  if (frontmatter.source) {
-    lines.push(`source: ${frontmatter.source}`)
-  }
-  if (frontmatter.docType) {
-    lines.push(`docType: ${frontmatter.docType}`)
-  }
-  if (frontmatter.slug) {
-    lines.push(`slug: ${frontmatter.slug}`)
-  }
-  if (frontmatter.createdAt) {
-    lines.push(`createdAt: ${frontmatter.createdAt}`)
-  }
-  if (frontmatter.updatedAt) {
-    lines.push(`updatedAt: ${frontmatter.updatedAt}`)
-  }
-  lines.push('---', '')
-  return `${lines.join('\n')}${body.trimStart()}`
-}
-
-export const updateStudioFrontmatter = (
-  content: string,
-  patch: Partial<StudioArtifactFrontmatter>,
-): string => {
-  const parsed = parseStudioArtifact(content)
-  if (parsed.parseError || !parsed.frontmatter) {
-    return content
-  }
-  return serializeStudioArtifact({ ...parsed.frontmatter, ...patch }, parsed.body)
-}

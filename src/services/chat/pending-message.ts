@@ -33,15 +33,3 @@ export const consumePendingChatMessage = (): PendingChatMessage | null => {
     return null
   }
 }
-
-export const peekPendingChatMessage = (): PendingChatMessage | null => {
-  const raw = sessionStorage.getItem(PENDING_MESSAGE_KEY)
-  if (!raw) {
-    return null
-  }
-  try {
-    return JSON.parse(raw) as PendingChatMessage
-  } catch {
-    return null
-  }
-}

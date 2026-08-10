@@ -17,7 +17,7 @@ pub struct CodegraphCliResult {
   pub exit_code: Option<i32>,
 }
 
-fn validate_action(action: &str) -> Result<&'static str, String> {
+pub fn validate_action(action: &str) -> Result<&'static str, String> {
   match action.trim().to_ascii_lowercase().as_str() {
     "init" => Ok("init"),
     "index" => Ok("index"),
@@ -98,19 +98,4 @@ pub async fn codegraph_cli(
     stderr,
     exit_code,
   })
-}
-
-#[cfg(test)]
-mod tests {
-  use super::validate_action;
-
-  #[test]
-  fn validate_action_allows_init_and_index() {
-    assert!(validate_action("init").is_ok());
-    assert!(validate_action("INIT").is_ok());
-    assert!(validate_action("index").is_ok());
-    assert!(validate_action("INDEX").is_ok());
-    assert!(validate_action("serve").is_err());
-    assert!(validate_action("sync").is_err());
-  }
 }

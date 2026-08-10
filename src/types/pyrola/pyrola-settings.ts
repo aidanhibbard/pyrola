@@ -56,7 +56,6 @@ export type PyrolaSettings = {
   'agent.mcp.trust'?: McpTrustRecord[]
   'agent.sandbox.enabled'?: boolean
   'agent.sandbox.network'?: 'deny' | 'allow'
-  'agent.maxStepsPerTurn'?: number
   'general.machineLabel'?: string
   'lsp.autoDownload'?: boolean
   'workspace.trust'?: Array<{ rootPath: string; trusted: boolean }>

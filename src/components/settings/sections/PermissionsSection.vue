@@ -20,7 +20,7 @@ import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
-import { parsePermissionRecords } from '@/services/harness/permission-policy'
+import { parsePermissionRecords } from '@/services/harness/permission/policy'
 import type {
   ApprovalKind,
   PermissionCapabilityKey,

@@ -23,6 +23,8 @@ export default defineConfigWithVueTs(
     'src-tauri/target/**',
     'src/components/shadcn/**',
     'src/components/ai-elements/**',
+    'src/auto-imports.d.ts',
+    'src/components.d.ts',
   ]),
 
   ...pluginVue.configs['flat/essential'],
@@ -30,10 +32,49 @@ export default defineConfigWithVueTs(
 
   {
     ...pluginVitest.configs.recommended,
-    files: ['src/**/__tests__/*'],
+    files: ['spec/src/**/*.test.ts'],
   },
 
   ...pluginOxlint.buildFromOxlintConfigFile('.oxlintrc.json'),
 
   skipFormatting,
+
+  // First-party src only. shadcn/ai-elements are already in globalIgnores.
+  {
+    name: 'app/max-lines',
+    files: ['src/**/*.{ts,vue}'],
+    rules: {
+      'max-lines': ['error', { skipBlankLines: true, skipComments: true, max: 300 }],
+    },
+  },
+
+  {
+    name: 'app/max-lines-allowlist',
+    files: [
+      // Template-heavy SFC: script logic extracted, template is inherently large
+      'src/components/settings/providers/ManageProviderDialog.vue',
+      // Script tightly coupled to large template; deferred extraction to avoid unsafe rewrite
+      'src/components/settings/sections/McpServersSection.vue',
+      // Script tightly coupled to large template; deferred extraction to avoid unsafe rewrite
+      'src/components/workbench/tabs/EditorTab.vue',
+      // Script tightly coupled to Vue Flow graph builders; deferred extraction to avoid unsafe rewrite
+      'src/components/project/codegraph/NeighborhoodExplorer.vue',
+      // Script tightly coupled to prompt editor bridge; deferred extraction to avoid unsafe rewrite
+      'src/components/chat/ChatPromptInput.vue',
+      // Outside this slice; still over 300
+      'src/components/models/search/ModelSearchPicker.vue',
+      'src/components/chat/prompt-editor/ChatPromptEditor.vue',
+      'src/components/chat/ChatMcpServerPicker.vue',
+      'src/components/chat/ChatThreadContent.vue',
+      'src/components/chat/ContextUsageBar.vue',
+      'src/components/project/sections/ChatsSection.vue',
+      'src/components/ai-elements/code-block/pyrola-code-theme.ts',
+      'src/components/workbench/tabs/PlanTab.vue',
+      'src/components/navigation/aside/left/ChatListItem.vue',
+      'src/components/workbench/WorkbenchLspStatus.vue',
+    ],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
 )

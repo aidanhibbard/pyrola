@@ -49,7 +49,7 @@ import NavigationAsideLeftChatRunningDots from '@/components/navigation/aside/le
 import { dropAgentHarness } from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetSidebar, { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
-import { killShellsForChat } from '@/services/harness/agent-shell-registry'
+import { killShellsForChat } from '@/services/harness/shell/registry'
 import { deleteChat, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import chatRouteFor from '@/utils/chat-route-for'
 import projectRouteFor from '@/utils/project-route-for'

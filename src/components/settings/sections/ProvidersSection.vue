@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import type { SettingsTab } from '@/composables/use-pyrola-config'
 import { KeyRound, Loader2, Pencil, Plus, RefreshCw, Settings2, Trash2 } from '@lucide/vue'
-import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Tooltip,
@@ -19,360 +18,46 @@ import {
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import SettingsInputPasswordInput from '@/components/settings/input/PasswordInput.vue'
 import SettingsProvidersManageProviderDialog from '@/components/settings/providers/ManageProviderDialog.vue'
-import usePyrolaConfig from '@/composables/use-pyrola-config'
-import type { SettingsTab } from '@/composables/use-pyrola-config'
-import type { PyrolaCustomProvider } from '@/types/pyrola/pyrola-settings'
-import listConfiguredProviders from '@/services/providers/list-configured-providers'
-import {
-  getCustomProvider,
-  getProviderCatalogEntry,
-  keychainKeyForProvider,
-  AI_SDK_PROVIDER_CATALOG,
-  OPENAI_COMPATIBLE_PROVIDER_CATALOG,
-  providerKeyRef,
-  providerRequiresApiKey,
-} from '@/services/providers/registry'
-import { deleteSecret, getSecret, setSecret } from '@/services/pyrola/pyrola-tauri'
-import { testProviderConnection } from '@/services/providers/test-connection'
+import useProvidersSection from '@/composables/providers-section'
 
 const props = defineProps<{
   tab: SettingsTab
 }>()
 
-const config = usePyrolaConfig()
-const testingProviderId = ref<string | null>(null)
-const apiKeyConfigured = ref<Record<string, boolean>>({})
-const addDialogOpen = ref(false)
-const manageDialogOpen = ref(false)
-const manageMode = ref<'create' | 'edit'>('create')
-const manageProviderId = ref<string | null>(null)
-const editApiKeyProviderId = ref<string | null>(null)
-const apiKeyInput = ref('')
-const providerSearchQuery = ref('')
-
-let apiKeyStatusGeneration = 0
-
-const dialogSurfaceClass =
-  'border-border/80 bg-zinc-50 shadow-2xl backdrop-blur-none dark:bg-zinc-900'
-
-const settings = computed(() => config.getScopeSettings(props.tab))
-
-const configuredProviders = computed(() => listConfiguredProviders(settings.value))
-
-const hasProviders = computed(() => configuredProviders.value.length > 0)
-
-const normalizedProviderSearch = computed(() => providerSearchQuery.value.trim().toLowerCase())
-
-const filteredAiSdkProviders = computed(() => {
-  const query = normalizedProviderSearch.value
-  if (!query) {
-    return AI_SDK_PROVIDER_CATALOG
-  }
-  return AI_SDK_PROVIDER_CATALOG.filter(
-    (entry) =>
-      entry.name.toLowerCase().includes(query) || entry.id.toLowerCase().includes(query),
-  )
-})
-
-const filteredOpenAiCompatibleProviders = computed(() => {
-  const query = normalizedProviderSearch.value
-  if (!query) {
-    return OPENAI_COMPATIBLE_PROVIDER_CATALOG
-  }
-  return OPENAI_COMPATIBLE_PROVIDER_CATALOG.filter(
-    (entry) =>
-      entry.name.toLowerCase().includes(query) || entry.id.toLowerCase().includes(query),
-  )
-})
-
-const hasProviderSearchResults = computed(
-  () =>
-    filteredAiSdkProviders.value.length > 0 ||
-    filteredOpenAiCompatibleProviders.value.length > 0,
-)
-
-const manageInitialProvider = computed((): PyrolaCustomProvider | null => {
-  if (!manageProviderId.value) {
-    return null
-  }
-  return getCustomProvider(settings.value, manageProviderId.value) ?? null
-})
-
-const getApiKeyRef = (providerId: string): string | undefined => {
-  const custom = getCustomProvider(settings.value, providerId)
-  if (custom?.apiKeyRef) {
-    return custom.apiKeyRef
-  }
-  const key = `providers.${providerId}.apiKeyRef` as const
-  return settings.value[key]
-}
-
-const getProviderDisplayName = (providerId: string): string => {
-  const custom = getCustomProvider(settings.value, providerId)
-  if (custom?.name) {
-    return custom.name
-  }
-  return getProviderCatalogEntry(providerId)?.name ?? providerId
-}
-
-const isCustomProvider = (providerId: string): boolean =>
-  Boolean(getCustomProvider(settings.value, providerId))
-
-const hasApiKeyInKeychain = (providerId: string): boolean =>
-  apiKeyConfigured.value[providerId] === true
-
-const refreshApiKeyStatus = async (): Promise<void> => {
-  const generation = ++apiKeyStatusGeneration
-  const next: Record<string, boolean> = {}
-
-  for (const providerId of configuredProviders.value) {
-    const ref = getApiKeyRef(providerId)
-    if (!ref) {
-      next[providerId] = false
-      continue
-    }
-
-    try {
-      const secret = await getSecret(keychainKeyForProvider(ref))
-      if (generation !== apiKeyStatusGeneration) {
-        return
-      }
-      next[providerId] = Boolean(secret)
-    } catch {
-      next[providerId] = false
-    }
-  }
-
-  if (generation !== apiKeyStatusGeneration) {
-    return
-  }
-
-  apiKeyConfigured.value = next
-}
-
-const setApiKeyConfigured = (providerId: string, configured: boolean): void => {
-  apiKeyConfigured.value = {
-    ...apiKeyConfigured.value,
-    [providerId]: configured,
-  }
-}
-
-const getCustomModelCount = (providerId: string): number =>
-  getCustomProvider(settings.value, providerId)?.models?.length ?? 0
-
-const openApiKeyDialog = (providerId: string): void => {
-  apiKeyInput.value = ''
-  editApiKeyProviderId.value = providerId
-}
-
-const openAddDialog = (): void => {
-  providerSearchQuery.value = ''
-  addDialogOpen.value = true
-}
-
-const openCreateCustomDialog = (): void => {
-  addDialogOpen.value = false
-  manageMode.value = 'create'
-  manageProviderId.value = null
-  manageDialogOpen.value = true
-}
-
-const openManageCustomDialog = (providerId: string): void => {
-  manageMode.value = 'edit'
-  manageProviderId.value = providerId
-  manageDialogOpen.value = true
-}
-
-const openEditDialog = (providerId: string): void => {
-  if (isCustomProvider(providerId)) {
-    openManageCustomDialog(providerId)
-    return
-  }
-  openApiKeyDialog(providerId)
-}
-
-const resolveManageStoredApiKey = async (): Promise<string> => {
-  if (!manageProviderId.value) {
-    return ''
-  }
-  const ref = getApiKeyRef(manageProviderId.value)
-  if (!ref) {
-    return ''
-  }
-  return (await getSecret(keychainKeyForProvider(ref))) ?? ''
-}
-
-const handleAddDialogOpenChange = (open: boolean): void => {
-  addDialogOpen.value = open
-  if (!open) {
-    providerSearchQuery.value = ''
-  }
-}
-
-const addProvider = async (providerId: string): Promise<void> => {
-  const ref = providerKeyRef(providerId)
-  await config.updateSetting(
-    props.tab,
-    `providers.${providerId}.apiKeyRef` as keyof typeof settings.value,
-    ref,
-  )
-  addDialogOpen.value = false
-  if (providerRequiresApiKey(providerId, settings.value)) {
-    openApiKeyDialog(providerId)
-  }
-}
-
-const handleManageSave = async (payload: {
-  providerId: string
-  provider: PyrolaCustomProvider
-  apiKey: string | null
-  clearApiKey: boolean
-}): Promise<void> => {
-  const wasCreate = manageMode.value === 'create'
-  try {
-    await config.updateSetting(
-      props.tab,
-      `providers.custom.${payload.providerId}` as keyof typeof settings.value,
-      payload.provider,
-    )
-
-    const keyRef = payload.provider.apiKeyRef ?? payload.providerId
-    if (payload.clearApiKey) {
-      await deleteSecret(keychainKeyForProvider(keyRef))
-      setApiKeyConfigured(payload.providerId, false)
-    } else if (payload.apiKey) {
-      await setSecret(keychainKeyForProvider(keyRef), payload.apiKey)
-      setApiKeyConfigured(payload.providerId, true)
-    }
-
-    await refreshApiKeyStatus()
-
-    if (wasCreate) {
-      manageMode.value = 'edit'
-      manageProviderId.value = payload.providerId
-      manageDialogOpen.value = true
-      toast.success('Provider added', {
-        description: 'Add or edit models below, then save again when you are done.',
-      })
-      return
-    }
-
-    // Keep the manage dialog open after edit so models can be iterated on.
-    manageProviderId.value = payload.providerId
-    manageMode.value = 'edit'
-    manageDialogOpen.value = true
-    toast.success('Provider saved')
-  } catch (error) {
-    toast.error('Failed to save provider', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const saveApiKey = async (providerId: string): Promise<void> => {
-  if (!apiKeyInput.value.trim()) {
-    toast.error('API key is required')
-    return
-  }
-
-  try {
-    const ref = getApiKeyRef(providerId) ?? providerKeyRef(providerId)
-    await setSecret(keychainKeyForProvider(ref), apiKeyInput.value.trim())
-    setApiKeyConfigured(providerId, true)
-    apiKeyInput.value = ''
-    editApiKeyProviderId.value = null
-    await refreshApiKeyStatus()
-    toast.success('API key saved')
-  } catch (error) {
-    toast.error('Failed to save API key', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const clearApiKey = async (providerId: string): Promise<void> => {
-  const ref = getApiKeyRef(providerId)
-  if (!ref) {
-    return
-  }
-
-  try {
-    await deleteSecret(keychainKeyForProvider(ref))
-    setApiKeyConfigured(providerId, false)
-    await refreshApiKeyStatus()
-    toast.success('API key cleared')
-  } catch (error) {
-    toast.error('Failed to clear API key', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const removeProvider = async (providerId: string): Promise<void> => {
-  try {
-    const ref = getApiKeyRef(providerId)
-    if (ref) {
-      await deleteSecret(keychainKeyForProvider(ref))
-    }
-
-    const isCustom = isCustomProvider(providerId)
-    const keysToRemove = isCustom
-      ? [`providers.custom.${providerId}`]
-      : [`providers.${providerId}.apiKeyRef`]
-
-    await config.removeSettings(props.tab, keysToRemove)
-    toast.success('Provider removed')
-  } catch (error) {
-    toast.error('Failed to remove provider', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
-}
-
-const testConnection = async (providerId: string): Promise<void> => {
-  testingProviderId.value = providerId
-  try {
-    const custom = getCustomProvider(settings.value, providerId)
-    const requiresKey = providerRequiresApiKey(providerId, settings.value)
-    const ref = getApiKeyRef(providerId)
-    let apiKey = ''
-
-    if (ref) {
-      apiKey = (await getSecret(keychainKeyForProvider(ref))) ?? ''
-    }
-
-    if (requiresKey && !apiKey) {
-      throw new Error(ref ? 'No API key in keychain' : 'No API key configured')
-    }
-
-    await testProviderConnection({
-      providerId: custom ? 'openai' : providerId,
-      apiKey,
-      baseUrl: custom?.baseURL ?? getProviderCatalogEntry(providerId)?.defaultBaseUrl,
-    })
-    toast.success('Connection successful')
-  } catch (error) {
-    toast.error('Connection failed', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
-  } finally {
-    testingProviderId.value = null
-  }
-}
-
-watch(
-  [configuredProviders, () => props.tab],
-  async () => {
-    try {
-      await refreshApiKeyStatus()
-    } catch (error) {
-      toast.error('Failed to refresh API key status', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  },
-  { immediate: true },
-)
+const {
+  testingProviderId,
+  addDialogOpen,
+  manageDialogOpen,
+  manageMode,
+  manageProviderId,
+  editApiKeyProviderId,
+  apiKeyInput,
+  providerSearchQuery,
+  dialogSurfaceClass,
+  settings,
+  configuredProviders,
+  hasProviders,
+  filteredAiSdkProviders,
+  filteredOpenAiCompatibleProviders,
+  hasProviderSearchResults,
+  manageInitialProvider,
+  getProviderDisplayName,
+  isCustomProvider,
+  hasApiKeyInKeychain,
+  getCustomModelCount,
+  openAddDialog,
+  openCreateCustomDialog,
+  openEditDialog,
+  resolveManageStoredApiKey,
+  handleAddDialogOpenChange,
+  addProvider,
+  handleManageSave,
+  saveApiKey,
+  clearApiKey,
+  removeProvider,
+  testConnection,
+  providerRequiresApiKey,
+} = useProvidersSection(props)
 </script>
 
 <template>

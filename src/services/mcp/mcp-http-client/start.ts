@@ -1,0 +1,181 @@
+import {
+  createMCPClient,
+  ElicitationRequestSchema,
+  type OAuthClientProvider,
+} from '@ai-sdk/mcp'
+import type { McpHttpServer } from '@/types/pyrola/mcp-config'
+import { isAllowedMcpUrl } from '@/services/mcp/is-allowed-mcp-url'
+import {
+  detectMcpToolDrift,
+  loadMcpToolBaseline,
+  saveMcpToolBaseline,
+} from '@/services/mcp/mcp-tool-baseline'
+import type { McpServerState } from '@/services/pyrola/pyrola-tauri'
+import {
+  getMcpElicitationHandler,
+  httpServers,
+  iconsFromClient,
+  isUnauthorized,
+  setEntryState,
+  toToolInfo,
+} from './store'
+import { stopHttpServer } from './stop'
+
+export const startHttpServer = async (
+  serverId: string,
+  config: McpHttpServer,
+  options?: { authProvider?: OAuthClientProvider },
+): Promise<McpServerState> => {
+  if (!isAllowedMcpUrl(config.url)) {
+    throw new Error(
+      'MCP URL must use https, or http on localhost / 127.0.0.1',
+    )
+  }
+
+  await stopHttpServer(serverId)
+  setEntryState(
+    serverId,
+    { status: 'starting', tools: [], error: null },
+    { client: null, config, authProvider: options?.authProvider },
+  )
+
+  try {
+    const client = await createMCPClient({
+      transport: {
+        type: config.type,
+        url: config.url,
+        headers: config.headers,
+        authProvider: options?.authProvider,
+        redirect: 'error',
+      },
+      maxRetries: 0,
+      clientName: 'Pyrola',
+      capabilities: {
+        elicitation: {},
+      },
+    })
+
+    client.onElicitationRequest(ElicitationRequestSchema, async (request) => {
+      const handler = getMcpElicitationHandler()
+      if (!handler) {
+        return { action: 'cancel' }
+      }
+      return handler(request)
+    })
+
+    const listed = await client.listTools()
+    const tools = listed.tools.map(toToolInfo)
+    const icons = iconsFromClient(client)
+    const fingerprintSources = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }))
+    const baseline = await loadMcpToolBaseline(serverId)
+    if (baseline) {
+      const drift = await detectMcpToolDrift(serverId, fingerprintSources)
+      if (drift.drifted) {
+        await client.close()
+        return setEntryState(
+          serverId,
+          {
+            status: 'error',
+            tools,
+            icons,
+            error: `Tool definitions changed (${[...drift.changed, ...drift.added].join(', ') || 'unknown'}). Re-trust this server in Settings.`,
+          },
+          { client: null, config, authProvider: options?.authProvider },
+        )
+      }
+    } else {
+      await saveMcpToolBaseline(serverId, fingerprintSources)
+    }
+
+    return setEntryState(
+      serverId,
+      { status: 'connected', tools, icons, error: null },
+      { client, config, authProvider: options?.authProvider },
+    )
+  } catch (error) {
+    if (isUnauthorized(error)) {
+      return setEntryState(
+        serverId,
+        {
+          status: 'auth_required',
+          tools: [],
+          error: error instanceof Error ? error.message : 'Authentication required',
+        },
+        { client: null, config, authProvider: options?.authProvider },
+      )
+    }
+
+    const message = error instanceof Error ? error.message : 'Failed to connect'
+    setEntryState(
+      serverId,
+      { status: 'error', tools: [], error: message },
+      { client: null, config, authProvider: options?.authProvider },
+    )
+    throw error instanceof Error ? error : new Error(message)
+  }
+}
+
+export const refreshHttpServer = async (
+  serverId: string,
+): Promise<McpServerState> => {
+  const entry = httpServers.get(serverId)
+  if (!entry?.client) {
+    throw new Error('Server not running')
+  }
+
+  setEntryState(serverId, {
+    status: 'refreshing',
+    tools: entry.state.tools,
+    error: null,
+  })
+
+  try {
+    const listed = await entry.client.listTools()
+    const tools = listed.tools.map(toToolInfo)
+    const icons = iconsFromClient(entry.client)
+    const fingerprintSources = tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }))
+    const drift = await detectMcpToolDrift(serverId, fingerprintSources)
+    if (drift.drifted) {
+      await entry.client.close()
+      return setEntryState(
+        serverId,
+        {
+          status: 'error',
+          tools,
+          icons,
+          error: `Tool definitions changed (${[...drift.changed, ...drift.added].join(', ') || 'unknown'}). Re-trust this server in Settings.`,
+        },
+        { client: null },
+      )
+    }
+    return setEntryState(serverId, {
+      status: 'connected',
+      tools,
+      icons,
+      error: null,
+    })
+  } catch (error) {
+    if (isUnauthorized(error)) {
+      return setEntryState(serverId, {
+        status: 'auth_required',
+        tools: [],
+        error: error instanceof Error ? error.message : 'Authentication required',
+      })
+    }
+    const message = error instanceof Error ? error.message : 'Refresh failed'
+    setEntryState(serverId, {
+      status: 'error',
+      tools: entry.state.tools,
+      error: message,
+    })
+    throw error instanceof Error ? error : new Error(message)
+  }
+}

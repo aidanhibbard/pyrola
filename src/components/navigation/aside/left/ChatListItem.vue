@@ -36,7 +36,7 @@ import { SidebarMenuSubButton } from '@/components/shadcn/ui/sidebar'
 import { dropAgentHarness } from '@/composables/use-agent-harness'
 import useChatStore from '@/composables/use-chat-store'
 import useFleetSidebar, { refreshFleetSidebar } from '@/composables/use-fleet-sidebar'
-import { killShellsForChat } from '@/services/harness/agent-shell-registry'
+import { killShellsForChat } from '@/services/harness/shell/registry'
 import {
   deleteChat,
   forkChat,

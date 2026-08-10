@@ -30,6 +30,8 @@ jobs:
         run: cargo install cargo-audit --locked
       - name: Audit Rust dependencies
         run: cargo audit --file src-tauri/Cargo.lock
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   tauri-build:
     name: Tauri build

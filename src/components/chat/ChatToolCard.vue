@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ApprovalResolution } from '@/services/harness/approval-gate'
-import type { PendingApprovalView } from '@/services/harness/gate-tool-permission'
+import type { ApprovalResolution } from '@/services/harness/permission/approval-gate'
+import type { PendingApprovalView } from '@/services/harness/permission/gate'
 import type { PermissionScope } from '@/types/harness/permission'
 import ChatInlineFileDiff from '@/components/chat/InlineFileDiff.vue'
 import McpServerIcon from '@/components/mcp/ServerIcon.vue'

@@ -8,19 +8,6 @@ import { defaultPyrolaSettings } from '@/schemas/pyrola-settings'
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export const flattenSettings = (settings: PyrolaSettings): Record<string, unknown> => {
-  const flat: Record<string, unknown> = { version: settings.version }
-
-  for (const [key, value] of Object.entries(settings)) {
-    if (key === 'version') {
-      continue
-    }
-    flat[key] = value
-  }
-
-  return flat
-}
-
 /**
  * Union personal + project records by identity key.
  * Personal is the base; project overlays same-key entries via resolveConflict.
@@ -156,26 +143,6 @@ export const mergeSettings = (
   }
 
   return merged
-}
-
-export const getProjectOverrideKeys = (
-  personal: PyrolaSettings,
-  project: PyrolaSettings,
-): string[] => {
-  const keys: string[] = []
-
-  for (const key of Object.keys(project)) {
-    if (key === 'version') {
-      continue
-    }
-    const projectValue = project[key as keyof PyrolaSettings]
-    if (projectValue === undefined) {
-      continue
-    }
-    keys.push(key)
-  }
-
-  return keys
 }
 
 export const removeSettingsKeys = (

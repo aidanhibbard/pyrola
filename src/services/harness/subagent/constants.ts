@@ -1,0 +1,30 @@
+export const SUBAGENT_READ_ONLY_TOOLS = [
+  'read_file',
+  'list_dir',
+  'grep',
+  'glob_files',
+  'codebase_explore',
+  'codebase_search',
+  'codebase_impact',
+  'codebase_status',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'git_branch',
+  'lsp',
+  'diagnostics',
+  'load_skill',
+  'get_mcp_tools',
+  'call_mcp_tool',
+  'list_mcp_resources',
+  'read_mcp_resource',
+  'get_mcp_prompt',
+] as const
+
+export const SUBAGENT_MCP_TOOLS = [
+  'get_mcp_tools',
+  'call_mcp_tool',
+  'list_mcp_resources',
+  'read_mcp_resource',
+  'get_mcp_prompt',
+] as const

@@ -60,7 +60,8 @@ const LEVELS: Record<PermissionLevel, LevelMeta> = {
   },
   bypass: {
     label: 'Bypass',
-    description: 'Skip all permission checks. Use with care.',
+    description:
+      'Skip prompts for file writes, deletes, and git writes. Shell and MCP still ask.',
     icon: ShieldOffIcon,
     class: 'text-amber-500',
   },
@@ -98,8 +99,8 @@ const cancelBypass = (): void => {
         <AlertDialogTitle>Enable bypass mode?</AlertDialogTitle>
         <AlertDialogDescription>
           Bypass mode skips permission prompts for file writes, deletes, and git
-          writes. MCP tool calls still require approval. Only enable this if you
-          trust the current task fully.
+          writes. Shell and MCP tool calls still require approval. Only enable
+          this if you trust the current task fully.
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>

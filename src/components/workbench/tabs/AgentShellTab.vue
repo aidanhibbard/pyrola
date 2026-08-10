@@ -21,7 +21,7 @@ import {
   agentShellRevision,
   getAgentShell,
   killAgentShell,
-} from '@/services/harness/agent-shell-registry'
+} from '@/services/harness/shell/registry'
 import type { AgentShellPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
 
 const props = defineProps<{

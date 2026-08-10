@@ -13,7 +13,7 @@ Control how aggressively the harness asks before sensitive tools run.
 
 - **Ask:** show approval cards for sensitive capabilities unless already allowed.
 - **Allowlist:** only recorded capabilities proceed without prompts.
-- **Bypass:** skip approval prompts (alpha power tool; use carefully).
+- **Bypass:** skip approval prompts for file writes, deletes, and git writes only (alpha power tool; use carefully). Shell and MCP still prompt.
 
 Capabilities include filesystem writes and deletes, shell, unsandboxed shell, git writes, and MCP calls.
 
