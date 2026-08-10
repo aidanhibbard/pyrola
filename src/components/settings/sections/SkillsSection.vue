@@ -13,6 +13,6 @@ defineProps<{
     kind="skills"
     folder-label="skills"
     title="Skills"
-    empty-message="No skills yet — add SKILL.md files under .pyrola/skills/"
+    empty-message="No skills"
   />
 </template>

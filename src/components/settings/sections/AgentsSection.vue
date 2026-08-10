@@ -13,6 +13,6 @@ defineProps<{
     kind="agents"
     folder-label="agents"
     title="Agents"
-    empty-message="No agents yet — add .md files to .pyrola/agents/"
+    empty-message="No agents"
   />
 </template>

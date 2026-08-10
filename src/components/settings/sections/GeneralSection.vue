@@ -202,10 +202,6 @@ const shortcuts = [
             <TooltipContent>Check for updates</TooltipContent>
           </Tooltip>
         </div>
-        <p class="text-sm text-muted-foreground">
-          Check for a new version. Install only when you choose to.
-        </p>
-
         <div
           v-if="updater.updateAvailable.value"
           class="space-y-3 rounded-md border border-border bg-muted/30 p-3"

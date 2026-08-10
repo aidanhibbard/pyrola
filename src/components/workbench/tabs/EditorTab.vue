@@ -40,10 +40,8 @@ import {
 } from '@/components/shadcn/ui/dropdown-menu'
 import {
   Empty,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
-  EmptyTitle,
 } from '@/components/shadcn/ui/empty'
 import {
   ResizableHandle,
@@ -553,10 +551,6 @@ watch(
             <EmptyMedia variant="icon">
               <FileCode />
             </EmptyMedia>
-            <EmptyTitle>No file open</EmptyTitle>
-            <EmptyDescription>
-              Select a file from the tree or search the project.
-            </EmptyDescription>
             <Button
               variant="ghost"
               size="sm"

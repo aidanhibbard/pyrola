@@ -13,6 +13,6 @@ defineProps<{
     kind="plans"
     folder-label="plans"
     title="Plans"
-    empty-message="No plans yet — add PLAN.md files under .pyrola/plans/<name>/"
+    empty-message="No plans"
   />
 </template>

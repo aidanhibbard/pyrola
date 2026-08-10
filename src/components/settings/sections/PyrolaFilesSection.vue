@@ -4,6 +4,12 @@ import { ExternalLink, Folder } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/shadcn/ui/button'
 import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/shadcn/ui/empty'
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -152,7 +158,17 @@ const openInEditor = (file: ProjectFileEntry): void => {
       <Button variant="outline" size="sm" @click="revealRoot">Reveal in folder</Button>
     </template>
 
-    <p v-if="files.length === 0" class="text-sm text-muted-foreground">{{ emptyMessage }}</p>
+    <Empty
+      v-if="files.length === 0"
+      class="border border-border/60 py-12"
+    >
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Folder />
+        </EmptyMedia>
+        <EmptyTitle>{{ emptyMessage }}</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
 
     <div v-else class="space-y-2">
       <div

@@ -13,6 +13,6 @@ defineProps<{
     kind="rules"
     folder-label="rules"
     title="Rules"
-    empty-message="No rules yet — add .md files to .pyrola/rules/"
+    empty-message="No rules"
   />
 </template>
