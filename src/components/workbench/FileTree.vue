@@ -50,6 +50,7 @@ const {
   createName,
   creating,
   projectLabel,
+  refresh,
   handleRenameConfirm,
   handleRenameCancel,
   handleDeleteConfirm,
@@ -62,6 +63,10 @@ const {
   handleSelect,
   handleExpandedChange,
 } = useFileTreeView(props, emit)
+
+defineExpose({
+  refresh,
+})
 </script>
 
 <template>

@@ -269,10 +269,6 @@ export default (props: { projectId: string; selectedPath?: string | null }, emit
     },
   )
 
-  defineExpose({
-    refresh,
-  })
-
   return {
     workbench,
     tree,
