@@ -9,9 +9,15 @@ import {
   getProviderCatalogEntry,
 } from '@/services/providers/registry'
 import { getModelCatalogOption } from '@/services/models/model-catalog-options'
+import clampModelCatalogOption from '@/services/models/clamp-model-catalog-option'
+import resolveReasoningCapability from '@/services/models/resolve-reasoning-capability'
+import resolveSupportsFast from '@/services/models/resolve-fast-capability'
+
+/** Top-level AI SDK `reasoning` omits `max`; providerOptions may still send it. */
+export type SdkPortableReasoningLevel = Exclude<ReasoningLevel, 'max'>
 
 export type ReasoningCallMapping = {
-  reasoning?: ReasoningLevel
+  reasoning?: SdkPortableReasoningLevel
   fast?: boolean
   providerOptionsReasoningEffort?: string
   providerOptionsKey?: string
@@ -24,6 +30,36 @@ const normalizeEffort = (
     return undefined
   }
   return value
+}
+
+/**
+ * AI SDK LanguageModelV4CallOptions.reasoning accepts through `xhigh` only.
+ * Keep `max` in the UI / catalog; map to `xhigh` for the top-level field.
+ * OpenAI providerOptions.reasoningEffort still accepts `max` separately.
+ */
+const toSdkPortableReasoning = (
+  level: ReasoningLevel,
+): SdkPortableReasoningLevel => (level === 'max' ? 'xhigh' : level)
+
+const clampEffortForCapability = (
+  settings: PyrolaSettings,
+  ref: ModelRef,
+  effort: ReasoningLevel | undefined,
+): ReasoningLevel | undefined => {
+  if (!effort || effort === 'provider-default') {
+    return undefined
+  }
+  const capability = resolveReasoningCapability(settings, ref)
+  if (!capability.supported) {
+    return undefined
+  }
+  if (capability.mandatory && effort === 'none') {
+    return undefined
+  }
+  if (!capability.levels.includes(effort)) {
+    return undefined
+  }
+  return effort
 }
 
 export const resolveReasoningForRole = (
@@ -51,8 +87,14 @@ export const resolveReasoningForRole = (
 export const resolveCatalogReasoning = (
   settings: PyrolaSettings,
   ref: ModelRef,
-): ReasoningLevel | undefined =>
-  normalizeEffort(getModelCatalogOption(settings, ref).reasoning)
+): ReasoningLevel | undefined => {
+  const clamped = clampModelCatalogOption(
+    settings,
+    ref,
+    getModelCatalogOption(settings, ref),
+  )
+  return normalizeEffort(clamped.reasoning)
+}
 
 export const pickResolvedReasoning = (
   candidates: Array<string | ReasoningLevel | null | undefined>,
@@ -71,37 +113,47 @@ export const mapReasoningToCallOptions = (
   ref: ModelRef,
   reasoning: ReasoningLevel | undefined,
 ): ReasoningCallMapping => {
-  const catalog = getModelCatalogOption(settings, ref)
+  const catalog = clampModelCatalogOption(
+    settings,
+    ref,
+    getModelCatalogOption(settings, ref),
+  )
   const customDefault = getCustomProvider(settings, ref.providerId)?.models?.find(
     (entry) => entry.id === ref.modelId,
   )?.reasoningEffort
 
-  const effective =
+  const requested =
     reasoning && reasoning !== 'provider-default'
       ? reasoning
       : normalizeEffort(catalog.reasoning) ?? normalizeEffort(customDefault)
 
+  const effective = clampEffortForCapability(settings, ref, requested)
+
   const mapping: ReasoningCallMapping = {
-    fast: catalog.fast === true ? true : undefined,
+    fast:
+      catalog.fast === true && resolveSupportsFast(ref) ? true : undefined,
   }
 
-  if (!effective || effective === 'provider-default') {
+  if (!effective) {
     return mapping
   }
+
+  const topLevel = toSdkPortableReasoning(effective)
 
   if (
     ref.providerId === 'anthropic' ||
     ref.providerId === 'google' ||
     ref.providerId === 'gateway'
   ) {
-    return { ...mapping, reasoning: effective }
+    return { ...mapping, reasoning: topLevel }
   }
 
   if (getCustomProvider(settings, ref.providerId)) {
     return {
       ...mapping,
-      reasoning: effective,
+      reasoning: topLevel,
       providerOptionsKey: ref.providerId,
+      // Custom / OpenAI-compatible bodies may accept `max` as a string effort.
       providerOptionsReasoningEffort: effective,
     }
   }
@@ -110,15 +162,16 @@ export const mapReasoningToCallOptions = (
   if (catalogEntry || ref.providerId === 'openai') {
     return {
       ...mapping,
-      reasoning: effective,
+      reasoning: topLevel,
       providerOptionsKey: 'openai',
+      // @ai-sdk/openai providerOptions.reasoningEffort accepts `max`.
       providerOptionsReasoningEffort: effective,
     }
   }
 
   return {
     ...mapping,
-    reasoning: effective,
+    reasoning: topLevel,
     providerOptionsKey: ref.providerId,
     providerOptionsReasoningEffort: effective,
   }

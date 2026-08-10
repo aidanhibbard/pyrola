@@ -5,6 +5,7 @@ import type {
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import type { ModelRef } from '@/types/models/model-ref'
+import clampModelCatalogOption from '@/services/models/clamp-model-catalog-option'
 
 export const getModelCatalogOptionsMap = (
   settings: PyrolaSettings,
@@ -26,6 +27,17 @@ export const getModelCatalogOption = (
       : serializeModelRef({ providerId: ref.providerId, modelId: ref.modelId })
   return getModelCatalogOptionsMap(settings)[key] ?? {}
 }
+
+/**
+ * Read path for UI: stored option clamped to the model's current capabilities.
+ * Prefer this over getModelCatalogOption when displaying or deriving labels.
+ * Saves still go through mergeModelCatalogOption with the raw patch.
+ */
+export const getClampedModelCatalogOption = (
+  settings: PyrolaSettings,
+  ref: ModelRef,
+): ModelCatalogOption =>
+  clampModelCatalogOption(settings, ref, getModelCatalogOption(settings, ref))
 
 export const isModelAllowed = (
   settings: PyrolaSettings,

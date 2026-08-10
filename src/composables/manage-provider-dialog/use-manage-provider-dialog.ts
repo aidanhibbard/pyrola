@@ -116,13 +116,13 @@ export default (props: ManageProviderDialogProps, emit: ManageProviderDialogEmit
         throw new Error('Base URL is required')
       }
 
-      const liveIds = await listProviderModels({
+      const liveRows = await listProviderModels({
         providerId: 'openai',
         apiKey: await resolveApiKeyForRequest(),
         baseUrl: trimmedBaseUrl,
       })
 
-      if (liveIds.length === 0) {
+      if (liveRows.length === 0) {
         toast.error('No models returned by endpoint')
         return
       }
@@ -131,7 +131,8 @@ export default (props: ManageProviderDialogProps, emit: ManageProviderDialogEmit
         models.value.map((model) => model.id.trim()).filter((id) => id.length > 0),
       )
       let added = 0
-      for (const modelId of liveIds) {
+      for (const row of liveRows) {
+        const modelId = row.id
         if (existing.has(modelId)) {
           continue
         }

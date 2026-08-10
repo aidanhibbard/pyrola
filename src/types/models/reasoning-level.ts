@@ -6,6 +6,7 @@ export const REASONING_LEVELS = [
   'medium',
   'high',
   'xhigh',
+  'max',
 ] as const
 
 export type ReasoningLevel = (typeof REASONING_LEVELS)[number]
@@ -18,6 +19,7 @@ export const REASONING_LEVEL_LABELS: Record<ReasoningLevel, string> = {
   medium: 'Medium',
   high: 'High',
   xhigh: 'Extra high',
+  max: 'Max',
 }
 
 export const isReasoningLevel = (value: unknown): value is ReasoningLevel =>

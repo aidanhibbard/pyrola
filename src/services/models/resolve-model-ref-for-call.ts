@@ -1,6 +1,7 @@
 import type { ModelRef } from '@/types/models/model-ref'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { getModelCatalogOption } from '@/services/models/model-catalog-options'
+import resolveSupportsFast from '@/services/models/resolve-fast-capability'
 import {
   isFastModelId,
   toBaseModelId,
@@ -41,8 +42,9 @@ export const resolveModelRefForCall = (
   const optionRef = canonicalizeModelRef(ref)
   const catalogFast = getModelCatalogOption(settings, optionRef).fast === true
   const selectedWasFast = isFastModelId(ref.modelId)
-  const fast =
+  const wantsFast =
     fastOverride === true || catalogFast || selectedWasFast
+  const fast = wantsFast && resolveSupportsFast(optionRef)
 
   if (!fast) {
     return { createRef: optionRef, optionRef, fast: false }

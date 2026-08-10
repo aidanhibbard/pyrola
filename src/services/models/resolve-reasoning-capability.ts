@@ -1,23 +1,15 @@
 import type { ModelRef } from '@/types/models/model-ref'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
-import { PORTABLE_REASONING_LEVELS, isReasoningLevel } from '@/types/models/reasoning-level'
+import { isReasoningLevel } from '@/types/models/reasoning-level'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
-import { getCustomProvider, getProviderCatalogEntry } from '@/services/providers/registry'
+import { getCustomProvider } from '@/services/providers/registry'
+import resolveBuiltinReasoningCapability from '@/services/models/resolve-builtin-model-capabilities'
 
 export type ReasoningCapability = {
   supported: boolean
   levels: ReasoningLevel[]
   mandatory: boolean
 }
-
-/** Providers where the AI SDK / router maps portable effort levels reliably. */
-const PORTABLE_REASONING_PROVIDER_IDS = new Set([
-  'anthropic',
-  'google',
-  'gateway',
-  'openai',
-  'openrouter',
-])
 
 const uniqueLevels = (levels: ReasoningLevel[]): ReasoningLevel[] => {
   const seen = new Set<ReasoningLevel>()
@@ -43,6 +35,19 @@ const levelsFromCustomList = (values: string[]): ReasoningLevel[] => {
   return uniqueLevels(parsed)
 }
 
+const fromLiveMetadata = (ref: ModelRef): ReasoningCapability | null => {
+  const live = ref.supportsReasoningEffort
+  if (!live || live.length === 0) {
+    return null
+  }
+  const mandatory = ref.reasoningMandatory === true
+  let levels = uniqueLevels(['provider-default', ...live])
+  if (mandatory) {
+    levels = levels.filter((level) => level !== 'none')
+  }
+  return { supported: true, levels, mandatory }
+}
+
 export const resolveReasoningCapability = (
   settings: PyrolaSettings,
   ref: ModelRef | null | undefined,
@@ -65,24 +70,12 @@ export const resolveReasoningCapability = (
     return { supported: true, levels, mandatory: false }
   }
 
-  if (PORTABLE_REASONING_PROVIDER_IDS.has(ref.providerId)) {
-    return {
-      supported: true,
-      levels: PORTABLE_REASONING_LEVELS,
-      mandatory: false,
-    }
+  const live = fromLiveMetadata(ref)
+  if (live) {
+    return live
   }
 
-  const catalog = getProviderCatalogEntry(ref.providerId)
-  if (catalog?.category === 'ai-sdk' && PORTABLE_REASONING_PROVIDER_IDS.has(ref.providerId)) {
-    return {
-      supported: true,
-      levels: PORTABLE_REASONING_LEVELS,
-      mandatory: false,
-    }
-  }
-
-  return { supported: false, levels: [], mandatory: false }
+  return resolveBuiltinReasoningCapability(ref)
 }
 
 export default resolveReasoningCapability

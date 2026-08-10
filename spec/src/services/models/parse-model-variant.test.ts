@@ -64,6 +64,8 @@ describe('resolveModelRefForCall', () => {
     const resolved = resolveModelRefForCall(settings, {
       providerId: 'gateway',
       modelId: 'moonshotai/kimi-k3',
+      supportsFast: true,
+      fastModelId: 'moonshotai/kimi-k3-fast',
     })
     expect(resolved.createRef.modelId).toBe('moonshotai/kimi-k3')
     expect(resolved.fast).toBe(true)
@@ -90,6 +92,7 @@ describe('resolveModelRefForCall', () => {
     const resolved = resolveModelRefForCall(settings, {
       providerId: 'openrouter',
       modelId: 'moonshotai/kimi-k3',
+      supportsFast: true,
       fastModelId: 'moonshotai/kimi-k3-fast',
     })
     expect(resolved.createRef.modelId).toBe('moonshotai/kimi-k3-fast')

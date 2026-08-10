@@ -90,11 +90,5 @@ const handleReasoning = (value: unknown): void => {
         </SelectContent>
       </Select>
     </div>
-    <p
-      v-else
-      class="text-xs text-muted-foreground"
-    >
-      This model does not expose reasoning effort controls.
-    </p>
   </div>
 </template>

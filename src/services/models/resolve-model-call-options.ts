@@ -6,7 +6,11 @@ import type {
   PyrolaSettings,
 } from '@/types/pyrola/pyrola-settings'
 import { getCustomProvider } from '@/services/providers/registry'
-import { mapReasoningToCallOptions } from '@/services/models/resolve-reasoning-for-call'
+import {
+  mapReasoningToCallOptions,
+  type SdkPortableReasoningLevel,
+} from '@/services/models/resolve-reasoning-for-call'
+import resolveSupportsFast from '@/services/models/resolve-fast-capability'
 
 type JsonPrimitive = string | number | boolean | null
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
@@ -20,7 +24,8 @@ export type ResolvedModelCallOptions = {
   frequencyPenalty?: number
   presencePenalty?: number
   seed?: number
-  reasoning?: ReasoningLevel
+  /** Top-level AI SDK reasoning (no `max`; mapped to `xhigh` when needed). */
+  reasoning?: SdkPortableReasoningLevel
   providerOptions?: Record<string, JsonObject>
 }
 
@@ -140,7 +145,11 @@ export const resolveModelCallOptions = (
         },
       }
     }
-    applyFastOption(options, ref, reasoningMapping.fast)
+    applyFastOption(
+      options,
+      ref,
+      resolveSupportsFast(ref) ? reasoningMapping.fast : undefined,
+    )
     return options
   }
 
@@ -197,7 +206,11 @@ export const resolveModelCallOptions = (
     options.reasoning = reasoningMapping.reasoning
   }
 
-  applyFastOption(options, ref, reasoningMapping.fast)
+  applyFastOption(
+    options,
+    ref,
+    resolveSupportsFast(ref) ? reasoningMapping.fast : undefined,
+  )
   return options
 }
 

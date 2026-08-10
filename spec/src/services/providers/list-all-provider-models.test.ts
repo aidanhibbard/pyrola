@@ -2,23 +2,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import { mockPyrolaTauri } from '../../test-utils/mocks/pyrola-tauri'
 
-vi.mock('@/services/pyrola/pyrola-tauri', () => mockPyrolaTauri())
-
-vi.mock('@/services/providers/list-provider-models', () => ({
-  listProviderModels: vi.fn<() => Promise<string[]>>(async () => {
-    throw new Error('live list unavailable')
-  }),
+const { httpProxyRequest, getSecret } = vi.hoisted(() => ({
+  httpProxyRequest: vi.fn<
+    (request: { url: string; method: string; headers: Record<string, string> }) => Promise<{
+      status: number
+      body: string
+    }>
+  >(),
+  getSecret: vi.fn<(key: string) => Promise<string | null>>(async () => 'test-key'),
 }))
 
+vi.mock('@/services/pyrola/pyrola-tauri', () =>
+  mockPyrolaTauri({
+    httpProxyRequest,
+    getSecret,
+  }),
+)
+
 import listAllProviderModels from '@/services/providers/list-all-provider-models'
-import { listProviderModels } from '@/services/providers/list-provider-models'
 
 describe('listAllProviderModels', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getSecret.mockResolvedValue('test-key')
   })
 
   it('uses configured custom models when live listing fails', async () => {
+    httpProxyRequest.mockRejectedValueOnce(new Error('live list unavailable'))
+
     const settings = {
       version: 1 as const,
       'providers.custom.kat': {
@@ -33,7 +44,7 @@ describe('listAllProviderModels', () => {
     } satisfies PyrolaSettings
 
     const groups = await listAllProviderModels(settings)
-    expect(listProviderModels).toHaveBeenCalled()
+    expect(httpProxyRequest).toHaveBeenCalled()
     expect(groups).toHaveLength(1)
     expect(groups[0]?.providerName).toBe('Kat')
     expect(groups[0]?.models).toEqual([
@@ -43,7 +54,12 @@ describe('listAllProviderModels', () => {
   })
 
   it('merges configured models ahead of live models', async () => {
-    vi.mocked(listProviderModels).mockResolvedValueOnce(['live-model', 'kat-coder-2.5'])
+    httpProxyRequest.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        data: [{ id: 'live-model' }, { id: 'kat-coder-2.5' }],
+      }),
+    })
 
     const settings = {
       version: 1 as const,
@@ -61,5 +77,94 @@ describe('listAllProviderModels', () => {
       'live-model',
     ])
     expect(groups[0]?.models[0]?.name).toBe('Configured')
+  })
+
+  it('copies OpenRouter reasoning metadata onto ModelRef', async () => {
+    httpProxyRequest.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        data: [
+          {
+            id: 'moonshotai/kimi-k3',
+            reasoning: {
+              supported_efforts: ['low', 'medium', 'high'],
+              mandatory: true,
+            },
+          },
+        ],
+      }),
+    })
+
+    const settings = {
+      version: 1 as const,
+      'providers.openrouter.apiKeyRef': 'openrouter',
+    } satisfies PyrolaSettings
+
+    const groups = await listAllProviderModels(settings)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.providerId).toBe('openrouter')
+    expect(groups[0]?.models).toEqual([
+      {
+        providerId: 'openrouter',
+        modelId: 'moonshotai/kimi-k3',
+        supportsReasoningEffort: ['low', 'medium', 'high'],
+        reasoningMandatory: true,
+      },
+    ])
+  })
+
+  it('copies Gateway fast tag onto ModelRef without inventing effort levels', async () => {
+    httpProxyRequest.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        data: [
+          {
+            id: 'anthropic/claude-opus-5',
+            tags: ['reasoning', 'fast'],
+          },
+        ],
+      }),
+    })
+
+    const settings = {
+      version: 1 as const,
+      'providers.gateway.apiKeyRef': 'gateway',
+    } satisfies PyrolaSettings
+
+    const groups = await listAllProviderModels(settings)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.providerId).toBe('gateway')
+    expect(groups[0]?.models).toEqual([
+      {
+        providerId: 'gateway',
+        modelId: 'anthropic/claude-opus-5',
+        supportsFast: true,
+      },
+    ])
+    expect(groups[0]?.models[0]?.supportsReasoningEffort).toBeUndefined()
+  })
+
+  it('leaves supportsReasoningEffort undefined for non-reasoning OpenRouter models', async () => {
+    httpProxyRequest.mockResolvedValueOnce({
+      status: 200,
+      body: JSON.stringify({
+        data: [{ id: 'openai/gpt-4o' }],
+      }),
+    })
+
+    const settings = {
+      version: 1 as const,
+      'providers.openrouter.apiKeyRef': 'openrouter',
+    } satisfies PyrolaSettings
+
+    const groups = await listAllProviderModels(settings)
+    expect(groups[0]?.models).toEqual([
+      {
+        providerId: 'openrouter',
+        modelId: 'openai/gpt-4o',
+      },
+    ])
+    expect(groups[0]?.models[0]?.supportsReasoningEffort).toBeUndefined()
+    expect(groups[0]?.models[0]?.reasoningMandatory).toBeUndefined()
   })
 })

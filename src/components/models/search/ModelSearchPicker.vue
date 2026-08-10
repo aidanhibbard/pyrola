@@ -35,11 +35,14 @@ import {
   modelVendorLabel,
 } from '@/utils/model-vendor'
 import {
+  getClampedModelCatalogOption,
   getModelCatalogOption,
   isModelAllowed,
   mergeModelCatalogOption,
 } from '@/services/models/model-catalog-options'
+import clampModelCatalogOption from '@/services/models/clamp-model-catalog-option'
 import resolveReasoningCapability from '@/services/models/resolve-reasoning-capability'
+import resolveSupportsFast from '@/services/models/resolve-fast-capability'
 import {
   canonicalizeModelRef,
 } from '@/services/models/resolve-model-ref-for-call'
@@ -149,6 +152,34 @@ const filteredGroups = computed((): VendorGroup[] => {
   return groups.sort((left, right) => left.name.localeCompare(right.name))
 })
 
+type DisabledEntry = ModelRef & { providerName: string; label: string }
+
+const disabledEntries = computed((): DisabledEntry[] => {
+  if (!props.hideDisallowed) {
+    return []
+  }
+  const providerGroups = catalog.filterGroups(searchQuery.value)
+  const entries: DisabledEntry[] = []
+  for (const group of providerGroups) {
+    for (const model of group.models) {
+      if (!isModelAllowed(settingsSource.value, model)) {
+        entries.push({
+          ...model,
+          providerName: group.providerName,
+          label: modelDisplayName(model),
+        })
+      }
+    }
+  }
+  return entries.sort((left, right) => {
+    const byLabel = left.label.localeCompare(right.label)
+    if (byLabel !== 0) {
+      return byLabel
+    }
+    return left.providerName.localeCompare(right.providerName)
+  })
+})
+
 const canonicalSelection = computed(() => {
   const parsed = parseModelRef(props.modelValue)
   if (!parsed) {
@@ -185,7 +216,7 @@ const selectedSuffix = computed(() => {
   if (!canonical) {
     return ''
   }
-  const option = getModelCatalogOption(settingsSource.value, canonical)
+  const option = getClampedModelCatalogOption(settingsSource.value, canonical)
   const bits: string[] = []
   if (option.reasoning && option.reasoning !== 'provider-default') {
     bits.push(option.reasoning)
@@ -226,15 +257,16 @@ const serializedFor = (model: ModelRef): string =>
 const optionFor = (model: ModelRef): ModelCatalogOption => {
   const option = getModelCatalogOption(settingsSource.value, model)
   const selected = canonicalSelection.value
+  let next = option
   if (
     selected &&
     selected.providerId === model.providerId &&
     selected.modelId === model.modelId &&
     isFastModelId(parseModelRef(props.modelValue)?.modelId ?? '')
   ) {
-    return { ...option, fast: true }
+    next = { ...option, fast: true }
   }
-  return option
+  return clampModelCatalogOption(settingsSource.value, model, next)
 }
 
 const capabilityFor = (model: ModelRef) =>
@@ -346,7 +378,7 @@ watch(
             </div>
           </ModelsSearchModelSelectorEmpty>
         </template>
-        <template v-else-if="filteredGroups.length === 0">
+        <template v-else-if="filteredGroups.length === 0 && disabledEntries.length === 0">
           <ModelsSearchModelSelectorEmpty>No models match your search.</ModelsSearchModelSelectorEmpty>
         </template>
         <template v-else>
@@ -405,13 +437,66 @@ watch(
                   <ModelsOptionsModelCatalogOptionsPanel
                     :option="optionFor(model)"
                     :capability="capabilityFor(model)"
-                    :supports-fast="model.supportsFast === true"
+                    :supports-fast="resolveSupportsFast(model)"
                     @change="handleOptionChange(model, $event)"
                   />
                 </PopoverContent>
               </Popover>
             </ModelsSearchModelSelectorItem>
           </ModelsSearchModelSelectorGroup>
+          <div
+            v-if="disabledEntries.length > 0"
+            class="pt-2"
+          >
+            <p class="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              Disabled
+            </p>
+            <div
+              v-for="model in disabledEntries"
+              :key="`disabled-${serializedFor(model)}`"
+              class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm opacity-60"
+            >
+              <ModelsSearchModelSelectorLogo :provider="model.providerId" />
+              <ModelsSearchModelSelectorName class="min-w-0 flex-1 truncate">
+                <span class="truncate">{{ model.label }}</span>
+                <span class="ml-1.5 text-xs font-normal text-muted-foreground">
+                  {{ model.providerName }}
+                </span>
+              </ModelsSearchModelSelectorName>
+              <Popover
+                :open="optionsOpenFor === serializedFor(model)"
+                @update:open="openModelOptions(serializedFor(model), $event)"
+              >
+                <PopoverTrigger as-child>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    class="h-7 w-7 shrink-0"
+                    :title="`Re-enable ${model.label}`"
+                    @click.stop
+                    @pointerdown.stop
+                  >
+                    <Settings2Icon class="size-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  class="w-56"
+                  align="end"
+                  :side-offset="6"
+                  @click.stop
+                  @pointerdown.stop
+                >
+                  <ModelsOptionsModelCatalogOptionsPanel
+                    :option="optionFor(model)"
+                    :capability="capabilityFor(model)"
+                    :supports-fast="resolveSupportsFast(model)"
+                    @change="handleOptionChange(model, $event)"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
         </template>
       </ModelsSearchModelSelectorList>
     </ModelsSearchModelSelectorContent>

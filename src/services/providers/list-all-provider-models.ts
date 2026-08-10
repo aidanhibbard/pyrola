@@ -9,7 +9,11 @@ import {
   providerRequiresApiKey,
 } from '@/services/providers/registry'
 import { getSecret } from '@/services/pyrola/pyrola-tauri'
-import { listProviderModels } from '@/services/providers/list-provider-models'
+import {
+  listProviderModels,
+  type ParsedModelRow,
+} from '@/services/providers/list-provider-models'
+import type { ReasoningLevel } from '@/types/models/reasoning-level'
 
 const getApiKeyRef = (
   settings: PyrolaSettings,
@@ -37,30 +41,121 @@ const getProviderDisplayName = (
 const configuredModelIds = (custom: PyrolaCustomProvider | undefined): string[] =>
   custom?.models?.map((model) => model.id).filter(Boolean) ?? []
 
-const mergeModelIds = (configured: string[], live: string[]): string[] => {
+const catalogRows = (providerId: string): ParsedModelRow[] =>
+  (getProviderCatalogEntry(providerId)?.models ?? []).map((id) => ({ id }))
+
+const unionReasoningLevels = (
+  left?: ReasoningLevel[],
+  right?: ReasoningLevel[],
+): ReasoningLevel[] | undefined => {
+  if (!left?.length && !right?.length) {
+    return undefined
+  }
+  if (!left?.length) {
+    return right
+  }
+  if (!right?.length) {
+    return left
+  }
+  const seen = new Set<ReasoningLevel>()
+  const next: ReasoningLevel[] = []
+  for (const level of [...left, ...right]) {
+    if (seen.has(level)) {
+      continue
+    }
+    seen.add(level)
+    next.push(level)
+  }
+  return next
+}
+
+const mergeParsedModelRows = (
+  left: ParsedModelRow,
+  right: ParsedModelRow,
+): ParsedModelRow => {
+  const supportsReasoningEffort = unionReasoningLevels(
+    left.supportsReasoningEffort,
+    right.supportsReasoningEffort,
+  )
+  const reasoningMandatory =
+    left.reasoningMandatory === true || right.reasoningMandatory === true
+      ? true
+      : undefined
+  const supportsFast =
+    left.supportsFast === true || right.supportsFast === true ? true : undefined
+
+  return {
+    id: left.id,
+    ...(supportsReasoningEffort ? { supportsReasoningEffort } : {}),
+    ...(reasoningMandatory ? { reasoningMandatory } : {}),
+    ...(supportsFast ? { supportsFast } : {}),
+  }
+}
+
+const mergeModelRows = (
+  configured: string[],
+  live: ParsedModelRow[],
+): ParsedModelRow[] => {
+  const byId = new Map<string, ParsedModelRow>()
+
+  for (const id of configured) {
+    if (!id || byId.has(id)) {
+      continue
+    }
+    byId.set(id, { id })
+  }
+
+  for (const row of live) {
+    if (!row.id) {
+      continue
+    }
+    const existing = byId.get(row.id)
+    byId.set(row.id, existing ? mergeParsedModelRows(existing, row) : row)
+  }
+
+  const merged: ParsedModelRow[] = []
   const seen = new Set<string>()
-  const merged: string[] = []
-  for (const id of [...configured, ...live]) {
+  for (const id of configured) {
     if (!id || seen.has(id)) {
       continue
     }
     seen.add(id)
-    merged.push(id)
+    const row = byId.get(id)
+    if (row) {
+      merged.push(row)
+    }
+  }
+  for (const row of live) {
+    if (!row.id || seen.has(row.id)) {
+      continue
+    }
+    seen.add(row.id)
+    const resolved = byId.get(row.id)
+    if (resolved) {
+      merged.push(resolved)
+    }
   }
   return merged
 }
 
 const toModelRefs = (
   providerId: string,
-  modelIds: string[],
+  rows: ParsedModelRow[],
   custom: PyrolaCustomProvider | undefined,
 ): ModelRef[] =>
-  modelIds.map((modelId) => {
-    const configured = custom?.models?.find((model) => model.id === modelId)
+  rows.map((row) => {
+    const configured = custom?.models?.find((model) => model.id === row.id)
     return {
       providerId,
-      modelId,
+      modelId: row.id,
       ...(configured?.name ? { name: configured.name } : {}),
+      ...(row.supportsReasoningEffort
+        ? { supportsReasoningEffort: row.supportsReasoningEffort }
+        : {}),
+      ...(row.reasoningMandatory !== undefined
+        ? { reasoningMandatory: row.reasoningMandatory }
+        : {}),
+      ...(row.supportsFast ? { supportsFast: true } : {}),
     }
   })
 
@@ -80,13 +175,13 @@ const loadProviderModelGroup = async (
     apiKey = (await getSecret(keychainKeyForProvider(apiKeyRef))) ?? ''
   }
 
-  let liveModelIds: string[] = []
+  let liveRows: ParsedModelRow[] = []
 
   try {
     if (requiresKey && !apiKey) {
-      liveModelIds = catalogEntry?.models ?? []
+      liveRows = catalogRows(providerId)
     } else {
-      liveModelIds = await listProviderModels({
+      liveRows = await listProviderModels({
         providerId: custom ? 'openai' : providerId,
         catalogProviderId: providerId,
         apiKey,
@@ -94,20 +189,20 @@ const loadProviderModelGroup = async (
       })
     }
   } catch {
-    liveModelIds = catalogEntry?.models ?? []
+    liveRows = catalogRows(providerId)
   }
 
-  const modelIds =
+  const rows =
     configured.length > 0
-      ? mergeModelIds(configured, liveModelIds)
-      : liveModelIds.length > 0
-        ? liveModelIds
-        : (catalogEntry?.models ?? [])
+      ? mergeModelRows(configured, liveRows)
+      : liveRows.length > 0
+        ? liveRows
+        : catalogRows(providerId)
 
   return {
     providerId,
     providerName,
-    models: toModelRefs(providerId, modelIds, custom),
+    models: toModelRefs(providerId, rows, custom),
   }
 }
 
