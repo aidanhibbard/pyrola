@@ -47,7 +47,7 @@ const { status, size, variant, class: _, ...restProps } = props
 <template>
   <InputGroupButton
     aria-label="Submit"
-    :class="cn('rounded-full', props.class)"
+    :class="cn('rounded-md', props.class)"
     :size="size"
     :variant="variant"
     type="submit"
