@@ -1,21 +1,22 @@
 import { nextTick, ref, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
+import createBrowserTabSessionView from '@/composables/create-browser-tab-session-view'
+import useBrowserPassthroughSuspend from '@/composables/use-browser-passthrough-suspend'
 import type CdpClient from '@/services/browser/cdp-client'
 import {
   getSessionCdpClient,
   registerCefSession,
   setLastInteractedViewId,
-  unregisterCefSession,
 } from '@/services/browser/registry'
 import {
   browserCefCanGoBack,
   browserCefCanGoForward,
   browserCefCreate,
-  browserCefDestroy,
   browserCefGetTitle,
   browserCefGetUrl,
   browserCefResize,
 } from '@/services/pyrola/pyrola-tauri/browser'
+import type { BrowserTabSessionArgs } from '@/types/browser/browser-tab-session-args'
 import type { CefBounds } from '@/types/browser/cef-bounds'
 import readBrowserHostBounds from '@/utils/browser-host-bounds'
 import {
@@ -23,28 +24,30 @@ import {
   writeBrowserLastUrl,
 } from '@/utils/browser-session-storage'
 import { displayUrlForAddressBar } from '@/utils/browser-tab-url'
+import syncBrowserPassthroughRects from '@/utils/sync-browser-passthrough-rects'
 
 const STATE_POLL_MS = 500
 
-type SessionArgs = {
-  workspaceId: string
-  addressBarValue: Ref<string>
-  canBack: Ref<boolean>
-  canForward: Ref<boolean>
-  pageTitle: Ref<string>
-  pageUrl: Ref<string>
-  cefReady: Ref<boolean>
-  hasPage: Ref<boolean>
-  isTabActive: Ref<boolean>
-  addressInputRef: Ref<HTMLInputElement | null>
-  hostEl: Ref<HTMLElement | null>
-}
-
-export default (args: SessionArgs) => {
+export default (args: BrowserTabSessionArgs) => {
   const cefSessionId: Ref<string | null> = ref(null)
+  const passthroughSuspend = useBrowserPassthroughSuspend()
   let created = false
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let lastBounds: CefBounds | null = null
+
+  // CEF sits behind the webview. Passthrough rects route hole clicks to CEF;
+  // opaque Vue chrome stays above and keeps hits.
+  const syncPassthroughRects = async (): Promise<void> => {
+    await syncBrowserPassthroughRects({
+      enabled:
+        created
+        && args.isTabActive.value
+        && args.hasPage.value
+        && !passthroughSuspend.suspended.value,
+      hostEl: args.hostEl.value,
+      lastBounds,
+    })
+  }
 
   const focusAddressBar = async (
     addressInputRef: Ref<HTMLInputElement | null>,
@@ -145,6 +148,28 @@ export default (args: SessionArgs) => {
     return getSessionCdpClient(sessionId)
   }
 
+  const view = createBrowserTabSessionView({
+    getSessionId: () => cefSessionId.value,
+    isCreated: () => created,
+    isTabActive: () => args.isTabActive.value,
+    getHostEl: () => args.hostEl.value,
+    getLastBounds: () => lastBounds,
+    setLastBounds: (bounds) => {
+      lastBounds = bounds
+    },
+    clearSessionId: () => {
+      cefSessionId.value = null
+    },
+    setCreated: (value) => {
+      created = value
+    },
+    setCefReady: (value) => {
+      args.cefReady.value = value
+    },
+    stopPolling,
+    syncPassthroughRects,
+  })
+
   const ensureCefSession = async (bounds?: CefBounds): Promise<boolean> => {
     if (created && cefSessionId.value) {
       if (bounds) {
@@ -184,101 +209,16 @@ export default (args: SessionArgs) => {
       args.hasPage.value = false
       args.addressBarValue.value = ''
       args.pageUrl.value = 'about:blank'
-      // Always hide until navigate sets hasPage and showCefView runs. Native
-      // CEF composites above the webview, so an on-screen view would cover Empty.
+      // Always hide until navigate sets hasPage and showCefView runs. CEF is
+      // behind the webview; keep it off-screen and clear passthrough for Empty.
       await browserCefResize(sessionId, BROWSER_HIDDEN_BOUNDS)
+      await syncPassthroughRects()
       return true
     } catch (error) {
       toast.error('Failed to create browser view', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
       return false
-    }
-  }
-
-  const resizeToHost = async (): Promise<void> => {
-    const sessionId = cefSessionId.value
-    if (!sessionId || !args.isTabActive.value) {
-      return
-    }
-    const bounds = readBrowserHostBounds(args.hostEl.value)
-    if (!bounds) {
-      return
-    }
-    lastBounds = bounds
-    try {
-      await browserCefResize(sessionId, bounds)
-    } catch (error) {
-      toast.error('Failed to resize browser', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
-
-  const hideCefView = async (): Promise<void> => {
-    const sessionId = cefSessionId.value
-    if (!sessionId) {
-      return
-    }
-    try {
-      await browserCefResize(sessionId, BROWSER_HIDDEN_BOUNDS)
-    } catch (error) {
-      toast.error('Failed to hide browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
-
-  const showCefView = async (): Promise<void> => {
-    if (!created || !cefSessionId.value) {
-      return
-    }
-    if (!args.isTabActive.value) {
-      await hideCefView()
-      return
-    }
-    const bounds = readBrowserHostBounds(args.hostEl.value) ?? lastBounds
-    if (!bounds) {
-      return
-    }
-    lastBounds = bounds
-    try {
-      await browserCefResize(cefSessionId.value, bounds)
-    } catch (error) {
-      toast.error('Failed to show browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
-
-  const destroyCefSession = async (): Promise<void> => {
-    stopPolling()
-    const sessionId = cefSessionId.value
-    cefSessionId.value = null
-    created = false
-    args.cefReady.value = false
-    if (!sessionId) {
-      return
-    }
-    unregisterCefSession(sessionId)
-    try {
-      await browserCefDestroy(sessionId)
-    } catch (error) {
-      toast.error('Failed to destroy browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
-
-  // Hide the native CEF child view; keep the session alive until unmount.
-  const closeCefView = async (): Promise<void> => {
-    stopPolling()
-    try {
-      await hideCefView()
-    } catch (error) {
-      toast.error('Failed to close browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
     }
   }
 
@@ -305,13 +245,14 @@ export default (args: SessionArgs) => {
     resyncAddressBar,
     startPolling,
     stopPolling,
-    hideCefView,
-    showCefView,
-    resizeToHost,
+    hideCefView: view.hideCefView,
+    showCefView: view.showCefView,
+    resizeToHost: view.resizeToHost,
     ensureCefSession,
-    destroyCefSession,
-    closeCefView,
+    destroyCefSession: view.destroyCefSession,
+    closeCefView: view.closeCefView,
     markNavigated,
+    syncPassthroughRects,
     isCreated: () => created,
     getCdpClient,
     getCefSessionId: () => cefSessionId.value,

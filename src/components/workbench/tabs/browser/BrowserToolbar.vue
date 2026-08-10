@@ -95,7 +95,7 @@ const bookmarkLabel = (bookmark: BrowserBookmark): string => {
 </script>
 
 <template>
-  <div class="flex items-center gap-1 border-b border-border/50 px-2 py-1.5">
+  <div class="flex items-center gap-1 border-b border-border/50 bg-background px-2 py-1.5">
     <Tooltip>
       <TooltipTrigger as-child>
         <Button

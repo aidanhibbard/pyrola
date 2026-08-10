@@ -111,6 +111,7 @@ export {
   browserCefDestroy,
   browserCefNavigate,
   browserCefResize,
+  browserCefSetPassthroughRects,
   browserCefFocus,
   browserCefGetUrl,
   browserCefGetTitle,

@@ -80,6 +80,19 @@ pub async fn browser_cef_resize(
   })
 }
 
+/// Publish CSS-space hole rects so native hit-testing can pass clicks to CEF.
+/// Empty `rects` clears pass-through (WKWebView keeps all hits again).
+#[tauri::command]
+pub async fn browser_cef_set_passthrough_rects(
+  window: Window,
+  rects: Vec<CefBounds>,
+) -> Result<(), String> {
+  let window_for_work = window.clone();
+  run_on_window_main(&window, move || {
+    runtime::set_passthrough_rects_on_main(&window_for_work, rects)
+  })
+}
+
 #[tauri::command]
 pub async fn browser_cef_focus(window: Window, session_id: String) -> Result<(), String> {
   run_on_window_main(&window, move || runtime::focus_browser_on_main(&session_id))

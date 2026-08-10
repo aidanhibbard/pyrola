@@ -56,7 +56,7 @@ import {
 } from '@/components/shadcn/ui/tooltip'
 import WorkbenchEditorFileSearchDialog from '@/components/workbench/EditorFileSearchDialog.vue'
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
-import WorkbenchFileTree from '@/components/workbench/FileTree.vue'
+import WorkbenchFileTree from '@/components/workbench/WorkbenchFileTree.vue'
 import WorkbenchLspStatus from '@/components/workbench/WorkbenchLspStatus.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
 import useWorkbenchStore from '@/composables/use-workbench-store'

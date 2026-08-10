@@ -25,7 +25,7 @@ const labelFor = (bookmark: BrowserBookmark): string => {
 </script>
 
 <template>
-  <div class="flex gap-1 overflow-x-auto border-b border-border/50 px-2 py-1">
+  <div class="flex gap-1 overflow-x-auto border-b border-border/50 bg-background px-2 py-1">
     <template v-if="bookmarks.length > 0">
       <button
         v-for="bookmark in bookmarks"

@@ -13,6 +13,9 @@ export const browserCefNavigate = (sessionId: string, url: string): Promise<void
 export const browserCefResize = (sessionId: string, bounds: CefBounds): Promise<void> =>
   call('browser_cef_resize', { sessionId, bounds })
 
+export const browserCefSetPassthroughRects = (rects: CefBounds[]): Promise<void> =>
+  call('browser_cef_set_passthrough_rects', { rects })
+
 export const browserCefFocus = (sessionId: string): Promise<void> =>
   call('browser_cef_focus', { sessionId })
 

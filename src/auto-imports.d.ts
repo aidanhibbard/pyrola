@@ -26,6 +26,7 @@ declare global {
   const controlledRef: typeof import('@vueuse/core').controlledRef
   const createApp: typeof import('vue').createApp
   const createBrowserTabSession: typeof import('./composables/create-browser-tab-session').default
+  const createBrowserTabSessionView: typeof import('./composables/create-browser-tab-session-view').default
   const createDisposableDirective: typeof import('@vueuse/core').createDisposableDirective
   const createEventHook: typeof import('@vueuse/core').createEventHook
   const createGlobalState: typeof import('@vueuse/core').createGlobalState
@@ -156,6 +157,7 @@ declare global {
   const useBrowserElementSelect: typeof import('./composables/use-browser-element-select').default
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useBrowserNavigation: typeof import('./composables/use-browser-navigation').default
+  const useBrowserPassthroughSuspend: typeof import('./composables/use-browser-passthrough-suspend').default
   const useBrowserTab: typeof import('./composables/use-browser-tab').default
   const useBrowserToolbar: typeof import('./composables/use-browser-toolbar').default
   const useCached: typeof import('@vueuse/core').useCached
@@ -410,6 +412,7 @@ declare module 'vue' {
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
     readonly createBrowserTabSession: UnwrapRef<typeof import('./composables/create-browser-tab-session')['default']>
+    readonly createBrowserTabSessionView: UnwrapRef<typeof import('./composables/create-browser-tab-session-view')['default']>
     readonly createDisposableDirective: UnwrapRef<typeof import('@vueuse/core')['createDisposableDirective']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
@@ -540,6 +543,7 @@ declare module 'vue' {
     readonly useBrowserElementSelect: UnwrapRef<typeof import('./composables/use-browser-element-select')['default']>
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useBrowserNavigation: UnwrapRef<typeof import('./composables/use-browser-navigation')['default']>
+    readonly useBrowserPassthroughSuspend: UnwrapRef<typeof import('./composables/use-browser-passthrough-suspend')['default']>
     readonly useBrowserTab: UnwrapRef<typeof import('./composables/use-browser-tab')['default']>
     readonly useBrowserToolbar: UnwrapRef<typeof import('./composables/use-browser-toolbar')['default']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>

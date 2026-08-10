@@ -9,8 +9,17 @@ pub const VAULT_ACCOUNT: &str = "pyrola:vault";
 
 pub type VaultMap = HashMap<String, String>;
 
+/// Result of loading the vault account from the OS keychain.
+pub struct LoadedVault {
+  pub map: VaultMap,
+  /// When true, missing keys may be read from per-key legacy keychain entries once.
+  /// False when the vault account already exists (including empty JSON).
+  pub allow_legacy_probe: bool,
+}
+
 struct VaultState {
   loaded: bool,
+  allow_legacy_probe: bool,
   map: VaultMap,
 }
 
@@ -18,6 +27,7 @@ impl VaultState {
   fn empty() -> Self {
     Self {
       loaded: false,
+      allow_legacy_probe: false,
       map: VaultMap::new(),
     }
   }
@@ -93,10 +103,25 @@ pub fn merge_legacy_into_map(
   Some(value)
 }
 
-fn read_vault_from_os() -> Result<VaultMap, String> {
+/// Build a loaded vault from an OS read: `Some(payload)` when the vault account exists
+/// (including empty JSON), `None` when the account is missing (first-time vault).
+pub fn vault_from_os_read(payload: Option<&str>) -> Result<LoadedVault, String> {
+  match payload {
+    Some(payload) => Ok(LoadedVault {
+      map: parse_vault(payload)?,
+      allow_legacy_probe: false,
+    }),
+    None => Ok(LoadedVault {
+      map: VaultMap::new(),
+      allow_legacy_probe: true,
+    }),
+  }
+}
+
+fn read_vault_from_os() -> Result<LoadedVault, String> {
   match vault_entry()?.get_password() {
-    Ok(payload) => parse_vault(&payload),
-    Err(keyring::Error::NoEntry) => Ok(VaultMap::new()),
+    Ok(payload) => vault_from_os_read(Some(&payload)),
+    Err(keyring::Error::NoEntry) => vault_from_os_read(None),
     Err(err) => Err(map_keyring_error(err)),
   }
 }
@@ -128,7 +153,9 @@ fn ensure_vault_loaded(state: &mut VaultState) -> Result<(), String> {
   if state.loaded {
     return Ok(());
   }
-  state.map = read_vault_from_os()?;
+  let loaded = read_vault_from_os()?;
+  state.map = loaded.map;
+  state.allow_legacy_probe = loaded.allow_legacy_probe;
   state.loaded = true;
   Ok(())
 }
@@ -160,6 +187,9 @@ pub fn get_secret(key: String) -> Result<Option<String>, String> {
   if let Some(value) = state.map.get(&key) {
     return Ok(Some(value.clone()));
   }
+  if !state.allow_legacy_probe {
+    return Ok(None);
+  }
   migrate_legacy_into_vault(&mut state, &key)
 }
 
@@ -172,7 +202,9 @@ pub fn set_secret(key: String, value: String) -> Result<(), String> {
   ensure_vault_loaded(&mut state)?;
   state.map.insert(key.clone(), value);
   persist_vault(&mut state)?;
-  let _ = delete_legacy_secret(&key);
+  if state.allow_legacy_probe {
+    let _ = delete_legacy_secret(&key);
+  }
   Ok(())
 }
 
@@ -185,6 +217,8 @@ pub fn delete_secret(key: String) -> Result<(), String> {
   ensure_vault_loaded(&mut state)?;
   state.map.remove(&key);
   persist_vault(&mut state)?;
-  let _ = delete_legacy_secret(&key);
+  if state.allow_legacy_probe {
+    let _ = delete_legacy_secret(&key);
+  }
   Ok(())
 }

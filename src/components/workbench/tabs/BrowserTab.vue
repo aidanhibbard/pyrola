@@ -5,7 +5,12 @@ import { toast } from 'vue-sonner'
 import WorkbenchTabsBrowserBookmarkBar from '@/components/workbench/tabs/browser/BrowserBookmarkBar.vue'
 import WorkbenchTabsBrowserConsolePanel from '@/components/workbench/tabs/browser/BrowserConsolePanel.vue'
 import WorkbenchTabsBrowserToolbar from '@/components/workbench/tabs/browser/BrowserToolbar.vue'
-import { Empty, EmptyContent, EmptyHeader, EmptyMedia } from '@/components/shadcn/ui/empty'
+import {
+  Empty,
+  EmptyContent,
+  EmptyHeader,
+  EmptyMedia,
+} from '@/components/shadcn/ui/empty'
 import useBrowserTab from '@/composables/use-browser-tab'
 import type { BrowserPayload, WorkbenchTab } from '@/types/workbench/workbench-tab'
 
@@ -78,7 +83,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-background">
+  <div class="flex h-full min-h-0 flex-col">
     <WorkbenchTabsBrowserToolbar
       :starting="starting"
       :can-back="canBack"
@@ -126,15 +131,16 @@ onMounted(() => {
 
     <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <!-- Coordinate placeholder for the native CEF child view. -->
+        <!-- Hole is transparent only while a page is showing; CEF paints behind. -->
         <div
           ref="hostEl"
           class="absolute inset-0 h-full w-full"
+          :class="hasPage ? '' : 'bg-background'"
           aria-hidden="true"
         />
         <Empty
           v-if="!hasPage"
-          class="pointer-events-none absolute inset-4 z-10 flex min-h-0 border border-dashed border-border/60"
+          class="pointer-events-none absolute inset-4 z-10 flex min-h-0 border border-dashed border-border/60 bg-background"
         >
           <EmptyHeader>
             <EmptyMedia variant="icon">

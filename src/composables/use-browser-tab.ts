@@ -11,6 +11,7 @@ import useBrowserBookmarks from '@/composables/use-browser-bookmarks'
 import useBrowserConsole from '@/composables/use-browser-console'
 import useBrowserElementSelect from '@/composables/use-browser-element-select'
 import useBrowserNavigation from '@/composables/use-browser-navigation'
+import useBrowserPassthroughSuspend from '@/composables/use-browser-passthrough-suspend'
 import useBrowserToolbar from '@/composables/use-browser-toolbar'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import {
@@ -21,6 +22,7 @@ import {
 
 export default (workspaceId: string, tabId: string) => {
   const workbench = useWorkbenchStore()
+  const passthroughSuspend = useBrowserPassthroughSuspend()
 
   const starting = ref(true)
   const addressBarValue = ref('')
@@ -175,17 +177,19 @@ export default (workspaceId: string, tabId: string) => {
       const reveal = hasPage.value
         ? session.showCefView()
         : session.hideCefView()
-      reveal.catch((error: unknown) => {
-        toast.error(
-          hasPage.value
-            ? 'Failed to show browser view'
-            : 'Failed to hide browser view',
-          {
-            description:
-              error instanceof Error ? error.message : 'Unknown error',
-          },
-        )
-      })
+      reveal
+        .then(() => session.syncPassthroughRects())
+        .catch((error: unknown) => {
+          toast.error(
+            hasPage.value
+              ? 'Failed to show browser view'
+              : 'Failed to hide browser view',
+            {
+              description:
+                error instanceof Error ? error.message : 'Unknown error',
+            },
+          )
+        })
       session.startPolling()
       return
     }
@@ -198,16 +202,41 @@ export default (workspaceId: string, tabId: string) => {
     })
   })
 
+  watch(
+    [hasPage, () => passthroughSuspend.suspended.value],
+    () => {
+      if (!session.isCreated()) {
+        return
+      }
+      session.syncPassthroughRects().catch((error: unknown) => {
+        toast.error('Failed to update browser click targets', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      })
+    },
+  )
+
   const attachResizeObserver = (el: HTMLElement): void => {
     if (resizeObserver) {
       resizeObserver.disconnect()
       resizeObserver = null
     }
     resizeObserver = new ResizeObserver(() => {
-      session.resizeToHost().catch((error: unknown) => {
-        toast.error('Failed to resize browser', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        })
+      // Keep CEF hidden when there is no page; resizing to host bounds would
+      // reveal a blank native view through the transparent hole.
+      const resize = hasPage.value
+        ? session.resizeToHost()
+        : session.hideCefView()
+      resize.catch((error: unknown) => {
+        toast.error(
+          hasPage.value
+            ? 'Failed to resize browser'
+            : 'Failed to hide browser view',
+          {
+            description:
+              error instanceof Error ? error.message : 'Unknown error',
+          },
+        )
       })
     })
     resizeObserver.observe(el)

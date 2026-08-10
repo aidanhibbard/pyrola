@@ -1,5 +1,6 @@
 use app_lib::commands::keychain::{
-  merge_legacy_into_map, parse_vault, require_pyrola_key, serialize_vault, VaultMap, VAULT_ACCOUNT,
+  merge_legacy_into_map, parse_vault, require_pyrola_key, serialize_vault, vault_from_os_read,
+  VaultMap, VAULT_ACCOUNT,
 };
 
 #[test]
@@ -83,4 +84,30 @@ fn merge_legacy_returns_none_when_absent() {
   let merged = merge_legacy_into_map(&mut map, "pyrola:provider:missing", None);
   assert!(merged.is_none());
   assert!(map.is_empty());
+}
+
+#[test]
+fn vault_from_os_read_exists_disables_legacy_probe() {
+  let loaded = vault_from_os_read(Some("{}")).expect("empty json vault");
+  assert!(loaded.map.is_empty());
+  assert!(!loaded.allow_legacy_probe);
+
+  let loaded = vault_from_os_read(Some("")).expect("empty string vault");
+  assert!(loaded.map.is_empty());
+  assert!(!loaded.allow_legacy_probe);
+
+  let payload = r#"{"pyrola:provider:openai":"sk-test"}"#;
+  let loaded = vault_from_os_read(Some(payload)).expect("populated vault");
+  assert_eq!(
+    loaded.map.get("pyrola:provider:openai").map(String::as_str),
+    Some("sk-test")
+  );
+  assert!(!loaded.allow_legacy_probe);
+}
+
+#[test]
+fn vault_from_os_read_absent_allows_legacy_probe() {
+  let loaded = vault_from_os_read(None).expect("absent vault");
+  assert!(loaded.map.is_empty());
+  assert!(loaded.allow_legacy_probe);
 }

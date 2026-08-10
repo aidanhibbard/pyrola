@@ -18,7 +18,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex h-40 shrink-0 flex-col border-t border-border/50 bg-muted/20">
+  <div class="flex h-40 shrink-0 flex-col border-t border-border/50 bg-background">
     <div class="flex items-center justify-between border-b border-border/40 px-2 py-1">
       <span class="text-xs font-medium text-muted-foreground">
         Console

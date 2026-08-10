@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import {
   FileCode,
@@ -34,6 +34,7 @@ const props = withDefaults(
 
 const fleet = useFleetRegistry()
 const workbench = useWorkbenchStore()
+const passthroughSuspend = useBrowserPassthroughSuspend()
 const open = ref(false)
 
 const items = [
@@ -88,6 +89,23 @@ const handleOpen = async (type: (typeof items)[number]['id']): Promise<void> => 
     })
   }
 }
+
+watch(open, (isOpen, wasOpen) => {
+  if (isOpen === wasOpen) {
+    return
+  }
+  if (isOpen) {
+    passthroughSuspend.suspend()
+    return
+  }
+  passthroughSuspend.resume()
+})
+
+onBeforeUnmount(() => {
+  if (open.value) {
+    passthroughSuspend.resume()
+  }
+})
 </script>
 
 <template>
@@ -107,7 +125,7 @@ const handleOpen = async (type: (typeof items)[number]['id']): Promise<void> => 
               </Button>
             </slot>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" class="w-40">
+          <DropdownMenuContent align="start" class="z-[60] w-40">
             <DropdownMenuItem
               v-for="item in items"
               :key="item.id"

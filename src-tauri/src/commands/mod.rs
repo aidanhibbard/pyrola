@@ -28,6 +28,7 @@ pub use browser_cef::{
   browser_cef_create, browser_cef_destroy, browser_cef_focus, browser_cef_get_cdp_ws_url,
   browser_cef_get_title, browser_cef_get_url, browser_cef_go_back, browser_cef_go_forward,
   browser_cef_navigate, browser_cef_reload, browser_cef_resize,
+  browser_cef_set_passthrough_rects,
 };
 pub use chat::{
   append_chat_line, create_chat, delete_chat, fork_chat, list_chats, list_pinned_chats, pin_chat,

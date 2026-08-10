@@ -31,6 +31,7 @@ const activeTabId = computed(() => workbench.activeTabId.value)
       <div
         v-show="tab.id === activeTabId"
         class="absolute inset-0 min-h-0 overflow-hidden"
+        :class="tab.type === 'browser' ? '' : 'bg-sidebar'"
       >
         <component :is="tabComponentMap[tab.type]" :tab="tab" />
       </div>

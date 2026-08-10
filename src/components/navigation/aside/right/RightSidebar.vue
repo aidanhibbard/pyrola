@@ -14,7 +14,7 @@ const { open } = useRightSidebar()
   <div
     data-slot="right-sidebar"
     :data-state="open ? 'expanded' : 'collapsed'"
-    class="flex h-full w-full flex-col overflow-hidden border-l bg-sidebar text-sidebar-foreground"
+    class="flex h-full w-full flex-col overflow-hidden border-l text-sidebar-foreground"
     :class="cn(props.class)"
   >
     <slot />

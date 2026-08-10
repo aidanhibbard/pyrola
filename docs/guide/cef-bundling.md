@@ -106,3 +106,5 @@ release/CEF CI builds with `--features cef` do not ship it in the app bundle.
   `bundle-cef-app` reference utility)
 - [macOS application bundle](https://v2.tauri.app/distribute/macos-application-bundle/)
 - [Security posture](../security-posture.md) (browser automation controls)
+- [Desktop shell](../architecture/desktop-shell.md#embedded-browser-view-stacking-macos)
+  (macOS CEF-behind-webview stacking, CrAppProtocol, hit-test pass-through)

@@ -16,7 +16,10 @@ const hasTabs = computed(() => workbench.tabs.value.length > 0)
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
+  <div
+    class="flex h-full min-h-0 flex-col overflow-hidden"
+    :class="hasTabs ? '' : 'bg-sidebar'"
+  >
     <Empty v-if="!hasTabs" class="flex-1 border-none">
       <EmptyHeader>
         <EmptyMedia variant="icon">

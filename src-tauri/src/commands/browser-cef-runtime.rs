@@ -55,6 +55,18 @@ struct Session {
   cdp_ws_url: Option<String>,
 }
 
+#[cfg(target_os = "macos")]
+#[path = "browser-cef-cr-app-protocol.rs"]
+mod cr_app_protocol;
+
+#[cfg(target_os = "macos")]
+#[path = "browser-cef-stacking.rs"]
+mod stacking;
+
+#[cfg(target_os = "macos")]
+#[path = "browser-cef-hit-test.rs"]
+mod hit_test;
+
 /// macOS cannot use `multi_threaded_message_loop` (Windows/Linux only per CEF
 /// docs). Integrate with Tauri's NSApplication run loop via
 /// `external_message_pump` + `OnScheduleMessagePumpWork`, matching cefclient's
@@ -304,6 +316,13 @@ fn warm_init_macos(app: Option<&AppHandle>) -> Result<(), String> {
     return Err(format!("cef load_library failed for {}", binary.display()));
   }
 
+  // CEF requires CrAppProtocol (isHandlingSendEvent / setHandlingSendEvent:) on
+  // the shared NSApplication. Tauri's TaoApp lacks those selectors, so CEF
+  // event paths such as close_browser crash with unrecognized selector
+  // isHandlingSendEvent. Patch the live class before initialize; we cannot
+  // replace Tauri's NSApplication subclass wholesale.
+  cr_app_protocol::install()?;
+
   let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
 
   let args = Args::new();
@@ -347,6 +366,17 @@ fn warm_init_macos(app: Option<&AppHandle>) -> Result<(), String> {
   }
 
   std::mem::forget(cef_app);
+
+  // CEF paints behind WKWebView; clear the webview fill once so CSS holes show
+  // the native browser. Safe no-op if the webview is not ready yet (create retries).
+  if let Some(app) = app {
+    if let Some(window) = app.get_webview_window("main") {
+      if let Ok(ns_view) = window.ns_view() {
+        stacking::clear_wkwebview_background(ns_view as cef::sys::cef_window_handle_t);
+      }
+    }
+  }
+
   Ok(())
 }
 
@@ -444,6 +474,8 @@ fn apply_nsview_bounds(
     let _: () = objc2::msg_send![view as &AnyObject, setFrame: frame];
     let _: () = objc2::msg_send![view as &AnyObject, setHidden: hidden];
   }
+  // Keep CEF behind WKWebView after frame changes (AppKit can reshuffle siblings).
+  stacking::send_cef_view_to_back(handle);
   host.was_resized();
   Ok(())
 }
@@ -469,6 +501,7 @@ fn create_browser_with_parent(
     let url = CefString::from("about:blank");
     let browser_settings = BrowserSettings::default();
 
+    log::info!("CEF browser_host_create_browser_sync starting");
     let browser = browser_host_create_browser_sync(
       Some(&window_info),
       Some(&mut client),
@@ -478,6 +511,21 @@ fn create_browser_with_parent(
       None,
     )
     .ok_or_else(|| "browser_host_create_browser_sync returned None".to_string())?;
+    log::info!("CEF browser_host_create_browser_sync complete");
+
+    // CEF was added last (on top of WKWebView). Send it behind so Vue chrome
+    // stays visible; transparent CSS regions reveal the page underneath.
+    {
+      use cef::{ImplBrowser, ImplBrowserHost};
+      if let Some(host) = browser.host() {
+        log::info!("CEF send_cef_view_to_back after create");
+        stacking::send_cef_view_to_back(host.window_handle());
+        log::info!("CEF send_cef_view_to_back finished");
+      } else {
+        log::warn!("CEF browser host missing after create; skipping send-to-back");
+      }
+    }
+    stacking::clear_wkwebview_background(parent);
 
     let session_id = NEXT_SESSION.fetch_add(1, Ordering::SeqCst).to_string();
     // Return immediately. CDP page targets are published by DevTools only while
@@ -659,6 +707,9 @@ pub(super) fn destroy_browser_on_main(session_id: &str) -> Result<(), String> {
     if let Some(host) = session.browser.host() {
       host.close_browser(1);
     }
+    // Frontend re-publishes rects for any remaining host; clear so a destroyed
+    // session cannot leave a stale hole that steals hits from Vue.
+    hit_test::clear_rects();
     Ok(())
   }
 
@@ -666,6 +717,27 @@ pub(super) fn destroy_browser_on_main(session_id: &str) -> Result<(), String> {
   {
     let _ = session;
     Err("browser_cef_destroy is only implemented on macOS".into())
+  }
+}
+
+pub(super) fn set_passthrough_rects_on_main(
+  window: &Window,
+  rects: Vec<CefBounds>,
+) -> Result<(), String> {
+  #[cfg(target_os = "macos")]
+  {
+    let content = window
+      .ns_view()
+      .map_err(|e| format!("ns_view: {e}"))?;
+    hit_test::install_on_content_view(content)?;
+    hit_test::set_rects(rects);
+    Ok(())
+  }
+
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = (window, rects);
+    Err("browser_cef_set_passthrough_rects is only implemented on macOS".into())
   }
 }
 
