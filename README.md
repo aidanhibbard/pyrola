@@ -37,7 +37,7 @@
 
 ---
 
-**Pyrola is a local-first, bring-your-own-key (BYOK), open-source Agents UI for the desktop.** It runs as a Vue and Tauri app with a streaming agent harness, tools, sub-agents, and MCP. Chats and settings stay on your machine. Provider keys live in the OS keychain. There is no cloud account for the core agent loop.
+**Pyrola is a local-first, bring-your-own-key (BYOK), open-source Agents UI for the desktop.** It runs as a Vue and Tauri app with a streaming agent harness, tools, sub-agents, and MCP. Chats and settings stay on your machine. Provider keys live in the OS keychain.
 
 ## Alpha
 
