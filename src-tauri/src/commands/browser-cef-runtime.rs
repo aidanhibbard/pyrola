@@ -673,15 +673,26 @@ pub(super) fn create_browser_on_main(
 }
 
 pub fn create_browser_for_spike(parent: *mut std::ffi::c_void) -> Result<String, String> {
-  create_browser_with_parent(
-    parent as cef::sys::cef_window_handle_t,
-    CefBounds {
-      x: 8.0,
-      y: 8.0,
-      width: 320.0,
-      height: 240.0,
-    },
-  )
+  #[cfg(target_os = "macos")]
+  {
+    // On macOS, cef_window_handle_t is *mut c_void (NSView*). On Windows it is
+    // HWND, so a direct cast from *mut c_void is not a primitive cast.
+    create_browser_with_parent(
+      parent as cef::sys::cef_window_handle_t,
+      CefBounds {
+        x: 8.0,
+        y: 8.0,
+        width: 320.0,
+        height: 240.0,
+      },
+    )
+  }
+
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = parent;
+    Err("create_browser_for_spike is only implemented on macOS".into())
+  }
 }
 
 pub fn destroy_browser_for_spike(session_id: &str) -> Result<(), String> {
