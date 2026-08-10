@@ -15,5 +15,6 @@ pub use types::{
   FsStatResult, FsTreeNode, WriteTempHandoffResult,
 };
 pub use write::{
-  fs_copy, fs_delete, fs_mkdir, fs_move, fs_rename, fs_write_file, write_temp_handoff, write_text_file,
+  append_temp_log, fs_copy, fs_delete, fs_mkdir, fs_move, fs_rename, fs_write_file,
+  write_temp_bytes, write_temp_handoff, write_text_file,
 };

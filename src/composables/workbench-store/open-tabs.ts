@@ -1,5 +1,6 @@
 import type {
   AgentShellPayload,
+  BrowserPayload,
   ChangesPayload,
   EditorPayload,
   PlanPayload,
@@ -224,6 +225,39 @@ export const openChanges = async (projectId: string): Promise<void> => {
     projectId,
     label: 'Changes',
     payload: {} satisfies ChangesPayload,
+  }
+  tabs.value.push(tab)
+  focusTab(tab.id)
+}
+
+export const openBrowser = async (projectId: string): Promise<void> => {
+  if (isHomeChatSlug(projectId)) {
+    await ensureHomeRoot()
+  }
+
+  const predicate = (tab: WorkbenchTab) =>
+    tab.type === 'browser' && tab.projectId === projectId
+  const existing = findTab(predicate)
+
+  if (existing) {
+    focusTab(existing.id)
+    return
+  }
+
+  const project = getProject(projectId)
+  if (!project?.rootPath) {
+    throw new Error('Project root is required to open the browser')
+  }
+  if (!project.slug) {
+    throw new Error('Project slug is required to open the browser')
+  }
+
+  const tab: WorkbenchTab = {
+    id: createId(),
+    type: 'browser',
+    projectId,
+    label: 'Browser',
+    payload: { workspaceId: project.slug } satisfies BrowserPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)

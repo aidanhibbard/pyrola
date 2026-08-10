@@ -1,3 +1,5 @@
+import type { BrowserElementDetail } from '@/types/browser/browser-element-detail'
+
 export type ContextMention =
   | { type: 'file'; path: string; content?: string }
   | { type: 'folder'; path: string; listing?: string }
@@ -12,3 +14,8 @@ export type ContextMention =
       content?: string
     }
   | { type: 'codebase'; query: string; content?: string }
+  | {
+      type: 'browser-element'
+      detail: BrowserElementDetail
+      screenshotPath: string
+    }

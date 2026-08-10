@@ -17,7 +17,10 @@ import type { WorkbenchTabType } from '@/types/workbench/workbench-tab'
 const workbench = useWorkbenchStore()
 const dontAskAgain = ref(false)
 
-const tabTypeLabels: Record<Exclude<WorkbenchTabType, 'plan' | 'studio' | 'agent-shell'>, string> = {
+const tabTypeLabels: Record<
+  Exclude<WorkbenchTabType, 'plan' | 'studio' | 'agent-shell' | 'browser'>,
+  string
+> = {
   editor: 'Editor',
   terminal: 'Terminal',
   changes: 'Changes',

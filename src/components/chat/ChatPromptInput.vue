@@ -33,6 +33,7 @@ import ChatSkillsPicker from '@/components/chat/ChatSkillsPicker.vue'
 import ChatPermissionDial from '@/components/chat/ChatPermissionDial.vue'
 import ChatPromptAttachments from '@/components/chat/ChatPromptAttachments.vue'
 import ChatPromptEditSync from '@/components/chat/ChatPromptEditSync.vue'
+import ChatPromptBrowserElementSync from '@/components/chat/ChatPromptBrowserElementSync.vue'
 import ChatPromptMentionSync from '@/components/chat/ChatPromptMentionSync.vue'
 import ChatPromptSkillSync from '@/components/chat/ChatPromptSkillSync.vue'
 import ChatQueueHandlers from '@/components/chat/ChatQueueHandlers.vue'
@@ -503,6 +504,7 @@ watch(
           <ChatPromptEditSync />
           <ChatPromptMentionSync />
           <ChatPromptSkillSync />
+          <ChatPromptBrowserElementSync />
           <ChatPromptEditor
             class="max-h-28 min-h-10"
             placeholder="Plan, build, / for skills, @ for context"

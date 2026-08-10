@@ -76,6 +76,18 @@ export const writeTempHandoff = (args: {
   content: string
 }): Promise<{ path: string; filename: string }> => call('write_temp_handoff', args)
 
+export const writeTempBytes = (args: {
+  contentBase64: string
+  kind: string
+  extension: string
+}): Promise<{ path: string; filename: string }> => call('write_temp_bytes', args)
+
+export const appendTempLog = (args: {
+  path?: string | null
+  kind: string
+  line: string
+}): Promise<{ path: string; filename: string }> => call('append_temp_log', args)
+
 export const fsEditFile = (args: {
   projectRoot: string
   path: string

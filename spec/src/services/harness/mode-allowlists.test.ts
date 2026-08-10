@@ -27,3 +27,38 @@ describe('mode allowlists studio shell tools', () => {
     expect(MODE_TOOL_ALLOWLIST.studio).toContain('stop_terminal')
   })
 })
+
+describe('mode allowlists browser tools', () => {
+  const browserTools = [
+    'browser_tabs',
+    'browser_navigate',
+    'browser_lock',
+    'browser_snapshot',
+    'browser_take_screenshot',
+    'browser_click',
+    'browser_type',
+    'browser_fill',
+    'browser_select_option',
+    'browser_press_key',
+    'browser_scroll',
+    'browser_drag',
+    'browser_get_bounding_box',
+    'browser_highlight',
+    'browser_cdp',
+  ]
+
+  it('includes browser tools in agent and orchestrator', () => {
+    for (const name of browserTools) {
+      expect(MODE_TOOL_ALLOWLIST.agent).toContain(name)
+      expect(MODE_TOOL_ALLOWLIST.orchestrator).toContain(name)
+    }
+  })
+
+  it('excludes browser tools from ask, plan, and studio', () => {
+    for (const name of browserTools) {
+      expect(MODE_TOOL_ALLOWLIST.ask).not.toContain(name)
+      expect(MODE_TOOL_ALLOWLIST.plan).not.toContain(name)
+      expect(MODE_TOOL_ALLOWLIST.studio).not.toContain(name)
+    }
+  })
+})

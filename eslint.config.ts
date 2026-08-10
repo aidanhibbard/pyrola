@@ -61,6 +61,8 @@ export default defineConfigWithVueTs(
       'src/components/project/codegraph/NeighborhoodExplorer.vue',
       // Script tightly coupled to prompt editor bridge; deferred extraction to avoid unsafe rewrite
       'src/components/chat/ChatPromptInput.vue',
+      // Template-heavy toolbar: every ghost icon button wraps a Tooltip with z-60
+      'src/components/workbench/tabs/browser/BrowserToolbar.vue',
       // Outside this slice; still over 300
       'src/components/models/search/ModelSearchPicker.vue',
       'src/components/chat/prompt-editor/ChatPromptEditor.vue',

@@ -125,7 +125,7 @@ export default () => {
   }
 
   // Keep an active selection when projects exist; never invent one from CWD.
-  // An empty registry is valid — user adds via folder picker or home chat.
+  // An empty registry is valid: user adds via folder picker or home chat.
   const ensureDefaultProject = async (): Promise<void> => {
     if (projects.value.length === 0) {
       if (activeProjectId.value) {

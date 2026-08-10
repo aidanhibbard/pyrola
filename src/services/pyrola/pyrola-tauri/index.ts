@@ -55,6 +55,8 @@ export {
   fsReadFile,
   fsWriteFile,
   writeTempHandoff,
+  writeTempBytes,
+  appendTempLog,
   fsEditFile,
   fsApplyPatch,
   fsListDir,
@@ -104,6 +106,23 @@ export {
   shellSpawnTracked,
   shellKillTracked,
 } from './shell'
+export {
+  browserCefCreate,
+  browserCefDestroy,
+  browserCefNavigate,
+  browserCefResize,
+  browserCefFocus,
+  browserCefGetUrl,
+  browserCefGetTitle,
+  browserCefCanGoBack,
+  browserCefCanGoForward,
+  browserCefGoBack,
+  browserCefGoForward,
+  browserCefReload,
+  browserCefGetCdpWsUrl,
+  browserCefCdpEndpoint,
+  browserCefBench,
+} from './browser'
 export {
   lspStatus,
   lspCatalog,

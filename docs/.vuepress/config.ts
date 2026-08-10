@@ -16,6 +16,7 @@ const guideChildren = [
   'mcp.md',
   'cli.md',
   'security.md',
+  'cef-bundling.md',
 ]
 
 const settingsChildren = [

@@ -1,3 +1,6 @@
+#[cfg(feature = "cef")]
+#[path = "browser-cef.rs"]
+pub mod browser_cef;
 pub mod chat;
 pub mod codegraph;
 pub mod config;
@@ -19,6 +22,13 @@ pub mod registry;
 pub mod sandbox;
 pub mod shell;
 pub mod watch;
+#[cfg(feature = "cef")]
+pub use browser_cef::{
+  browser_cef_bench, browser_cef_can_go_back, browser_cef_can_go_forward, browser_cef_cdp_endpoint,
+  browser_cef_create, browser_cef_destroy, browser_cef_focus, browser_cef_get_cdp_ws_url,
+  browser_cef_get_title, browser_cef_get_url, browser_cef_go_back, browser_cef_go_forward,
+  browser_cef_navigate, browser_cef_reload, browser_cef_resize,
+};
 pub use chat::{
   append_chat_line, create_chat, delete_chat, fork_chat, list_chats, list_pinned_chats, pin_chat,
   read_chat_meta, read_chat_messages, truncate_chat_log, update_chat_meta,
@@ -30,9 +40,9 @@ pub use config::{
 };
 pub use file_checkpoint::{file_checkpoint_capture, file_checkpoint_restore};
 pub use fs::{
-  fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree, fs_mkdir,
-  fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file, write_temp_handoff,
-  write_text_file,
+  append_temp_log, fs_apply_patch, fs_copy, fs_delete, fs_edit_file, fs_list_dir, fs_list_dir_tree,
+  fs_mkdir, fs_move, fs_read_file, fs_rename, fs_stage_preview, fs_stat, fs_write_file,
+  write_temp_bytes, write_temp_handoff, write_text_file,
 };
 pub use git::{
   git_branch_create, git_checkout_branch, git_commit, git_diff, git_list_branches, git_log,

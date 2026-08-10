@@ -25,6 +25,7 @@ declare global {
   const controlledComputed: typeof import('@vueuse/core').controlledComputed
   const controlledRef: typeof import('@vueuse/core').controlledRef
   const createApp: typeof import('vue').createApp
+  const createBrowserTabSession: typeof import('./composables/create-browser-tab-session').default
   const createDisposableDirective: typeof import('@vueuse/core').createDisposableDirective
   const createEventHook: typeof import('@vueuse/core').createEventHook
   const createGlobalState: typeof import('@vueuse/core').createGlobalState
@@ -150,7 +151,13 @@ declare global {
   const useBluetooth: typeof import('@vueuse/core').useBluetooth
   const useBreakpoints: typeof import('@vueuse/core').useBreakpoints
   const useBroadcastChannel: typeof import('@vueuse/core').useBroadcastChannel
+  const useBrowserBookmarks: typeof import('./composables/use-browser-bookmarks').default
+  const useBrowserConsole: typeof import('./composables/use-browser-console').default
+  const useBrowserElementSelect: typeof import('./composables/use-browser-element-select').default
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
+  const useBrowserNavigation: typeof import('./composables/use-browser-navigation').default
+  const useBrowserTab: typeof import('./composables/use-browser-tab').default
+  const useBrowserToolbar: typeof import('./composables/use-browser-toolbar').default
   const useCached: typeof import('@vueuse/core').useCached
   const useChatContextActions: typeof import('./composables/use-chat-context-actions').default
   const useChatContextBudgetSync: typeof import('./composables/use-chat-context-budget-sync').default
@@ -349,6 +356,9 @@ declare global {
   export type { AgentHarnessOptions, ToolRun, SubagentEntry, ApprovalResolution, PendingApprovalView, McpAuthResolution, PendingMcpAuthView } from './composables/use-agent-harness'
   import('./composables/use-agent-harness')
   // @ts-ignore
+  export type { BrowserConsoleLine } from './composables/use-browser-console'
+  import('./composables/use-browser-console')
+  // @ts-ignore
   export type { CodegraphStatusState } from './composables/use-codegraph-status'
   import('./composables/use-codegraph-status')
   // @ts-ignore
@@ -399,6 +409,7 @@ declare module 'vue' {
     readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
+    readonly createBrowserTabSession: UnwrapRef<typeof import('./composables/create-browser-tab-session')['default']>
     readonly createDisposableDirective: UnwrapRef<typeof import('@vueuse/core')['createDisposableDirective']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
@@ -524,7 +535,13 @@ declare module 'vue' {
     readonly useBluetooth: UnwrapRef<typeof import('@vueuse/core')['useBluetooth']>
     readonly useBreakpoints: UnwrapRef<typeof import('@vueuse/core')['useBreakpoints']>
     readonly useBroadcastChannel: UnwrapRef<typeof import('@vueuse/core')['useBroadcastChannel']>
+    readonly useBrowserBookmarks: UnwrapRef<typeof import('./composables/use-browser-bookmarks')['default']>
+    readonly useBrowserConsole: UnwrapRef<typeof import('./composables/use-browser-console')['default']>
+    readonly useBrowserElementSelect: UnwrapRef<typeof import('./composables/use-browser-element-select')['default']>
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
+    readonly useBrowserNavigation: UnwrapRef<typeof import('./composables/use-browser-navigation')['default']>
+    readonly useBrowserTab: UnwrapRef<typeof import('./composables/use-browser-tab')['default']>
+    readonly useBrowserToolbar: UnwrapRef<typeof import('./composables/use-browser-toolbar')['default']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useChatContextActions: UnwrapRef<typeof import('./composables/use-chat-context-actions')['default']>
     readonly useChatContextBudgetSync: UnwrapRef<typeof import('./composables/use-chat-context-budget-sync')['default']>

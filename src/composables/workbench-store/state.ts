@@ -8,7 +8,7 @@ export type DuplicateTabResolution = 'existing' | 'new'
 
 export type PromptableTabType = Exclude<
   WorkbenchTabType,
-  'plan' | 'studio' | 'agent-shell'
+  'plan' | 'studio' | 'agent-shell' | 'browser'
 >
 
 export type ResolveWorkbenchTabOpenParams = {

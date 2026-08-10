@@ -167,6 +167,41 @@ pub fn fs_mkdir(project_root: String, path: String) -> Result<(), String> {
   fs::create_dir_all(&absolute).map_err(|error| error.to_string())
 }
 
+fn sanitize_temp_kind(kind: &str) -> Result<String, String> {
+  let trimmed = kind.trim();
+  if trimmed.is_empty() {
+    return Err("Temp kind must not be empty".to_string());
+  }
+  if !trimmed
+    .chars()
+    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+  {
+    return Err(format!("Invalid temp kind: {kind}"));
+  }
+  Ok(trimmed.to_string())
+}
+
+fn sanitize_temp_extension(extension: &str) -> Result<String, String> {
+  let trimmed = extension.trim().trim_start_matches('.');
+  if trimmed.is_empty() {
+    return Err("Temp extension must not be empty".to_string());
+  }
+  if !trimmed
+    .chars()
+    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+  {
+    return Err(format!("Invalid temp extension: {extension}"));
+  }
+  Ok(trimmed.to_string())
+}
+
+fn decode_base64(content_base64: &str) -> Result<Vec<u8>, String> {
+  use base64::Engine;
+  base64::engine::general_purpose::STANDARD
+    .decode(content_base64.trim())
+    .map_err(|error| format!("Invalid base64 content: {error}"))
+}
+
 #[tauri::command]
 pub fn write_temp_handoff(content: String) -> Result<WriteTempHandoffResult, String> {
   let timestamp = chrono::Utc::now()
@@ -177,6 +212,79 @@ pub fn write_temp_handoff(content: String) -> Result<WriteTempHandoffResult, Str
   fs::create_dir_all(&dir).map_err(|error| format!("Failed to create temp handoffs dir: {error}"))?;
   let absolute = dir.join(&filename);
   fs::write(&absolute, content).map_err(|error| format!("Failed to write temp handoff: {error}"))?;
+  Ok(WriteTempHandoffResult {
+    path: absolute.to_string_lossy().to_string(),
+    filename,
+  })
+}
+
+/// Writes binary bytes (base64-encoded) under the app temp dir.
+#[tauri::command]
+pub fn write_temp_bytes(
+  content_base64: String,
+  kind: String,
+  extension: String,
+) -> Result<WriteTempHandoffResult, String> {
+  let kind = sanitize_temp_kind(&kind)?;
+  let extension = sanitize_temp_extension(&extension)?;
+  let bytes = decode_base64(&content_base64)?;
+  let timestamp = chrono::Utc::now()
+    .format("%Y-%m-%dT%H-%M-%S-%3f")
+    .to_string();
+  let filename = format!("{kind}-{timestamp}.{extension}");
+  let dir = std::env::temp_dir().join("pyrola").join(&kind);
+  fs::create_dir_all(&dir).map_err(|error| format!("Failed to create temp dir: {error}"))?;
+  let absolute = dir.join(&filename);
+  fs::write(&absolute, bytes).map_err(|error| format!("Failed to write temp bytes: {error}"))?;
+  Ok(WriteTempHandoffResult {
+    path: absolute.to_string_lossy().to_string(),
+    filename,
+  })
+}
+
+/// Appends a text line to a temp log file. Creates the file when `path` is omitted.
+#[tauri::command]
+pub fn append_temp_log(
+  path: Option<String>,
+  kind: String,
+  line: String,
+) -> Result<WriteTempHandoffResult, String> {
+  let kind = sanitize_temp_kind(&kind)?;
+  let absolute = if let Some(existing) = path.filter(|value| !value.trim().is_empty()) {
+    PathBuf::from(existing)
+  } else {
+    let timestamp = chrono::Utc::now()
+      .format("%Y-%m-%dT%H-%M-%S-%3f")
+      .to_string();
+    let filename = format!("{kind}-{timestamp}.log");
+    let dir = std::env::temp_dir().join("pyrola").join(&kind);
+    fs::create_dir_all(&dir).map_err(|error| format!("Failed to create temp log dir: {error}"))?;
+    dir.join(filename)
+  };
+
+  if let Some(parent) = absolute.parent() {
+    fs::create_dir_all(parent).map_err(|error| format!("Failed to create temp log dir: {error}"))?;
+  }
+
+  use std::io::Write;
+  let mut file = fs::OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(&absolute)
+    .map_err(|error| format!("Failed to open temp log: {error}"))?;
+  let mut payload = line;
+  if !payload.ends_with('\n') {
+    payload.push('\n');
+  }
+  file
+    .write_all(payload.as_bytes())
+    .map_err(|error| format!("Failed to append temp log: {error}"))?;
+
+  let filename = absolute
+    .file_name()
+    .map(|name| name.to_string_lossy().to_string())
+    .unwrap_or_else(|| format!("{kind}.log"));
+
   Ok(WriteTempHandoffResult {
     path: absolute.to_string_lossy().to_string(),
     filename,

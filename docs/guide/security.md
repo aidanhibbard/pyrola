@@ -18,10 +18,24 @@ Scopes for remembered decisions include session, workspace, and always where the
 
 - Read and write project files when tools and permissions allow.
 - Run terminal commands in the project context. When sandboxing is enabled (default), macOS uses Seatbelt (`sandbox-exec`) and Linux uses bubblewrap (`bwrap`) when available. This is process isolation for agent shell tools, not a full VM or container guarantee.
-- Call trusted MCP tools. There is no built-in browser CDP or WebFetch tool; network beyond the model provider is via user-configured MCP (or an explicitly allowed sandbox network setting).
+- Call trusted MCP tools. Network beyond the model provider is also available via built-in browser tools and/or user-configured MCP (or an explicitly allowed sandbox network setting).
 - Commit or checkout when git write tools and permissions allow.
 
 Do not run Bypass against untrusted prompts or untrusted MCP servers.
+
+## Browser
+
+Pyrola can drive an embedded Chromium (CEF) instance for agent browser tools
+when built with the optional `cef` cargo feature:
+
+- CDP is bound to `127.0.0.1` (loopback only).
+- A shared-tab lock prevents two agents from racing the same browser.
+- `browser.*` tools use the permission dial (Ask / Allowlist; still gated under Bypass).
+- There is no origin allowlist: navigate anywhere; approvals and locks are the control.
+- Sensitive site permissions (camera, mic, geolocation, notifications) are never auto-granted.
+
+The embedded CEF process is not OS-sandboxed (same class of gap as MCP today).
+Default (non-`cef`) builds do not ship Chromium. See [CEF bundling](./cef-bundling.md).
 
 ## Keys and secrets
 

@@ -25,6 +25,24 @@ const PLAN_TOOLS = [
   'update_plan_todo',
 ] as const
 
+const BROWSER_TOOLS = [
+  'browser_tabs',
+  'browser_navigate',
+  'browser_lock',
+  'browser_snapshot',
+  'browser_take_screenshot',
+  'browser_click',
+  'browser_type',
+  'browser_fill',
+  'browser_select_option',
+  'browser_press_key',
+  'browser_scroll',
+  'browser_drag',
+  'browser_get_bounding_box',
+  'browser_highlight',
+  'browser_cdp',
+] as const
+
 const ORCHESTRATOR_TOOLS = [
   'read_file',
   'list_dir',
@@ -51,6 +69,7 @@ const ORCHESTRATOR_TOOLS = [
   'update_plan_todo',
   'write_todos',
   'spawn_subagent',
+  ...BROWSER_TOOLS,
 ] as const
 
 export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
@@ -106,6 +125,7 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'write_todos',
     'write_studio_artifact',
     'spawn_subagent',
+    ...BROWSER_TOOLS,
   ],
   orchestrator: [...ORCHESTRATOR_TOOLS],
 }

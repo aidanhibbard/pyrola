@@ -5,6 +5,7 @@ export type WorkbenchTabType =
   | 'studio'
   | 'plan'
   | 'agent-shell'
+  | 'browser'
 
 export type EditorPayload = {
   path: string
@@ -31,6 +32,10 @@ export type AgentShellPayload = {
   shellId: string
 }
 
+export type BrowserPayload = {
+  workspaceId: string
+}
+
 export type ChangesPayload = Record<string, never>
 
 export type WorkbenchTabPayload =
@@ -39,6 +44,7 @@ export type WorkbenchTabPayload =
   | PlanPayload
   | StudioPayload
   | AgentShellPayload
+  | BrowserPayload
   | ChangesPayload
 
 export type WorkbenchTab = {

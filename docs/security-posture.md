@@ -55,8 +55,30 @@ What stays as intentional controls:
 - MCP trust + spawn allowlist
 - Keychain secrets
 - Sensitive-path ask behavior
+- Browser automation controls (embedded CEF when enabled, loopback CDP, lock, permission dial, CDP denylist)
 
-Pyrola does **not** ship built-in browser CDP or WebFetch tools. Network beyond the model provider is via user MCP (or an explicitly allowed sandbox network setting).
+## Browser automation
+
+Pyrola can ship an embedded Chromium (CEF) host for agent browser tools when
+built with the optional `cef` cargo feature. Controls that apply today:
+
+- **Embedded CEF:** One CEF browser per workbench Browser tab; shared DevTools
+  port with per-session page-target WebSocket URLs. Default builds omit CEF.
+- **Loopback CDP:** Remote debugging listens on `127.0.0.1` only. Remote attach
+  is not supported. v1 does not add a CDP session token; loopback binding is
+  the primary network control.
+- **Shared-tab lock:** A lock keeps two agents from racing the same browser session.
+- **Permission dial:** `browser.*` tools use the same Ask / Allowlist dial as shell and MCP, and remain gated under Bypass (Bypass still does not auto-allow browser).
+- **CDP method denylist:** `browser_cdp` blocks footguns such as `Input.*`, `Storage.*`, cookie and cache writes, navigation and download CDP methods, target lifecycle, device/UA emulation overrides, cert error bypass, and permission grants. Prefer the dedicated `browser_*` tools for interaction.
+- **No origin allowlist:** Agents may navigate anywhere. Approvals and locks are the user-facing controls, not a URL allowlist.
+- **No iframe automation in v1:** Snapshot and interaction stay on the top-level page.
+- **No auto-granted sensitive permissions:** Camera, mic, geolocation, and notifications are never auto-granted via CDP.
+
+**Honest limit:** The embedded CEF process is not OS-sandboxed. That is the same class of gap as MCP stdio processes today: permission prompts and product policy apply, but Seatbelt/bwrap do not wrap the browser host.
+
+See [CEF bundling](./guide/cef-bundling.md) for framework packaging and signing.
+
+Network beyond the model provider is via built-in browser tools and/or user MCP (or an explicitly allowed sandbox network setting for agent shell).
 
 ## Comparison to OpenCode
 
@@ -64,7 +86,7 @@ Pyrola does **not** ship built-in browser CDP or WebFetch tools. Network beyond 
 | --- | --- | --- |
 | Permissions | Dial (Ask / Allowlist / Bypass) + capability gate; Bypass is partial | Config rules (`allow` / `ask` / `deny`) per tool, often with pattern objects; defaults are relatively permissive with guards like `.env` deny and `external_directory` / `doom_loop` ask |
 | OS sandbox | macOS Seatbelt + Linux bwrap for agent shell (default on when setting is true) | Experimental macOS Seatbelt sandbox (opt-in); Linux/Windows coverage differs; see OpenCode sandbox docs and related PRs |
-| Web tools | No first-party WebFetch / browser CDP | Includes `webfetch` / `websearch` permissions |
+| Web tools | Built-in browser CDP (embedded CEF when `cef` feature is on, loopback-bound) plus user MCP | Includes `webfetch` / `websearch` permissions |
 | MCP | Explicit trust + basename spawn allowlist | MCP is supported; sandbox docs note MCP is outside the bash Seatbelt path (similar gap) |
 | Secrets | OS keychain for provider / MCP secrets | Provider keys via `/connect` and local config; model differs by product surface |
 

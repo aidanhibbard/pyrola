@@ -6,6 +6,7 @@ import {
   FileCode,
   FileText,
   GitBranch,
+  Globe,
   Terminal,
   X,
 } from '@lucide/vue'
@@ -39,6 +40,8 @@ const tabIcon = (type: WorkbenchTabType) => {
       return ChartBar
     case 'plan':
       return FileText
+    case 'browser':
+      return Globe
     default:
       return FileCode
   }

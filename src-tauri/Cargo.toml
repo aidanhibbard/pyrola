@@ -7,6 +7,8 @@ license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+# Required when the `cef` feature enables extra bins (helper / spike validate).
+default-run = "app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -29,7 +31,7 @@ tauri-plugin-mcp-bridge = "0.12"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync", "process", "io-util", "net", "rt-multi-thread", "macros", "time"] }
 uuid = { version = "1", features = ["v4"] }
@@ -45,13 +47,34 @@ flate2 = "1.1.9"
 tar = "0.4.46"
 which = "8.0.5"
 sha2 = "0.10.9"
+cef = { version = "151", default-features = false, optional = true }
+cef-dll-sys = { version = "151", default-features = false, optional = true }
+
+[features]
+default = ["cef"]
+cef = ["dep:cef", "dep:cef-dll-sys"]
+# Dev-only spike validator; not enabled by release `--features cef`.
+cef-spike = ["cef"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSButton"] }
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSGeometry", "NSDate", "NSRunLoop"] }
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSButton", "NSView", "NSApplication", "NSRunningApplication", "NSEvent"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView"] }
+
+[[bin]]
+name = "pyrola_cef_helper"
+path = "src/bin/pyrola_cef_helper.rs"
+required-features = ["cef"]
+
+[[bin]]
+name = "cef-spike-validate"
+path = "src/bin/cef-spike-validate.rs"
+required-features = ["cef-spike"]
 
 [[test]]
 name = "commands_sandbox"

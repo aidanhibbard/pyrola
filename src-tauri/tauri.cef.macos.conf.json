@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "externalBin": [
+      "binaries/pyrola_cef_helper"
+    ],
+    "macOS": {
+      "frameworks": [
+        "./cef-runtime/Chromium Embedded Framework.framework"
+      ],
+      "entitlements": "./Entitlements.cef.plist",
+      "hardenedRuntime": true
+    }
+  }
+}
