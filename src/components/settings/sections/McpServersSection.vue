@@ -29,7 +29,6 @@ import {
 import { Badge } from '@/components/shadcn/ui/badge'
 import {
   Empty,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -476,10 +475,7 @@ const refreshAll = async (): Promise<void> => {
         <EmptyMedia variant="icon">
           <Server />
         </EmptyMedia>
-        <EmptyTitle>No MCP servers configured</EmptyTitle>
-        <EmptyDescription>
-          Add a stdio or HTTP server. Enter API keys in the same dialog; they are stored in the keychain.
-        </EmptyDescription>
+        <EmptyTitle>No MCP</EmptyTitle>
       </EmptyHeader>
     </Empty>
 
