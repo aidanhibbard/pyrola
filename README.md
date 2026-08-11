@@ -88,3 +88,5 @@ Or go fully local with custom OpenAI compatible endpoint support.
   <p align="center">
     <img src="./docs/media/readme/terminals-readme.jpg" alt="Built in terminals" />
   </p>
+
+  4. So much more!
