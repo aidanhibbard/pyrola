@@ -193,6 +193,7 @@
     "useChatContextActions": true,
     "useChatContextBudgetSync": true,
     "useChatPromptBridge": true,
+    "useChatPromptDraftMedia": true,
     "useChatPromptEditor": true,
     "useChatSkills": true,
     "useChatStore": true,

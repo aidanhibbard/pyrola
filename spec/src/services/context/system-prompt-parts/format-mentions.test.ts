@@ -21,6 +21,11 @@ const browserElementMention: ContextMention = {
     },
     componentHint: null,
     screenshotPath: '/tmp/pyrola/screenshots/element.png',
+    outerHTML: null,
+    innerText: null,
+    pageUrl: null,
+    ancestorPath: null,
+    matchedCss: null,
   },
 }
 

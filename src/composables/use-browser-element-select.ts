@@ -1,13 +1,12 @@
-import type { Ref } from 'vue'
-import { ref, watch } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
-import captureElementAtPoint from '@/services/browser/capture-element-at-point'
+import useChatPromptBridge from '@/composables/use-chat-prompt-bridge'
+import captureElementByBackendNodeId from '@/services/browser/capture-element-by-node'
 import type CdpClient from '@/services/browser/cdp-client'
 import {
-  cleanupElementPickListener,
-  installElementPickListener,
-  readElementPick,
-} from '@/services/browser/inject-element-pick'
+  startInspectMode,
+  stopInspectMode,
+} from '@/services/browser/cdp-inspect-mode'
 
 type ElementSelectArgs = {
   workspaceId: string
@@ -16,28 +15,43 @@ type ElementSelectArgs = {
   hasPage: Ref<boolean>
 }
 
-const POLL_MS = 100
+// CEF connects as a page-target CDP socket. Commands go on the socket root;
+// CdpClient omits empty sessionId. The CEF view id is only a presence guard.
+const PAGE_TARGET_CDP_SESSION_ID = ''
 
 export default (args: ElementSelectArgs) => {
   const elementSelectMode = ref(false)
   const chatPromptBridge = useChatPromptBridge()
-  let pollTimer: ReturnType<typeof setInterval> | null = null
   let picking = false
+  let inspectActive = false
+  let unsubscribeInspect: (() => void) | null = null
+  let infoToastId: string | number | undefined
+  let selectGeneration = 0
 
-  const stopPolling = (): void => {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer)
-      pollTimer = null
+  const dismissInfoToast = (): void => {
+    if (infoToastId === undefined) {
+      return
+    }
+    toast.dismiss(infoToastId)
+    infoToastId = undefined
+  }
+
+  const clearInspectSubscription = (): void => {
+    if (unsubscribeInspect) {
+      unsubscribeInspect()
+      unsubscribeInspect = null
     }
   }
 
-  const cleanupPick = async (): Promise<void> => {
-    stopPolling()
+  const stopInspectForActive = async (): Promise<void> => {
+    clearInspectSubscription()
     try {
       const client = await args.getClient()
-      await cleanupElementPickListener(client)
-    } catch {
-      // Session may already be gone; ignore cleanup failures.
+      await stopInspectMode(client, PAGE_TARGET_CDP_SESSION_ID)
+    } catch (error) {
+      toast.error('Failed to stop element select', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
 
@@ -46,24 +60,39 @@ export default (args: ElementSelectArgs) => {
       return
     }
     elementSelectMode.value = false
-    cleanupPick().catch((error: unknown) => {
+    selectGeneration += 1
+    dismissInfoToast()
+    const wasInspecting = inspectActive
+    inspectActive = false
+    if (!wasInspecting) {
+      clearInspectSubscription()
+      return
+    }
+    stopInspectForActive().catch((error: unknown) => {
       toast.error('Failed to stop element select', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     })
   }
 
-  const completePick = async (x: number, y: number): Promise<void> => {
+  const completePick = async (backendNodeId: number): Promise<void> => {
     if (picking) {
       return
     }
     picking = true
     elementSelectMode.value = false
-    stopPolling()
+    selectGeneration += 1
+    inspectActive = false
+    dismissInfoToast()
+    clearInspectSubscription()
     try {
       const client = await args.getClient()
-      await cleanupElementPickListener(client)
-      const selection = await captureElementAtPoint(client, '', x, y)
+      await stopInspectMode(client, PAGE_TARGET_CDP_SESSION_ID)
+      const selection = await captureElementByBackendNodeId(
+        client,
+        PAGE_TARGET_CDP_SESSION_ID,
+        backendNodeId,
+      )
       chatPromptBridge.appendBrowserElement(selection)
       toast.success('Element added to composer')
     } catch (error) {
@@ -73,26 +102,6 @@ export default (args: ElementSelectArgs) => {
     } finally {
       picking = false
     }
-  }
-
-  const startPolling = (client: CdpClient): void => {
-    stopPolling()
-    pollTimer = setInterval(() => {
-      readElementPick(client)
-        .then((pick) => {
-          if (!pick || !elementSelectMode.value) {
-            return
-          }
-          return completePick(pick.x, pick.y)
-        })
-        .catch((error: unknown) => {
-          toast.error('Failed to read element pick', {
-            description:
-              error instanceof Error ? error.message : 'Unknown error',
-          })
-          stopElementSelect()
-        })
-    }, POLL_MS)
   }
 
   const toggleElementSelect = (): void => {
@@ -111,20 +120,38 @@ export default (args: ElementSelectArgs) => {
       return
     }
 
+    selectGeneration += 1
+    const generation = selectGeneration
     elementSelectMode.value = true
+    inspectActive = true
     args
       .getClient()
       .then(async (client) => {
-        await installElementPickListener(client)
-        if (!elementSelectMode.value) {
-          await cleanupElementPickListener(client)
+        unsubscribeInspect = await startInspectMode(
+          client,
+          PAGE_TARGET_CDP_SESSION_ID,
+          (backendNodeId) => {
+            completePick(backendNodeId).catch((error: unknown) => {
+              toast.error('Failed to select element', {
+                description:
+                  error instanceof Error ? error.message : 'Unknown error',
+              })
+            })
+          },
+        )
+        if (generation !== selectGeneration) {
+          inspectActive = false
+          clearInspectSubscription()
+          await stopInspectMode(client, PAGE_TARGET_CDP_SESSION_ID)
           return
         }
-        startPolling(client)
-        toast.info('Click an element in the browser')
+        infoToastId = toast.info('Click an element in the browser')
       })
       .catch((error: unknown) => {
         elementSelectMode.value = false
+        inspectActive = false
+        clearInspectSubscription()
+        dismissInfoToast()
         toast.error('Failed to start element select', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })

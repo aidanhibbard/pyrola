@@ -8,4 +8,9 @@ export type BrowserElementDetail = {
   computedStyles: Record<string, string>
   componentHint: string | null
   screenshotPath: string | null
+  outerHTML: string | null
+  innerText: string | null
+  pageUrl: string | null
+  ancestorPath: string | null
+  matchedCss: string | null
 }

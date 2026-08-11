@@ -46,6 +46,7 @@ import useGitBranches from '@/composables/use-git-branches'
 import useChatStore from '@/composables/use-chat-store'
 import useChatContextBudgetSync from '@/composables/use-chat-context-budget-sync'
 import useChatPromptEditor from '@/composables/use-chat-prompt-editor'
+import useChatPromptDraftMedia from '@/composables/use-chat-prompt-draft-media'
 import useContextUsage from '@/composables/use-context-usage'
 import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
@@ -61,7 +62,9 @@ import type { ContextMention } from '@/types/harness/context-mention'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { FileUIPart } from 'ai'
+import resolveSelectedModelVision from '@/services/harness/resolve-selected-model-vision'
 import contextMentionFromNode from '@/utils/context-mention-from-node'
+import draftElementMediaToFileParts from '@/utils/draft-element-media-to-file-parts'
 
 const PREFETCH_MIN_FREE_TOKENS = 4000
 const PREFETCH_MAX_CONTENT_CHARS = 12_000
@@ -110,6 +113,7 @@ const contextBudgetSync = useChatContextBudgetSync()
 const chatPromptEditor = useChatPromptEditor()
 const contextUsage = useContextUsage()
 const mcpServers = useMcpServers()
+const draftMedia = useChatPromptDraftMedia()
 
 const draftMentions = contextBudgetSync.draftMentions
 
@@ -318,8 +322,9 @@ const enrichMentionsBeforeSend = async (
 
 const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
   const text = payload.text.trim()
-  const files = payload.files ?? []
-  if ((!text && files.length === 0) || props.disabled) {
+  const promptFiles = payload.files ?? []
+  const draftItems = [...draftMedia.items.value]
+  if ((!text && promptFiles.length === 0 && draftItems.length === 0) || props.disabled) {
     return
   }
   if (!session.selectedModelRef) {
@@ -328,12 +333,26 @@ const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
   }
   if (isEditing.value) {
     emit('submitEdit', {
-      text: text || (files.length > 0 ? 'See attached image(s).' : ''),
+      text: text || (promptFiles.length > 0 ? 'See attached image(s).' : ''),
       mode: session.selectedMode,
       model: session.selectedModelRef,
     })
     return
   }
+
+  const supportsVision = await resolveSelectedModelVision({
+    modelRef: session.selectedModelRef,
+    settings: config.effectiveSettings.value,
+  })
+  const elementFiles = draftElementMediaToFileParts(draftItems, supportsVision)
+  if (draftItems.length > 0) {
+    draftMedia.clear()
+  }
+  const files: FileUIPart[] = [...promptFiles, ...elementFiles]
+  const fallbackText =
+    elementFiles.length > 0 && promptFiles.length === 0
+      ? 'See attached element(s).'
+      : 'See attached image(s).'
 
   let mentions = (() => {
     const editor = chatPromptEditor.editorRef.value
@@ -352,7 +371,7 @@ const handleSubmit = async (payload: PromptInputMessage): Promise<void> => {
   contextBudgetSync.setDraftMentions(mentions)
 
   emit('submit', {
-    text: text || (files.length > 0 ? 'See attached image(s).' : ''),
+    text: text || (files.length > 0 ? fallbackText : ''),
     mode: session.selectedMode,
     model: session.selectedModelRef,
     projectId: props.showProjectSelect

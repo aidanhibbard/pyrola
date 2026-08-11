@@ -114,7 +114,7 @@ export default async (input: OrchestratorInput): Promise<void> => {
     settings: input.settings,
   })
   const recentModelMessages = await convertToModelMessages(
-    prepareMessagesForModelVision(contextMessages, supportsVision),
+    await prepareMessagesForModelVision(contextMessages, supportsVision),
   )
   const effectiveModelMessages: ModelMessage[] = checkpointText
     ? [

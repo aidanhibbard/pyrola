@@ -15,6 +15,7 @@ import {
   resolveSessionIdForWorkspace,
 } from '@/services/browser/registry'
 import { applyUserAgentOverride } from '@/services/browser/cdp-user-agent'
+import matchedStylesForNode from '@/services/browser/matched-styles-for-node'
 import probeElementDom from '@/services/browser/probe-element-dom'
 import saveScreenshot from '@/services/browser/screenshot-store'
 import type { BrowserElementDetail } from '@/types/browser/browser-element-detail'
@@ -68,8 +69,14 @@ const captureElementSelection = async (
   const axNode = getSnapshotNode(cdpSessionId, trimmedRef)
   const boundingBox = await getBoundingBox(client, cdpSessionId, trimmedRef)
   const screenshot = await takeScreenshot(client, cdpSessionId, { ref: trimmedRef })
-  const image = await saveScreenshot(screenshot.data)
+  const screenshotBytes = screenshot.data
+  const image = await saveScreenshot(screenshotBytes)
   const probe = await probeElementDom(client, cdpSessionId, resolved.objectId)
+  const matchedCss = await matchedStylesForNode(
+    client,
+    cdpSessionId,
+    resolved.objectId,
+  )
 
   const detail: BrowserElementDetail = {
     xpath: probe.xpath,
@@ -81,11 +88,17 @@ const captureElementSelection = async (
     computedStyles: probe.computedStyles,
     componentHint: null,
     screenshotPath: image.path,
+    outerHTML: probe.outerHTML,
+    innerText: probe.innerText,
+    pageUrl: probe.pageUrl,
+    ancestorPath: probe.ancestorPath,
+    matchedCss,
   }
 
   return {
     detail,
     screenshotPath: image.path,
+    screenshotBytes,
   }
 }
 

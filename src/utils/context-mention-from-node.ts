@@ -69,6 +69,11 @@ const parseBrowserElementDetail = (raw: string): BrowserElementDetail | null => 
       componentHint: typeof record.componentHint === 'string' ? record.componentHint : null,
       screenshotPath:
         typeof record.screenshotPath === 'string' ? record.screenshotPath : null,
+      outerHTML: typeof record.outerHTML === 'string' ? record.outerHTML : null,
+      innerText: typeof record.innerText === 'string' ? record.innerText : null,
+      pageUrl: typeof record.pageUrl === 'string' ? record.pageUrl : null,
+      ancestorPath: typeof record.ancestorPath === 'string' ? record.ancestorPath : null,
+      matchedCss: typeof record.matchedCss === 'string' ? record.matchedCss : null,
     }
   } catch {
     return null

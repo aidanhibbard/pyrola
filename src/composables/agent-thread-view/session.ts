@@ -78,7 +78,8 @@ export const createSessionOps = (state: AgentThreadViewState) => {
       mode: pending.mode,
       model: pending.model,
       reasoning: isReasoningLevel(pending.reasoning) ? pending.reasoning : undefined,
-      mentions: state.contextBudgetSync.draftMentions.value,
+      mentions: pending.mentions ?? state.contextBudgetSync.draftMentions.value,
+      files: pending.files,
     })
     await state.fleetSidebar.refreshSlug(state.projectSlug.value)
   }

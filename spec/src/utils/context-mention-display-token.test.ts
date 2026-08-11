@@ -66,6 +66,11 @@ describe('contextMentionDisplayToken', () => {
           computedStyles: {},
           componentHint: null,
           screenshotPath: '/tmp/shot.png',
+          outerHTML: null,
+          innerText: null,
+          pageUrl: null,
+          ancestorPath: null,
+          matchedCss: null,
         },
       }),
     ).toEqual({

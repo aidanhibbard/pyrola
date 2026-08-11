@@ -59,6 +59,16 @@ const saveScreenshot = vi.hoisted(() =>
   vi.fn<(bytes: Uint8Array) => Promise<{ mimeType: string; path: string }>>(),
 )
 
+const matchedStylesForNode = vi.hoisted(() =>
+  vi.fn<
+    (
+      client: CdpClient,
+      sessionId: string,
+      objectId: string,
+    ) => Promise<string | null>
+  >(),
+)
+
 const send = vi.hoisted(() =>
   vi.fn<
     (
@@ -91,8 +101,13 @@ vi.mock('@/services/browser/screenshot-store', () => ({
   default: saveScreenshot,
 }))
 
+vi.mock('@/services/browser/matched-styles-for-node', () => ({
+  default: matchedStylesForNode,
+}))
+
 describe('design-mode-select', () => {
   const client = { send } as unknown as CdpClient
+  const screenshotBytes = new Uint8Array([1, 2, 3])
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -104,13 +119,14 @@ describe('design-mode-select', () => {
     getSnapshotNode.mockReturnValue({ role: 'button', name: 'Submit' })
     getBoundingBox.mockResolvedValue({ x: 10, y: 20, width: 100, height: 40 })
     takeScreenshot.mockResolvedValue({
-      data: new Uint8Array([1, 2, 3]),
+      data: screenshotBytes,
       mimeType: 'image/png',
     })
     saveScreenshot.mockResolvedValue({
       mimeType: 'image/png',
       path: '/tmp/pyrola/screenshots/element.png',
     })
+    matchedStylesForNode.mockResolvedValue('button.submit { color: navy; }')
 
     send.mockResolvedValue({
       result: {
@@ -130,12 +146,16 @@ describe('design-mode-select', () => {
             margin: '0px',
             padding: '8px',
           },
+          outerHTML: '<button class="submit" type="submit">Submit</button>',
+          innerText: 'Submit',
+          pageUrl: 'https://example.com/form',
+          ancestorPath: 'button.submit > form#main > body > html',
         },
       },
     })
   })
 
-  it('returns BrowserElementSelection with detail and screenshotPath', async () => {
+  it('returns BrowserElementSelection with detail, screenshotPath, and screenshotBytes', async () => {
     const { default: captureElementSelection } = await import(
       '@/services/browser/design-mode-select'
     )
@@ -151,9 +171,11 @@ describe('design-mode-select', () => {
     )
     expect(resolveRef).toHaveBeenCalledWith(client, '', 'ref-1')
     expect(takeScreenshot).toHaveBeenCalledWith(client, '', { ref: 'ref-1' })
-    expect(saveScreenshot).toHaveBeenCalled()
+    expect(saveScreenshot).toHaveBeenCalledWith(screenshotBytes)
+    expect(matchedStylesForNode).toHaveBeenCalledWith(client, '', 'obj-1')
 
     expect(selection.screenshotPath).toBe('/tmp/pyrola/screenshots/element.png')
+    expect(selection.screenshotBytes).toEqual(screenshotBytes)
     expect(selection.detail).toEqual({
       xpath: '/html[1]/body[1]/button[1]',
       role: 'button',
@@ -175,6 +197,11 @@ describe('design-mode-select', () => {
       },
       componentHint: null,
       screenshotPath: '/tmp/pyrola/screenshots/element.png',
+      outerHTML: '<button class="submit" type="submit">Submit</button>',
+      innerText: 'Submit',
+      pageUrl: 'https://example.com/form',
+      ancestorPath: 'button.submit > form#main > body > html',
+      matchedCss: 'button.submit { color: navy; }',
     } satisfies BrowserElementDetail)
   })
 

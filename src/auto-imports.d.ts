@@ -164,6 +164,7 @@ declare global {
   const useChatContextActions: typeof import('./composables/use-chat-context-actions').default
   const useChatContextBudgetSync: typeof import('./composables/use-chat-context-budget-sync').default
   const useChatPromptBridge: typeof import('./composables/use-chat-prompt-bridge').default
+  const useChatPromptDraftMedia: typeof import('./composables/use-chat-prompt-draft-media').default
   const useChatPromptEditor: typeof import('./composables/use-chat-prompt-editor').default
   const useChatSkills: typeof import('./composables/use-chat-skills').default
   const useChatStore: typeof import('./composables/use-chat-store').default
@@ -550,6 +551,7 @@ declare module 'vue' {
     readonly useChatContextActions: UnwrapRef<typeof import('./composables/use-chat-context-actions')['default']>
     readonly useChatContextBudgetSync: UnwrapRef<typeof import('./composables/use-chat-context-budget-sync')['default']>
     readonly useChatPromptBridge: UnwrapRef<typeof import('./composables/use-chat-prompt-bridge')['default']>
+    readonly useChatPromptDraftMedia: UnwrapRef<typeof import('./composables/use-chat-prompt-draft-media')['default']>
     readonly useChatPromptEditor: UnwrapRef<typeof import('./composables/use-chat-prompt-editor')['default']>
     readonly useChatSkills: UnwrapRef<typeof import('./composables/use-chat-skills')['default']>
     readonly useChatStore: UnwrapRef<typeof import('./composables/use-chat-store')['default']>

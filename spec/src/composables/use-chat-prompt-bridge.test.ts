@@ -12,6 +12,7 @@ describe('use-chat-prompt-bridge browser-element', () => {
 
     const selection: BrowserElementSelection = {
       screenshotPath: '/tmp/pyrola/screenshots/element.png',
+      screenshotBytes: new Uint8Array([1, 2, 3]),
       detail: {
         xpath: '/html[1]/body[1]/div[1]',
         cssSelector: 'div.box',
@@ -22,6 +23,11 @@ describe('use-chat-prompt-bridge browser-element', () => {
         computedStyles: {},
         componentHint: null,
         screenshotPath: '/tmp/pyrola/screenshots/element.png',
+        outerHTML: null,
+        innerText: null,
+        pageUrl: null,
+        ancestorPath: null,
+        matchedCss: null,
       },
     }
 

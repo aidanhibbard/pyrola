@@ -10,6 +10,8 @@ import { setPendingChatMessage } from '@/services/chat/pending-message'
 import { getUserHomeDir } from '@/services/pyrola/pyrola-tauri'
 import { HOME_CHAT_SLUG } from '@/constants/home-chat'
 import chatRouteFor from '@/utils/chat-route-for'
+import type { FileUIPart } from 'ai'
+import type { ContextMention } from '@/types/harness/context-mention'
 import type { PermissionLevel } from '@/types/harness/permission'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import type { ReasoningLevel } from '@/types/models/reasoning-level'
@@ -30,6 +32,8 @@ const handleSubmit = async (payload: {
   reasoning?: ReasoningLevel
   projectId: string | null
   permissionLevel: PermissionLevel
+  files?: FileUIPart[]
+  mentions?: ContextMention[]
 }): Promise<void> => {
   sending.value = true
   try {
@@ -61,6 +65,10 @@ const handleSubmit = async (payload: {
       model: payload.model,
       permissionLevel: payload.permissionLevel,
       ...(payload.reasoning ? { reasoning: payload.reasoning } : {}),
+      ...(payload.files && payload.files.length > 0 ? { files: payload.files } : {}),
+      ...(payload.mentions && payload.mentions.length > 0
+        ? { mentions: payload.mentions }
+        : {}),
     })
     await refreshFleetSidebar()
     await router.push(chatRouteFor(chat.projectSlug, chat.id))

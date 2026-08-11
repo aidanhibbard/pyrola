@@ -77,7 +77,7 @@ export default async (input: ResumeOrchestratorInput): Promise<void> => {
     settings: input.settings,
   })
   const recentModelMessages = await convertToModelMessages(
-    prepareMessagesForModelVision(priorMessages, supportsVision),
+    await prepareMessagesForModelVision(priorMessages, supportsVision),
   )
   const baseMessages: ModelMessage[] = checkpointText
     ? [{ role: 'user', content: checkpointText }, ...recentModelMessages]

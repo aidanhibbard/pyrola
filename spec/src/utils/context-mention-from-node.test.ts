@@ -67,6 +67,11 @@ describe('contextMentionFromNode.fromAttrs', () => {
         computedStyles: { display: 'block' },
         componentHint: null,
         screenshotPath: '/tmp/shot.png',
+        outerHTML: null,
+        innerText: null,
+        pageUrl: null,
+        ancestorPath: null,
+        matchedCss: null,
       },
     }
 

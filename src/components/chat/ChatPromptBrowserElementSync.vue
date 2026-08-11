@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import useChatPromptBridge from '@/composables/use-chat-prompt-bridge'
-import useChatPromptEditor from '@/composables/use-chat-prompt-editor'
+import useChatPromptDraftMedia from '@/composables/use-chat-prompt-draft-media'
 
-// v1 stages the browser-element mention (detail + screenshotPath) into the
-// TipTap draft. Attaching the cropped PNG via addFiles is deferred: temp
-// screenshot paths are outside the project root and have no simple File reader
-// yet. The agent can read screenshotPath from the mention text.
 const chatPromptBridge = useChatPromptBridge()
-const chatPromptEditor = useChatPromptEditor()
+const draftMedia = useChatPromptDraftMedia()
 
 watch(
   () => chatPromptBridge.browserElementAppendToken.value,
@@ -17,11 +13,7 @@ watch(
     if (!selection) {
       return
     }
-    chatPromptEditor.insertMention({
-      type: 'browser-element',
-      detail: selection.detail,
-      screenshotPath: selection.screenshotPath,
-    })
+    draftMedia.append(selection)
   },
 )
 </script>
