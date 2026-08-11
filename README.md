@@ -1,4 +1,6 @@
-<h1 align="center">Pyrola</h1>
+# Pyrola
+
+> We have Antigravity, Cursor Agents, and VS Code Agents, at home!
 
 <p align="center">
   <a href="https://github.com/aidanhibbard/pyrola/actions/workflows/ci.yml"><img src="https://github.com/aidanhibbard/pyrola/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -37,64 +39,37 @@
 
 ---
 
-**Pyrola is a local-first, bring-your-own-key (BYOK), open-source Agents UI for the desktop.** It runs as a Vue and Tauri app with a streaming agent harness, tools, sub-agents, and MCP. Chats and settings stay on your machine. Provider keys live in the OS keychain.
+As a developer I got tired of every agents UI trying to encroach into my "workflow," the lock in, and lack of local support.
 
-## Alpha
+Cursor pressuring to make commits, prs, and branches on my behalf. Not to mention the fact that it is owned by Elon Musk, and the home of Grok.
 
-Pyrola is usable alpha software. Expect rough edges and breaking changes. Agent permissions and approvals are best-effort, not a hardened sandbox. Read [Security](./docs/guide/security.md) before giving an agent shell or write access on important repos.
+If I was going to use slopware, why note make my own?
 
-## Docs
+---
 
-Hosted docs: [aidanhibbard.github.io/pyrola](https://aidanhibbard.github.io/pyrola/)
+Built on Tauri, Vite, Vue, and AI SDK, Pyrola offers the ability to mix API-based LLM usage with local.
 
-- [Install](./docs/guide/install.md)
-- [Getting started](./docs/guide/getting-started.md)
-- [How it works](./docs/architecture/overview.md)
-- [Compared to other Agents UIs](./docs/compare/agents-uis.md)
+Use frontier LLMs to lead your local Qwen, Laguna, or other models locally.
 
-Local docs site: `npm run docs:dev`. Quick app run after install deps: `npm run tauri dev`.
+Or go fully locally with custom OpenAI compatible endpoint support.
 
-## Compared to other Agents UIs
+---
 
-| | Cursor Agents | VS Code Agents | Antigravity | Pyrola |
-| --- | --- | --- | --- | --- |
-| Agents UI | Agents Window and sidepane | Agents window (Preview) and Chat view | Antigravity 2.0 desktop and IDE | Dedicated local Agents desktop |
-| Local-first core | Local plus cloud VMs | Local plus Copilot cloud agent | Local-first (cloud on roadmap) | Local-first only |
-| BYOK | Via Cursor backend | Strong (cloud and local models) | No BYOK / BYO endpoint | Keys in OS keychain; AI SDK and custom endpoints |
-| OSS Agents UI | No | Editor OSS; Agents / Copilot proprietary | App proprietary (SDK Apache) | Yes (MIT) |
-| Account for core loop | Cursor account | GitHub optional for BYOK chat / agent | Google AI account | None |
+Features:
 
-Sources: [Cursor Agents Window](https://cursor.com/docs/agent/agents-window), [VS Code Agents overview](https://code.visualstudio.com/docs/agents/overview), [Antigravity Plans](https://antigravity.google/docs/plans), [Antigravity agent](https://antigravity.google/docs/agent).
+- Multi-project, and multi-agent support, allowing you to manage many agentic workflows all from one surface.
 
-Longer write-up: [Compared to other Agents UIs](./docs/compare/agents-uis.md).
+- Full in app editor with LSP, Git, and file search.
 
-## Features
+- Multiple built in agents with planning, orchestration, and more.
 
-- **Fleet of projects:** register directories, switch active project, keep chats per project.
-- **Modes:** Ask, Plan, Studio, Agent, Orchestrator with mode tool allowlists.
-- **Workbench:** Editor, Terminal, Changes, Plan, and Studio tabs beside the agent thread.
-- **BYOK providers:** Vercel AI SDK catalog plus custom OpenAI-compatible endpoints.
-- **MCP:** stdio and bearer-style servers; tools, resources, and prompts from the harness.
-- **Permissions dial:** ask, allowlist, or bypass (best-effort in alpha).
+- In app terminal
 
-### Chats
+- Full brwoser support with CDP to give your agents web tooling.
 
-![Chats](media/chats.png)
+- File graph that indexes your projects for better agentic search across the repo.
 
-### Providers
+- Lots more!
 
-![Add provider](media/providers.png)
+---
 
-### Editor
-
-![Editor](media/editor.png)
-
-### Terminal
-
-![Terminal](media/terminal.png)
-
-Full UI tour: [Agents UI](./docs/guide/agents-ui.md).
-
-## License
-
-MIT. See [CONTRIBUTING.md](./CONTRIBUTING.md) if you want to help.
