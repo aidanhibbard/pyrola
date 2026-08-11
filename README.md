@@ -43,7 +43,7 @@ As a developer I got tired of every agents UI trying to encroach into my "workfl
 
 Cursor pressuring to make commits, prs, and branches on my behalf. Not to mention the fact that it is owned by Elon Musk, and the home of Grok.
 
-If I was going to use slopware, why note make my own?
+If I was going to use slopware, why not make my own?
 
 ---
 
