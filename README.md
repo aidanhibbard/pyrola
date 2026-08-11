@@ -63,9 +63,9 @@ Features:
 
 - Multiple built in agents with planning, orchestration, and more.
 
-- In app terminal
+- In app terminal.
 
-- Full brwoser support with CDP to give your agents web tooling.
+- Full browser support with CDP to give your agents web tooling.
 
 - File graph that indexes your projects for better agentic search across the repo.
 
