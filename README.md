@@ -51,25 +51,40 @@ Built on Tauri, Vite, Vue, and AI SDK, Pyrola offers the ability to mix API-base
 
 Use frontier LLMs to lead your local Qwen, Laguna, or other models locally.
 
-Or go fully locally with custom OpenAI compatible endpoint support.
+Or go fully local with custom OpenAI compatible endpoint support.
 
 ---
 
-Features:
-
-- Multi-project, and multi-agent support, allowing you to manage many agentic workflows all from one surface.
-
-- Full in app editor with LSP, Git, and file search.
-
-- Multiple built in agents with planning, orchestration, and more.
-
-- In app terminal.
-
-- Full browser support with CDP to give your agents web tooling.
-
-- File graph that indexes your projects for better agentic search across the repo.
-
-- Lots more!
+## Getting started
 
 ---
 
+## Features:
+
+- Manage fleets of agents across projects
+
+- Full agent coding harness
+
+  <p align="center">
+    <img src="./docs/media/readme/harness-readme.jpg" alt="Full agent coding harness" />
+  </p>
+
+- Workbench complete with:
+
+  1. Editor using LSPs that your agent shares
+
+  <p align="center">
+    <img src="./docs/media/readme/editor-readme.jpg" alt="Editor using LSPs that your agent shares" />
+  </p>
+
+  2. Fully integrated browser with CDP
+
+  <p align="center">
+    <img src="./docs/media/readme/cdp-readme.jpg" alt="Fully integrated browser with CDP" />
+  </p>
+
+  3. Built in terminals
+
+  <p align="center">
+    <img src="./docs/media/readme/terminals-readme.jpg" alt="Built in terminals" />
+  </p>
