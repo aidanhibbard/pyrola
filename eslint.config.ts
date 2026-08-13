@@ -64,7 +64,6 @@ export default defineConfigWithVueTs(
       // Template-heavy toolbar: every ghost icon button wraps a Tooltip with z-60
       'src/components/workbench/tabs/browser/BrowserToolbar.vue',
       // Outside this slice; still over 300
-      'src/components/models/search/ModelSearchPicker.vue',
       'src/components/chat/prompt-editor/ChatPromptEditor.vue',
       'src/components/chat/ChatMcpServerPicker.vue',
       'src/components/chat/ChatThreadContent.vue',

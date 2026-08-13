@@ -1,0 +1,8 @@
+export { default as normalizeSearchText } from './normalize'
+export { default as isStrongFieldMatch } from './is-strong-field-match'
+export { default as isStrongProviderMatch } from './is-strong-provider-match'
+export { default as scoreModelMatch } from './score-model-match'
+export { default as filterScoredProviderModels } from './filter-scored-provider-models'
+export { default as filterProviderModelGroups } from './filter-provider-model-groups'
+export { default as toScoredVendorModelEntries } from './to-scored-vendor-model-entries'
+export { default as regroupScoredVendorModels } from './regroup-scored-vendor-models'

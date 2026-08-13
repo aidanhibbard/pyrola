@@ -3,6 +3,7 @@ import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { ProviderModelGroup } from '@/types/models/provider-model-group'
 import listAllProviderModels from '@/services/providers/list-all-provider-models'
 import collapseProviderModelGroups from '@/services/models/collapse-provider-model-groups'
+import { filterProviderModelGroups } from '@/services/models/search'
 import serializeModelRef from '@/utils/serialize-model-ref'
 import formatModelRefLabel from '@/utils/format-model-ref-label'
 import { canonicalizeModelRef } from '@/services/models/resolve-model-ref-for-call'
@@ -101,51 +102,8 @@ export default (options: UseProviderModelsCatalogOptions) => {
     }
   }
 
-  const filterGroups = (query: string): ProviderModelGroup[] => {
-    const normalized = query.trim().toLowerCase()
-    if (!normalized) {
-      return groups.value
-    }
-
-    const wantsFast = normalized === 'fast'
-
-    return groups.value
-      .map((group) => {
-        const providerMatches =
-          group.providerName.toLowerCase().includes(normalized) ||
-          group.providerId.toLowerCase().includes(normalized)
-
-        const matchingModels = group.models.filter((model) => {
-          if (wantsFast) {
-            return model.supportsFast === true
-          }
-          const haystack = [
-            model.modelId,
-            model.name ?? '',
-            model.fastModelId ?? '',
-            group.providerName,
-            group.providerId,
-          ]
-            .join(' ')
-            .toLowerCase()
-          return haystack.includes(normalized)
-        })
-
-        if (providerMatches && !wantsFast) {
-          return group
-        }
-
-        if (matchingModels.length === 0) {
-          return null
-        }
-
-        return {
-          ...group,
-          models: matchingModels,
-        }
-      })
-      .filter((group): group is ProviderModelGroup => group !== null)
-  }
+  const filterGroups = (query: string): ProviderModelGroup[] =>
+    filterProviderModelGroups(groups.value, query)
 
   const hasProviders = computed(() => groups.value.length > 0)
 
