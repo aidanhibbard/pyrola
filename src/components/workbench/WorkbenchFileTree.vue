@@ -91,7 +91,7 @@ defineExpose({
               <FilePlus class="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>New file</TooltipContent>
+          <TooltipContent class="z-60">New file</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger as-child>
@@ -105,7 +105,7 @@ defineExpose({
               <FolderPlus class="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>New folder</TooltipContent>
+          <TooltipContent class="z-60">New folder</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger as-child>
@@ -119,7 +119,7 @@ defineExpose({
               <RefreshCw class="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Refresh</TooltipContent>
+          <TooltipContent class="z-60">Refresh</TooltipContent>
         </Tooltip>
       </div>
     </div>
