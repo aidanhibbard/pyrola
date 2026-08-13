@@ -1,5 +1,6 @@
 import { computed, type ComputedRef, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
+import mcpRuntime from '@/services/mcp/mcp-runtime'
 import {
   fsDelete,
   fsMkdir,
@@ -7,12 +8,19 @@ import {
   fsWriteFile,
 } from '@/services/pyrola/pyrola-tauri'
 import {
+  CODEGRAPH_DIR_NAME,
+  CODEGRAPH_SERVER_ID,
+} from '@/types/codegraph/managed-codegraph'
+import {
   findNodeKind,
   joinPath,
   parentPath,
   treeErrorMessage,
   type TreeNode,
 } from './path-helpers'
+
+const isCodegraphWorkspacePath = (path: string): boolean =>
+  path === CODEGRAPH_DIR_NAME || path.startsWith(`${CODEGRAPH_DIR_NAME}/`)
 
 export type FileTreeMutationState = {
   props: { projectId: string; selectedPath?: string | null }
@@ -69,18 +77,34 @@ export const createFileTreeMutations = (s: FileTreeMutationState) => {
   const handleDeleteConfirm = async (): Promise<void> => {
     const root = s.projectRoot.value
     const target = s.deleteTarget.value
-    if (!root || !target) {
+    const snapshot = target
+      ? { path: target.path, isDirectory: target.isDirectory }
+      : null
+
+    if (!root) {
+      toast.error('Project root is unavailable')
+      return
+    }
+    if (!snapshot) {
+      toast.error('Failed to delete', {
+        description: 'Nothing was selected to delete',
+      })
       return
     }
 
     s.deleting.value = true
     try {
-      await fsDelete({ projectRoot: root,
-        path: target.path,
-        recursive: target.isDirectory,
+      if (isCodegraphWorkspacePath(snapshot.path)) {
+        await mcpRuntime.stop(CODEGRAPH_SERVER_ID)
+      }
+      await fsDelete({
+        projectRoot: root,
+        path: snapshot.path,
+        recursive: snapshot.isDirectory,
       })
-      s.deleteTarget.value = null
       await s.refresh()
+      s.deleteTarget.value = null
+      toast.success(snapshot.isDirectory ? 'Folder deleted' : 'File deleted')
     } catch (error) {
       toast.error('Failed to delete', {
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -91,7 +115,7 @@ export const createFileTreeMutations = (s: FileTreeMutationState) => {
   }
 
   const handleDeleteOpenChange = (open: boolean): void => {
-    if (!open) {
+    if (!open && !s.deleting.value) {
       s.deleteTarget.value = null
     }
   }

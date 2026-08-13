@@ -109,6 +109,8 @@ const selectedPath = computed(() => editorPayload.value.path)
 const isEmpty = computed(() => openPaths.value.length === 0)
 const projectRoot = computed(() => workbench.getProject(props.tab.projectId)?.rootPath ?? null)
 
+const { isMissing, refreshMissing } = useEditorMissingPaths(projectRoot, openPaths)
+
 const isMarkdownFile = computed(() => {
   const path = selectedPath.value
   return path.endsWith('.md') || path.endsWith('.markdown')
@@ -478,7 +480,10 @@ watch(
                     class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
                     aria-label="Unsaved changes"
                   />
-                  <span class="truncate">{{ fileName(path) }}</span>
+                  <span
+                    class="truncate"
+                    :class="{ 'line-through': isMissing(path) }"
+                  >{{ fileName(path) }}</span>
                   <span
                     class="shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover/tab:opacity-100"
                     role="button"
@@ -610,6 +615,7 @@ watch(
         :project-id="tab.projectId"
         :selected-path="selectedPath"
         @select="handleSelect"
+        @tree-changed="refreshMissing"
       >
         <template #toolbar>
           <div class="flex shrink-0 items-center gap-0.5">

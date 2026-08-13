@@ -162,7 +162,13 @@ export default () => {
   }
 
   const handleDelete = (relativePath: string, isDirectory: boolean): void => {
-    startDelete?.(relativePath, isDirectory)
+    if (!startDelete) {
+      toast.error('Failed to delete', {
+        description: 'File tree is not ready',
+      })
+      return
+    }
+    startDelete(relativePath, isDirectory)
   }
 
   const handleCut = (relativePath: string): void => {

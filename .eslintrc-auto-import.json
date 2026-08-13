@@ -226,6 +226,7 @@
     "useDocumentVisibility": true,
     "useDraggable": true,
     "useDropZone": true,
+    "useEditorMissingPaths": true,
     "useElementBounding": true,
     "useElementByPoint": true,
     "useElementHover": true,

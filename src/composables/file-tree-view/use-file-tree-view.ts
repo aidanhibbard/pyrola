@@ -26,8 +26,15 @@ import {
   joinPath,
 } from './path-helpers'
 import { createFileTreeMutations } from './mutations'
+import refreshExpandedChildren from './refresh-expanded-children'
 
-export default (props: { projectId: string; selectedPath?: string | null }, emit: ((event: 'select', path: string) => void)) => {
+export default (
+  props: { projectId: string; selectedPath?: string | null },
+  emit: {
+    (event: 'select', path: string): void
+    (event: 'tree-changed'): void
+  },
+) => {
   const workbench = useWorkbenchStore()
   const tree = ref<TreeNode | null>(null)
   const expandedPaths = ref(new Set<string>(['.']))
@@ -35,6 +42,7 @@ export default (props: { projectId: string; selectedPath?: string | null }, emit
   const renamingPath = ref<string | null>(null)
   const deleteTarget = ref<{ path: string; isDirectory: boolean } | null>(null)
   const deleting = ref(false)
+  const refreshing = ref(false)
   const createDialogOpen = ref(false)
   const createDialogMode = ref<'file' | 'folder'>('file')
   const createName = ref('')
@@ -161,13 +169,18 @@ export default (props: { projectId: string; selectedPath?: string | null }, emit
   }
 
   const refresh = async (): Promise<void> => {
+    refreshing.value = true
     try {
       await loadTree()
+      await refreshExpandedChildren(tree, expandedPaths, ensureChildrenLoaded)
       await gitStatus.refresh()
+      emit('tree-changed')
     } catch (error) {
       toast.error('Failed to refresh file tree', {
         description: treeErrorMessage(error),
       })
+    } finally {
+      refreshing.value = false
     }
   }
 
@@ -277,6 +290,7 @@ export default (props: { projectId: string; selectedPath?: string | null }, emit
     renamingPath,
     deleteTarget,
     deleting,
+    refreshing,
     createDialogOpen,
     createDialogMode,
     createName,

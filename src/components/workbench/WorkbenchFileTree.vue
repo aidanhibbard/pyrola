@@ -2,7 +2,6 @@
 import { FilePlus, FolderPlus, RefreshCw } from '@lucide/vue'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -36,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [path: string]
+  'tree-changed': []
 }>()
 
 const {
@@ -45,6 +45,7 @@ const {
   renamingPath,
   deleteTarget,
   deleting,
+  refreshing,
   createDialogOpen,
   createDialogMode,
   createName,
@@ -114,9 +115,13 @@ defineExpose({
               size="icon"
               class="h-6 w-6 text-muted-foreground"
               aria-label="Refresh"
+              :disabled="refreshing"
               @click="handleRefresh"
             >
-              <RefreshCw class="h-3.5 w-3.5" />
+              <RefreshCw
+                class="h-3.5 w-3.5"
+                :class="{ 'animate-spin': refreshing }"
+              />
             </Button>
           </TooltipTrigger>
           <TooltipContent class="z-60">Refresh</TooltipContent>
@@ -201,12 +206,13 @@ defineExpose({
           <AlertDialogCancel :disabled="deleting">
             Cancel
           </AlertDialogCancel>
-          <AlertDialogAction
+          <Button
+            variant="destructive"
             :disabled="deleting"
             @click="handleDeleteConfirm"
           >
             Delete
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
