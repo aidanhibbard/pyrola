@@ -67,6 +67,10 @@ mod stacking;
 #[path = "browser-cef-hit-test.rs"]
 mod hit_test;
 
+#[cfg(target_os = "macos")]
+#[path = "browser-cef-client.rs"]
+mod client;
+
 /// macOS cannot use `multi_threaded_message_loop` (Windows/Linux only per CEF
 /// docs). Integrate with Tauri's NSApplication run loop via
 /// `external_message_pump` + `OnScheduleMessagePumpWork`, matching cefclient's
@@ -182,11 +186,6 @@ mod macos_handlers {
         Some(self.browser_process_handler.clone())
       }
     }
-  }
-
-  wrap_client! {
-    pub struct SpikeClient;
-    impl Client {}
   }
 }
 
@@ -497,7 +496,8 @@ fn create_browser_with_parent(
     }
     .set_as_child(parent, &cef_bounds);
 
-    let mut client = macos_handlers::SpikeClient::new();
+    let mut client =
+      client::SpikeClient::new(client::ChildLifeSpanHandler::new());
     let url = CefString::from("about:blank");
     let browser_settings = BrowserSettings::default();
 
