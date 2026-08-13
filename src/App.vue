@@ -11,7 +11,6 @@ import WorkbenchWorkbenchTabDuplicateDialog from '@/components/workbench/Workben
 import WorkbenchHeader from '@/components/workbench/WorkbenchHeader.vue'
 import TitleBar from '@/components/navigation/header/TitleBar.vue'
 import {
-  ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/shadcn/ui/resizable'
@@ -106,7 +105,7 @@ watch(rightSidebarOpen, (open) => {
               <RouterView class="min-h-0 flex-1" />
             </main>
           </ResizablePanel>
-          <ResizableHandle v-show="rightSidebarOpen" />
+          <RightSidebarResizeHandle v-show="rightSidebarOpen" />
           <ResizablePanel
             ref="rightSidebarPanelRef"
             collapsible

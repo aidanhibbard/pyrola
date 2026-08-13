@@ -380,6 +380,7 @@ declare module 'vue' {
     ReasoningTrigger: typeof import('./components/ai-elements/reasoning/ReasoningTrigger.vue')['default']
     RightSidebar: typeof import('./components/navigation/aside/right/RightSidebar.vue')['default']
     RightSidebarProvider: typeof import('./components/navigation/aside/right/RightSidebarProvider.vue')['default']
+    RightSidebarResizeHandle: typeof import('./components/navigation/aside/right/RightSidebarResizeHandle.vue')['default']
     RightSidebarTrigger: typeof import('./components/navigation/aside/right/RightSidebarTrigger.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

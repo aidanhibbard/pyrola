@@ -31,14 +31,17 @@ export default (args: ViewOpsArgs) => {
     }
     try {
       await browserCefResize(sessionId, BROWSER_HIDDEN_BOUNDS)
+    } catch (error) {
+      toast.error('Failed to hide browser view', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      // Clear independently of resize so a failed browserCefResize cannot leave
+      // a passthrough hole (sidebar drag would stop working).
       await syncBrowserPassthroughRects({
         enabled: false,
         hostEl: null,
         lastBounds: null,
-      })
-    } catch (error) {
-      toast.error('Failed to hide browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
   }
