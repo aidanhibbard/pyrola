@@ -3,12 +3,21 @@ import type { BillableUsageRecord } from '@/types/billing/billable-usage-record'
 import type { ChatUsageTotals } from '@/types/chat/chat-meta'
 import billableUsageRecordSchema from '@/schemas/billing/billable-usage-record-schema'
 import computeChatUsageTotals from '@/services/billing/compute-chat-usage-totals'
+import isGatewayGenerationPending from '@/services/billing/is-gateway-generation-pending'
 import readUsageLedger from '@/services/billing/read-usage-ledger'
 import {
   getUserPyrolaDir,
   updateChatMeta,
   writeJsonFile,
 } from '@/services/pyrola/pyrola-tauri'
+
+/** Waits between getGenerationInfo attempts when the usage event is still pending. */
+const RETRY_DELAYS_MS = [2000, 2000, 4000] as const
+
+const defaultDelay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 
 const ledgerPath = async (
   projectSlug: string,
@@ -18,7 +27,24 @@ const ledgerPath = async (
   return `${root}/chats/${projectSlug}/${chatId}/usage-ledger.json`
 }
 
-export type GatewayGenerationClient = {
+const unchanged = (
+  current: BillableUsageRecord,
+  records: BillableUsageRecord[],
+): EnrichGatewayCostResult => ({
+  record: current,
+  records,
+  usageTotals: computeChatUsageTotals(records),
+})
+
+const softPending = (
+  records: BillableUsageRecord[],
+): EnrichGatewayCostResult => ({
+  record: null,
+  records,
+  usageTotals: null,
+})
+
+type GatewayGenerationClient = {
   getGenerationInfo: (params: {
     id: string
   }) => Promise<{
@@ -28,7 +54,7 @@ export type GatewayGenerationClient = {
   }>
 }
 
-export type EnrichGatewayCostResult = {
+type EnrichGatewayCostResult = {
   record: BillableUsageRecord | null
   records: BillableUsageRecord[]
   usageTotals: ChatUsageTotals | null
@@ -36,7 +62,9 @@ export type EnrichGatewayCostResult = {
 
 /**
  * Async cost enrich for AI Gateway generations via getGenerationInfo.
- * Does not modify token fields. On failure: toast, leave cost null / pricingSource none.
+ * Retries briefly when the usage event is not ready yet. Does not modify
+ * token fields. Pending after retries: leave ledger unchanged, no toast.
+ * Hard failure: toast, leave cost / pricingSource as recorded.
  */
 export default async (input: {
   projectSlug: string
@@ -44,7 +72,9 @@ export default async (input: {
   recordId: string
   generationId: string
   gatewayClient: GatewayGenerationClient
+  delay?: (ms: number) => Promise<void>
 }): Promise<EnrichGatewayCostResult> => {
+  const delay = input.delay ?? defaultDelay
   const records = await readUsageLedger(input.projectSlug, input.chatId)
   const index = records.findIndex((entry) => entry.id === input.recordId)
   if (index < 0) {
@@ -56,47 +86,63 @@ export default async (input: {
     return { record: null, records, usageTotals: null }
   }
 
-  try {
-    const info = await input.gatewayClient.getGenerationInfo({
-      id: input.generationId,
-    })
+  const maxAttempts = RETRY_DELAYS_MS.length + 1
 
-    // Non-BYOK: totalCost is the billed gateway amount (includes surcharges).
-    // BYOK: totalCost excludes provider inference; upstreamInferenceCost is the
-    // market inference price paid via the user key. Prefer upstream for BYOK.
-    const costUSD = info.isByok ? info.upstreamInferenceCost : info.totalCost
-
-    const patched: BillableUsageRecord = {
-      ...current,
-      costUSD,
-      pricingSource: 'provider_reported',
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      const waitMs = RETRY_DELAYS_MS[attempt - 1]
+      if (waitMs !== undefined) {
+        await delay(waitMs)
+      }
     }
-    // Drop user_configured rates once provider cost wins.
-    delete patched.rates
 
-    const next = [...records]
-    next[index] = billableUsageRecordSchema.parse(patched)
+    try {
+      const info = await input.gatewayClient.getGenerationInfo({
+        id: input.generationId,
+      })
 
-    await writeJsonFile(
-      await ledgerPath(input.projectSlug, input.chatId),
-      next,
-    )
+      // Non-BYOK: totalCost is the billed gateway amount (includes surcharges).
+      // BYOK: totalCost excludes provider inference; upstreamInferenceCost is the
+      // market inference price paid via the user key. Prefer upstream for BYOK.
+      const costUSD = info.isByok ? info.upstreamInferenceCost : info.totalCost
 
-    const usageTotals = computeChatUsageTotals(next)
-    await updateChatMeta(input.projectSlug, input.chatId, { usageTotals })
+      const patched: BillableUsageRecord = {
+        ...current,
+        costUSD,
+        pricingSource: 'provider_reported',
+      }
+      // Drop user_configured rates once provider cost wins.
+      delete patched.rates
 
-    return { record: patched, records: next, usageTotals }
-  } catch (error) {
-    // Leave the row unchanged (cost may still be user_configured from rates).
-    // Do not invent $0; UI shows the warning when pricing is incomplete.
-    toast.error('Failed to load gateway cost', {
-      description: error instanceof Error ? error.message : 'Unknown error',
-    })
+      const next = [...records]
+      next[index] = billableUsageRecordSchema.parse(patched)
 
-    return {
-      record: current,
-      records,
-      usageTotals: computeChatUsageTotals(records),
+      await writeJsonFile(
+        await ledgerPath(input.projectSlug, input.chatId),
+        next,
+      )
+
+      const usageTotals = computeChatUsageTotals(next)
+      await updateChatMeta(input.projectSlug, input.chatId, { usageTotals })
+
+      return { record: patched, records: next, usageTotals }
+    } catch (error) {
+      const canRetry =
+        isGatewayGenerationPending(error) && attempt < maxAttempts - 1
+      if (canRetry) {
+        continue
+      }
+      if (isGatewayGenerationPending(error)) {
+        // Still pending after retries: leave ledger unchanged, no toast.
+        return softPending(records)
+      }
+
+      toast.error('Failed to load gateway cost', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+      return unchanged(current, records)
     }
   }
+
+  return softPending(records)
 }

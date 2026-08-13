@@ -100,6 +100,55 @@ describe('recordBillableUsage provider-cost regression', () => {
     expect(record.usage.inputTokens).toBe(1_000_000)
   })
 
+  it('gateway metadata string cost => provider_reported (no async enrich needed)', () => {
+    const record = recordBillableUsage({
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      source: 'main',
+      providerId: 'gateway',
+      modelId: 'openai/gpt-4o',
+      usage: usageWithTokens({ raw: { prompt_tokens: 10 } }),
+      providerMetadata: {
+        gateway: {
+          cost: '0.00123',
+          marketCost: '0.00123',
+          gatewayCost: '0.00123',
+          generationId: 'gen_reg',
+        },
+      },
+      settings: { version: 1 },
+      at: '2026-01-01T00:00:00.000Z',
+    })
+
+    expect(record.costUSD).toBe(0.00123)
+    expect(record.pricingSource).toBe('provider_reported')
+    expect(record.rates).toBeUndefined()
+  })
+
+  it('gateway BYOK metadata prefers marketCost over zero total', () => {
+    const record = recordBillableUsage({
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      source: 'main',
+      providerId: 'gateway',
+      modelId: 'openai/gpt-4o',
+      usage: usageWithTokens({ raw: { prompt_tokens: 10 } }),
+      providerMetadata: {
+        gateway: {
+          cost: '0',
+          gatewayCost: '0',
+          marketCost: '0.00456',
+          inferenceCost: '0.00456',
+        },
+      },
+      settings: { version: 1 },
+      at: '2026-01-01T00:00:00.000Z',
+    })
+
+    expect(record.costUSD).toBe(0.00456)
+    expect(record.pricingSource).toBe('provider_reported')
+  })
+
   it('exclusive cache math applied when rates used', () => {
     // uncached=1000 @ $3, read=50 @ $0.30, write=50 @ $3.75, output=200 @ $15
     const expected =

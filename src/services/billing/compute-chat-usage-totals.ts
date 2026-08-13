@@ -24,7 +24,7 @@ export default (records: BillableUsageRecord[]): ChatUsageTotals => {
   let cacheReadTokens = 0
   let cacheWriteTokens = 0
   let costSum = 0
-  let allCostsPresent = true
+  let hasPricedRecord = false
 
   for (const record of records) {
     inputTokens += record.usage.inputTokens ?? 0
@@ -32,9 +32,8 @@ export default (records: BillableUsageRecord[]): ChatUsageTotals => {
     cacheReadTokens += record.usage.cacheReadTokens ?? 0
     cacheWriteTokens += record.usage.cacheWriteTokens ?? 0
 
-    if (record.costUSD === null) {
-      allCostsPresent = false
-    } else {
+    if (record.costUSD !== null) {
+      hasPricedRecord = true
       costSum += record.costUSD
     }
   }
@@ -49,8 +48,8 @@ export default (records: BillableUsageRecord[]): ChatUsageTotals => {
     outputTokens,
     cacheReadTokens,
     cacheWriteTokens,
-    // Never invent $0: null when empty or when any record lacks cost.
-    costUSD: records.length > 0 && allCostsPresent ? costSum : null,
+    // Sum known costs. Null only when nothing is priced (do not invent $0).
+    costUSD: hasPricedRecord ? costSum : null,
     pricingComplete,
   }
 }

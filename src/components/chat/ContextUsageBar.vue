@@ -208,7 +208,7 @@ const handleHandoff = (): void => {
                 />
               </span>
             </TooltipTrigger>
-            <TooltipContent>Cost unknown</TooltipContent>
+            <TooltipContent>Some usage has no price</TooltipContent>
           </Tooltip>
         </div>
 

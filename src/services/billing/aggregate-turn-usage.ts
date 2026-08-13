@@ -29,7 +29,7 @@ export default (
   let cacheReadTokens = 0
   let cacheWriteTokens = 0
   let costSum = 0
-  let allCostsPresent = true
+  let hasPricedRecord = false
   let usageMissing = false
 
   for (const record of parts) {
@@ -42,9 +42,8 @@ export default (
       usageMissing = true
     }
 
-    if (record.costUSD === null) {
-      allCostsPresent = false
-    } else {
+    if (record.costUSD !== null) {
+      hasPricedRecord = true
       costSum += record.costUSD
     }
   }
@@ -54,9 +53,8 @@ export default (
     (record) => record.costUSD !== null,
   )
 
-  // costUSD null when any record lacks cost, or when a tokens>0 record lacks cost.
-  const costUSD =
-    parts.length > 0 && allCostsPresent && tokenCostsComplete ? costSum : null
+  // Sum known costs. Null only when nothing is priced (do not invent $0).
+  const costUSD = hasPricedRecord ? costSum : null
 
   return {
     turnId,

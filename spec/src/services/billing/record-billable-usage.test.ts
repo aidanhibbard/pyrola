@@ -88,4 +88,73 @@ describe('recordBillableUsage', () => {
     expect(record.pricingSource).toBe('none')
     expect(record.usage.inputTokens).toBe(1_000_000)
   })
+
+  it('uses string costs from providerMetadata.gateway as provider_reported', () => {
+    const record = recordBillableUsage({
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      source: 'main',
+      providerId: 'gateway',
+      modelId: 'openai/gpt-4o',
+      usage: usageWithTokens({ prompt_tokens: 10 }),
+      providerMetadata: {
+        gateway: {
+          cost: '0.00849',
+          marketCost: '0.00849',
+          gatewayCost: '0.00849',
+          generationId: 'gen_test',
+        },
+      },
+      settings: { version: 1 },
+    })
+
+    expect(record.costUSD).toBe(0.00849)
+    expect(record.pricingSource).toBe('provider_reported')
+    expect(record.rates).toBeUndefined()
+  })
+
+  it('prefers marketCost for BYOK gateway metadata over total cost', () => {
+    const record = recordBillableUsage({
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      source: 'main',
+      providerId: 'gateway',
+      modelId: 'openai/gpt-4o',
+      usage: usageWithTokens({ prompt_tokens: 10 }),
+      providerMetadata: {
+        gateway: {
+          isByok: true,
+          cost: '0',
+          gatewayCost: '0',
+          marketCost: '0.00849',
+          generationId: 'gen_byok',
+        },
+      },
+      settings: { version: 1 },
+    })
+
+    expect(record.costUSD).toBe(0.00849)
+    expect(record.pricingSource).toBe('provider_reported')
+  })
+
+  it('prefers gateway metadata cost over raw OpenAI-compatible cost', () => {
+    const record = recordBillableUsage({
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      source: 'main',
+      providerId: 'gateway',
+      modelId: 'openai/gpt-4o',
+      usage: usageWithTokens({ cost: 0.99 }),
+      providerMetadata: {
+        gateway: {
+          cost: '0.00849',
+          marketCost: '0.00849',
+        },
+      },
+      settings: { version: 1 },
+    })
+
+    expect(record.costUSD).toBe(0.00849)
+    expect(record.pricingSource).toBe('provider_reported')
+  })
 })

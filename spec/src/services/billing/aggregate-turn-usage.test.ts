@@ -62,18 +62,40 @@ describe('aggregateTurnUsage', () => {
     expect(aggregate.parts).toHaveLength(2)
   })
 
-  it('returns null cost when any record has null costUSD', () => {
+  it('sums known costs when a token record is unpriced', () => {
     const records: BillableUsageRecord[] = [
       baseRecord({
         id: 'a',
         source: 'main',
-        costUSD: 0.01,
-        pricingSource: 'user_configured',
+        costUSD: 0.0072,
+        pricingSource: 'provider_reported',
       }),
       baseRecord({
         id: 'b',
-        source: 'subagent',
-        subagentId: 'sub-1',
+        source: 'title',
+        providerId: 'ollama',
+        modelId: 'local',
+        costUSD: null,
+        pricingSource: 'none',
+        usage: {
+          inputTokens: 126,
+          outputTokens: 4,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+      }),
+    ]
+
+    const aggregate = aggregateTurnUsage(records, 'turn-1')
+    expect(aggregate.costUSD).toBeCloseTo(0.0072)
+    expect(aggregate.pricingComplete).toBe(false)
+  })
+
+  it('returns null cost when no record is priced', () => {
+    const records: BillableUsageRecord[] = [
+      baseRecord({
+        id: 'a',
+        source: 'main',
         costUSD: null,
         pricingSource: 'none',
       }),
@@ -107,5 +129,6 @@ describe('aggregateTurnUsage', () => {
     expect(aggregate.usageMissing).toBe(true)
     // Record a has no tokens, so pricingComplete only considers record b.
     expect(aggregate.pricingComplete).toBe(true)
+    expect(aggregate.costUSD).toBeCloseTo(0.01)
   })
 })

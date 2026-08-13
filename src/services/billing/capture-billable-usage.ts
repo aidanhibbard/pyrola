@@ -49,7 +49,8 @@ const resolveGatewayApiKey = async (
 
 /**
  * Record, persist, and emit billable usage + turn aggregate + chat meta rollup.
- * For gateway, kicks off async cost enrich (does not await).
+ * For gateway, kicks off async cost enrich when provider cost is still missing
+ * (does not await).
  */
 export default async (input: {
   projectSlug: string
@@ -108,7 +109,13 @@ export default async (input: {
     })
   }
 
-  if (input.providerId === 'gateway' && generationId) {
+  // Skip enrich when metadata/raw already supplied provider_reported cost.
+  const needsGatewayCostEnrich =
+    input.providerId === 'gateway' &&
+    Boolean(generationId) &&
+    (record.costUSD === null || record.pricingSource !== 'provider_reported')
+
+  if (needsGatewayCostEnrich && generationId) {
     const recordId = record.id
     const turnId = input.turnId
     const projectSlug = input.projectSlug
@@ -146,6 +153,8 @@ export default async (input: {
         }
       })
       .catch((error: unknown) => {
+        // Key/client construction failures only. Enrich soft-returns pending
+        // and toasts its own hard failures without rethrowing.
         toast.error('Failed to load gateway cost', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })

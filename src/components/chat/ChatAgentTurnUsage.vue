@@ -84,7 +84,7 @@ const warningText = computed(() => {
     return 'Provider did not return usage'
   }
   if (!usage.pricingComplete) {
-    return 'Cost unknown'
+    return 'Some usage has no price'
   }
   return ''
 })

@@ -8,11 +8,12 @@ import type {
 import normalizeLanguageModelUsage from '@/services/billing/normalize-language-model-usage'
 import extractCacheWriteFromRaw from '@/services/billing/extract-cache-write-from-raw'
 import extractOpenaiCompatibleCost from '@/services/billing/extract-openai-compatible-cost'
+import extractGatewayMetadataCost from '@/services/billing/extract-gateway-metadata-cost'
 import resolveModelPricing from '@/services/billing/resolve-model-pricing'
 import computeCostFromRates from '@/services/billing/compute-cost-from-rates'
 import { getCustomProvider } from '@/services/providers/registry'
 
-export type RecordBillableUsageInput = {
+type RecordBillableUsageInput = {
   chatId: string
   turnId: string
   source: BillableUsageRecord['source']
@@ -54,8 +55,13 @@ export default (input: RecordBillableUsageInput): BillableUsageRecord => {
   const isOpenAiCompatible = Boolean(custom)
 
   if (input.providerId === 'gateway') {
-    // Leave null for async getGenerationInfo enrich unless raw already has cost.
-    if (rawCost.costUSD !== null) {
+    // Prefer sync providerMetadata.gateway cost. Leave null for async
+    // getGenerationInfo enrich only when metadata AND raw have no cost.
+    const metadataCost = extractGatewayMetadataCost(input.providerMetadata)
+    if (metadataCost !== null) {
+      costUSD = metadataCost
+      pricingSource = 'provider_reported'
+    } else if (rawCost.costUSD !== null) {
       costUSD = rawCost.costUSD
       pricingSource = 'provider_reported'
     }
