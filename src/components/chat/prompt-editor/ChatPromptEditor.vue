@@ -32,7 +32,7 @@ const props = withDefaults(
     projectRoot?: string | null
   }>(),
   {
-    placeholder: 'Plan, build, / for skills, @ for context',
+    placeholder: '@ for context, / for commands',
     projectRoot: null,
   },
 )

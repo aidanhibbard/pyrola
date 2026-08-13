@@ -529,7 +529,7 @@ watch(
           <ChatPromptBrowserElementSync />
           <ChatPromptEditor
             class="max-h-28 min-h-10"
-            placeholder="Plan, build, / for skills, @ for context"
+            placeholder="@ for context, / for commands"
             :project-root="promptWorkspaceRoot"
           />
         </PromptInputBody>
