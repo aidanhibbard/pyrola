@@ -169,8 +169,11 @@ export const createSubmitHandlers = (state: AgentThreadViewState) => {
       })
       return
     }
-    const model = state.paintedSession.value?.meta.value?.model
-    const mode = state.paintedSession.value?.meta.value?.mode ?? 'agent'
+    const lastRun = state.harness.value.lastRunConfig.value
+    const model =
+      lastRun?.model ?? state.paintedSession.value?.meta.value?.model
+    const mode =
+      lastRun?.mode ?? state.paintedSession.value?.meta.value?.mode ?? 'agent'
     if (!model) {
       toast.error('Select a model before retrying')
       return

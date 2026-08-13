@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { HarnessEvent } from '@/types/harness/harness-event'
+import { MODEL_REF_SEPARATOR, type ModelRef } from '@/types/models/model-ref'
 import createModel from '@/services/providers/create-model'
 import captureBillableUsage from '@/services/billing/capture-billable-usage'
 import loadPrompt from '@/services/prompts/load-prompt'
@@ -54,21 +55,26 @@ const cleanGeneratedTitle = (raw: string): string => {
   return line.replace(/^["']|["']$/g, '').slice(0, 80).trim()
 }
 
+const modelRefKey = (ref: Pick<ModelRef, 'providerId' | 'modelId'>): string =>
+  `${ref.providerId}${MODEL_REF_SEPARATOR}${ref.modelId}`
+
 export default async (input: ChatTitleTaskInput): Promise<string | null> => {
-  try {
-    if (input.settings['chat.autoTitle'] === false) {
-      return null
-    }
+  if (input.settings['chat.autoTitle'] === false) {
+    return null
+  }
 
-    const modelRef =
-      resolveParsedModelForRole('title', input.settings) ??
-      (input.fallbackProviderId && input.fallbackModelId
-        ? { providerId: input.fallbackProviderId, modelId: input.fallbackModelId }
-        : null)
-    if (!modelRef) {
-      return null
-    }
+  const chatFallback: ModelRef | null =
+    input.fallbackProviderId && input.fallbackModelId
+      ? { providerId: input.fallbackProviderId, modelId: input.fallbackModelId }
+      : null
 
+  const primaryModel =
+    resolveParsedModelForRole('title', input.settings) ?? chatFallback
+  if (!primaryModel) {
+    return null
+  }
+
+  const generateTitleWithModel = async (modelRef: ModelRef): Promise<string | null> => {
     const model = await createModel({
       providerId: modelRef.providerId,
       modelId: modelRef.modelId,
@@ -119,14 +125,48 @@ export default async (input: ChatTitleTaskInput): Promise<string | null> => {
     if (!title || isDefaultChatTitle(title) || isPromptEchoTitle(title, input.prompt)) {
       return null
     }
+    return title
+  }
 
+  const persistTitle = async (title: string): Promise<string> => {
     await updateChatMeta(input.projectSlug, input.chatId, { title })
     await refreshFleetSidebar()
     return title
-  } catch (error) {
+  }
+
+  const toastTitleFailure = (error: unknown): null => {
     toast.error('Failed to generate chat title', {
       description: error instanceof Error ? error.message : 'Unknown error',
     })
     return null
+  }
+
+  let title: string | null
+  try {
+    title = await generateTitleWithModel(primaryModel)
+  } catch (primaryError) {
+    const canRetry =
+      chatFallback !== null &&
+      modelRefKey(chatFallback) !== modelRefKey(primaryModel)
+
+    if (!canRetry) {
+      return toastTitleFailure(primaryError)
+    }
+
+    try {
+      title = await generateTitleWithModel(chatFallback)
+    } catch (fallbackError) {
+      return toastTitleFailure(fallbackError)
+    }
+  }
+
+  if (!title) {
+    return null
+  }
+
+  try {
+    return await persistTitle(title)
+  } catch (error) {
+    return toastTitleFailure(error)
   }
 }

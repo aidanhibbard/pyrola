@@ -118,6 +118,7 @@ const createAgentHarness = (options: AgentHarnessOptions) => {
     pendingApprovals: state.pendingApprovals,
     pendingMcpAuth: state.pendingMcpAuth,
     sessionPermissionLevel: state.sessionPermissionLevel,
+    lastRunConfig: state.lastRunConfig,
     toolRuns: state.toolRuns,
     subagents: state.subagents,
     liveEvents: state.liveEvents,

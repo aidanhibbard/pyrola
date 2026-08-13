@@ -7,6 +7,7 @@ import type { ReasoningLevel } from '@/types/models/reasoning-level'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import runOrchestrator from '@/services/harness/orchestrator'
 import listConfiguredProviders from '@/services/providers/list-configured-providers'
+import { updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import parseModelRef from '@/utils/parse-model-ref'
 import { listSlashSkillIndex } from '@/services/skills/skill-registry'
 import buildMentionHighlights from '@/utils/build-mention-highlights'
@@ -118,6 +119,19 @@ export default (
       effectiveSettings: config.effectiveSettings.value,
     }
     contextBudgetSync.setDraftMentions(args.mentions ?? [])
+
+    try {
+      await updateChatMeta(options.projectSlug, options.chatId, {
+        model: args.model,
+        mode: args.mode,
+      })
+      session.patchMeta({ model: args.model, mode: args.mode })
+    } catch (metaError) {
+      toast.error('Failed to save chat model', {
+        description:
+          metaError instanceof Error ? metaError.message : 'Unknown error',
+      })
+    }
 
     if (!args.skipUserMessage) {
       const fileParts = args.files ?? []

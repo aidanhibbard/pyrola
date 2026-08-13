@@ -443,20 +443,23 @@ watch(
 )
 
 watch(
-  () => chatStore.meta.value,
-  (meta) => {
-    if (!meta) {
+  [
+    () => chatStore.meta.value?.model,
+    () => chatStore.meta.value?.mode,
+  ],
+  ([model, mode]) => {
+    if (!chatStore.meta.value) {
       return
     }
-    if (meta.model) {
+    if (model) {
       const normalized =
-        normalizeStoredModelRef(meta.model) ?? meta.model
+        normalizeStoredModelRef(model) ?? model
       session.selectedModelRef = normalized.includes('::')
         ? normalized
-        : resolveInitialModelRef(meta.mode ?? session.selectedMode, undefined)
+        : resolveInitialModelRef(mode ?? session.selectedMode, undefined)
     }
-    if (meta.mode) {
-      session.selectedMode = meta.mode
+    if (mode) {
+      session.selectedMode = mode
     }
     syncDraftSelection()
   },
