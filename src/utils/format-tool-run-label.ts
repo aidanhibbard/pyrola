@@ -30,6 +30,7 @@ const TOOL_LABELS_DONE: Record<string, string> = {
   update_plan_todo: 'Updated plan',
   lsp: 'LSP lookup',
   diagnostics: 'Read diagnostics',
+  web_fetch: 'Fetched',
 }
 
 const TOOL_LABELS_RUNNING: Record<string, string> = {
@@ -62,6 +63,7 @@ const TOOL_LABELS_RUNNING: Record<string, string> = {
   update_plan_todo: 'Updating plan',
   lsp: 'LSP lookup',
   diagnostics: 'Reading diagnostics',
+  web_fetch: 'Fetching',
 }
 
 const formatArgsHint = (
@@ -82,6 +84,9 @@ const formatArgsHint = (
   }
   if (typeof record.pattern === 'string' && record.pattern.length > 0) {
     return record.pattern
+  }
+  if (typeof record.url === 'string' && record.url.length > 0) {
+    return record.url
   }
   if (typeof record.agentName === 'string' && record.agentName.length > 0) {
     return record.agentName

@@ -14,6 +14,7 @@ export const SUBAGENT_READ_ONLY_TOOLS = [
   'lsp',
   'diagnostics',
   'load_skill',
+  'web_fetch',
   'get_mcp_tools',
   'call_mcp_tool',
   'list_mcp_resources',

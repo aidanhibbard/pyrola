@@ -17,6 +17,7 @@ const ASK_TOOLS = [
   'diagnostics',
   'load_skill',
   'ask_user',
+  'web_fetch',
 ] as const
 
 const PLAN_TOOLS = [
@@ -60,6 +61,7 @@ const ORCHESTRATOR_TOOLS = [
   'diagnostics',
   'load_skill',
   'ask_user',
+  'web_fetch',
   'call_mcp_tool',
   'get_mcp_tools',
   'list_mcp_resources',
@@ -115,6 +117,7 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'stop_terminal',
     'load_skill',
     'ask_user',
+    'web_fetch',
     'call_mcp_tool',
     'get_mcp_tools',
     'list_mcp_resources',

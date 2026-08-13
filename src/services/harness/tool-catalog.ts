@@ -54,6 +54,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   browser_get_bounding_box: 'Get the bounding box for a snapshot ref',
   browser_highlight: 'Briefly highlight an element by snapshot ref',
   browser_cdp: 'Send a raw Chrome DevTools Protocol method (restricted denylist)',
+  web_fetch:
+    'Fetch an http(s) URL as markdown, text, or html (not the CEF browser; use browser_* for JS SPAs)',
 }
 
 export const formatToolCatalogForMode = (mode: PyrolaChatMode): string => {

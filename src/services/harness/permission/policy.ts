@@ -144,6 +144,17 @@ export const decidePermission = (input: PermissionDecisionInput): PermissionDeci
     return { verdict: 'ask', allowedScopes: browserScopes(), reason: 'Browser action' }
   }
 
+  if (action === 'web.fetch') {
+    // Web fetch is never covered by Bypass. Session/workspace/always persist allowed.
+    if (sessionAllows.has(capability) || sessionAllows.has('web.fetch')) {
+      return { verdict: 'allow', allowedScopes: defaultScopes() }
+    }
+    if (persisted?.verdict === 'allow') {
+      return { verdict: 'allow', allowedScopes: defaultScopes() }
+    }
+    return { verdict: 'ask', allowedScopes: defaultScopes(), reason: 'Web fetch' }
+  }
+
   // Sensitive-path check must win over persisted allow, session allow, and bypass.
   // This guard is intentionally placed before all three so none can short-circuit it.
   if (paths.some(isSensitivePath)) {

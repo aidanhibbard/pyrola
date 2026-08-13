@@ -47,6 +47,19 @@ export type HttpProxyRequest = {
   requestId?: string
 }
 
+export type WebFetchFormat = 'markdown' | 'text' | 'html'
+
+export type WebFetchRequest = {
+  url: string
+  format?: WebFetchFormat
+}
+
+export type WebFetchResponse = {
+  status: number
+  body: string
+  headers: Record<string, string>
+}
+
 export type ChatMetaRecord = {
   id: string
   title: string

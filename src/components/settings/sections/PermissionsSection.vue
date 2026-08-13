@@ -20,33 +20,12 @@ import McpServerIcon from '@/components/mcp/ServerIcon.vue'
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import useMcpServers from '@/composables/use-mcp-servers'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import groupPersistedPermissionRecords from '@/services/harness/permission/group-persisted-records'
+import labelPermissionCapability from '@/services/harness/permission/label-capability'
 import { parsePermissionRecords } from '@/services/harness/permission/policy'
-import type {
-  ApprovalKind,
-  PermissionCapabilityKey,
-  PermissionRecord,
-} from '@/types/harness/permission'
-
-type PermissionSubgroup = {
-  key: string
-  label: string | null
-  records: PermissionRecord[]
-}
-
-type PermissionGroup = {
-  kind: ApprovalKind
-  label: string
-  subgroups: PermissionSubgroup[]
-}
-
-const GROUP_ORDER: { kind: ApprovalKind; label: string }[] = [
-  { kind: 'fs', label: 'Filesystem' },
-  { kind: 'shell', label: 'Shell' },
-  { kind: 'git', label: 'Git' },
-  { kind: 'mcp', label: 'MCP' },
-]
-
-const FS_SUBGROUP_ORDER = ['write', 'delete'] as const
+import usesPermissionSubgroupAccordion from '@/services/harness/permission/uses-subgroup-accordion'
+import type { PermissionRecord } from '@/types/harness/permission'
+import type { PermissionGroup } from '@/types/harness/permission-group'
 
 const config = usePyrolaConfig()
 const { refreshStates } = useMcpServers()
@@ -57,99 +36,9 @@ const records = computed((): PermissionRecord[] =>
   parsePermissionRecords(config.personalSettings.value['agent.permissions']),
 )
 
-const kindFor = (capability: PermissionCapabilityKey): ApprovalKind => {
-  if (capability === 'shell' || capability === 'shell.unsandboxed') return 'shell'
-  if (
-    capability === 'git.commit' ||
-    capability === 'git.checkout' ||
-    capability === 'git.branch_create'
-  ) {
-    return 'git'
-  }
-  if (capability.startsWith('fs.write:') || capability.startsWith('fs.delete:')) return 'fs'
-  if (capability.startsWith('mcp:')) return 'mcp'
-  return 'fs'
-}
-
-const subgroupFor = (
-  capability: PermissionCapabilityKey,
-): { key: string; label: string | null } => {
-  if (capability.startsWith('fs.write:')) return { key: 'write', label: 'Write' }
-  if (capability.startsWith('fs.delete:')) return { key: 'delete', label: 'Delete' }
-  if (capability.startsWith('mcp:')) {
-    const rest = capability.slice('mcp:'.length)
-    const serverId = rest.split(':')[0] || rest
-    return { key: serverId, label: serverId }
-  }
-  return { key: kindFor(capability), label: null }
-}
-
-const groupedRecords = computed((): PermissionGroup[] => {
-  const byKind = new Map<ApprovalKind, Map<string, PermissionSubgroup>>()
-  for (const group of GROUP_ORDER) {
-    byKind.set(group.kind, new Map())
-  }
-
-  for (const record of records.value) {
-    const kind = kindFor(record.capability)
-    const kindBuckets = byKind.get(kind)
-    if (!kindBuckets) continue
-
-    const subgroup = subgroupFor(record.capability)
-    const existing = kindBuckets.get(subgroup.key)
-    if (existing) {
-      existing.records.push(record)
-    } else {
-      kindBuckets.set(subgroup.key, {
-        key: subgroup.key,
-        label: subgroup.label,
-        records: [record],
-      })
-    }
-  }
-
-  return GROUP_ORDER.flatMap((group) => {
-    const kindBuckets = byKind.get(group.kind)
-    if (!kindBuckets || kindBuckets.size === 0) return []
-
-    let subgroups = [...kindBuckets.values()]
-    if (group.kind === 'fs') {
-      subgroups = FS_SUBGROUP_ORDER.flatMap((key) => {
-        const subgroup = kindBuckets.get(key)
-        return subgroup ? [subgroup] : []
-      })
-    } else if (group.kind === 'mcp') {
-      subgroups.sort((a, b) => a.key.localeCompare(b.key))
-    }
-
-    return [
-      {
-        kind: group.kind,
-        label: group.label,
-        subgroups,
-      },
-    ]
-  })
-})
-
-const usesSubgroupAccordion = (kind: ApprovalKind): boolean => kind === 'fs' || kind === 'mcp'
-
-const labelFor = (capability: PermissionCapabilityKey): string => {
-  if (capability === 'shell') return 'Shell'
-  if (capability === 'shell.unsandboxed') return 'Shell (unsandboxed)'
-  if (capability === 'git.commit') return 'Commit'
-  if (capability === 'git.checkout') return 'Checkout'
-  if (capability === 'git.branch_create') return 'Create branch'
-  if (capability.startsWith('fs.write:')) return capability.slice('fs.write:'.length)
-  if (capability.startsWith('fs.delete:')) return capability.slice('fs.delete:'.length)
-  if (capability.startsWith('mcp:')) {
-    const rest = capability.slice('mcp:'.length)
-    const separator = rest.indexOf(':')
-    if (separator === -1) return 'All tools'
-    return rest.slice(separator + 1)
-  }
-  return capability
-}
+const groupedRecords = computed((): PermissionGroup[] =>
+  groupPersistedPermissionRecords(records.value),
+)
 
 const handleRemove = async (record: PermissionRecord): Promise<void> => {
   try {
@@ -228,7 +117,7 @@ onMounted(() => {
         <Label>{{ group.label }}</Label>
 
         <Accordion
-          v-if="usesSubgroupAccordion(group.kind)"
+          v-if="usesPermissionSubgroupAccordion(group.kind)"
           type="multiple"
           class="w-full"
         >
@@ -260,7 +149,9 @@ onMounted(() => {
                   class="flex items-center gap-3 py-2"
                 >
                   <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-mono">{{ labelFor(record.capability) }}</p>
+                    <p class="truncate text-sm font-mono">
+                      {{ labelPermissionCapability(record.capability) }}
+                    </p>
                     <p class="text-xs text-muted-foreground capitalize">{{ record.scope }}</p>
                   </div>
                   <Badge
@@ -298,7 +189,9 @@ onMounted(() => {
               class="flex items-center gap-3 py-2"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-mono">{{ labelFor(record.capability) }}</p>
+                <p class="truncate text-sm font-mono">
+                  {{ labelPermissionCapability(record.capability) }}
+                </p>
                 <p class="text-xs text-muted-foreground capitalize">{{ record.scope }}</p>
               </div>
               <Badge

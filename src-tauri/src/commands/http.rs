@@ -168,7 +168,7 @@ pub fn is_blocked_proxy_host(host: &str) -> bool {
   false
 }
 
-async fn validate_proxy_url(raw: &str) -> Result<(), String> {
+pub async fn validate_proxy_url(raw: &str) -> Result<(), String> {
   let parsed = Url::parse(raw).map_err(|error| format!("Invalid URL: {error}"))?;
   let scheme = parsed.scheme();
   if scheme != "http" && scheme != "https" {

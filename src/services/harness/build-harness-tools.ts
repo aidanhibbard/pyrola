@@ -51,6 +51,7 @@ import { createPlanTool, updatePlanTodo } from '@/services/harness/plan'
 import { askUser } from '@/services/harness/ask'
 import { loadSkillTool } from '@/services/harness/skill'
 import { lspQuery, diagnostics } from '@/services/harness/lsp'
+import { webFetchTool } from '@/services/harness/web'
 import type { HarnessToolContext } from '@/types/harness/tool-context'
 
 const buildHarnessTools = (ctx: HarnessToolContext) => ({
@@ -105,6 +106,7 @@ const buildHarnessTools = (ctx: HarnessToolContext) => ({
   browser_get_bounding_box: browserGetBoundingBox(ctx),
   browser_highlight: browserHighlight(ctx),
   browser_cdp: browserCdp(ctx),
+  web_fetch: webFetchTool(ctx),
 })
 
 export default buildHarnessTools

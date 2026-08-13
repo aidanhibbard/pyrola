@@ -1,4 +1,4 @@
-export type ApprovalKind = 'fs' | 'shell' | 'git' | 'mcp' | 'browser'
+export type ApprovalKind = 'fs' | 'shell' | 'git' | 'mcp' | 'browser' | 'web'
 
 export type PermissionAction =
   | 'fs.write'
@@ -10,6 +10,7 @@ export type PermissionAction =
   | 'browser.navigate'
   | 'browser.interact'
   | 'browser.cdp'
+  | 'web.fetch'
 
 export type PermissionVerdict = 'allow' | 'ask' | 'deny'
 
@@ -31,6 +32,8 @@ export type PermissionCapabilityKey =
   | 'browser.interact'
   | 'browser.cdp'
   | 'browser'
+  | 'web.fetch'
+  | `web.fetch:${string}`
 
 export type PermissionRecord = {
   capability: PermissionCapabilityKey

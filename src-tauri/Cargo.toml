@@ -93,6 +93,10 @@ name = "commands_http"
 path = "../spec/src-tauri/commands/http.rs"
 
 [[test]]
+name = "commands_web_fetch"
+path = "../spec/src-tauri/commands/web_fetch.rs"
+
+[[test]]
 name = "commands_keychain"
 path = "../spec/src-tauri/commands/keychain.rs"
 

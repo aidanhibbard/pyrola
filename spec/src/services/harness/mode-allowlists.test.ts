@@ -62,3 +62,19 @@ describe('mode allowlists browser tools', () => {
     }
   })
 })
+
+describe('mode allowlists web_fetch', () => {
+  it('includes web_fetch in ask, plan, studio, agent, and orchestrator', () => {
+    expect(MODE_TOOL_ALLOWLIST.ask).toContain('web_fetch')
+    expect(MODE_TOOL_ALLOWLIST.plan).toContain('web_fetch')
+    expect(MODE_TOOL_ALLOWLIST.studio).toContain('web_fetch')
+    expect(MODE_TOOL_ALLOWLIST.agent).toContain('web_fetch')
+    expect(MODE_TOOL_ALLOWLIST.orchestrator).toContain('web_fetch')
+  })
+
+  it('does not treat web_fetch as a browser tool', () => {
+    expect(MODE_TOOL_ALLOWLIST.ask).toContain('web_fetch')
+    expect(MODE_TOOL_ALLOWLIST.ask).not.toContain('browser_navigate')
+    expect(MODE_TOOL_ALLOWLIST.ask).not.toContain('browser_snapshot')
+  })
+})

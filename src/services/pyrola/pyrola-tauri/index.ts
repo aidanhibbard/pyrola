@@ -8,6 +8,9 @@ export type {
   McpToolInfo,
   McpServerState,
   HttpProxyRequest,
+  WebFetchFormat,
+  WebFetchRequest,
+  WebFetchResponse,
   ChatMetaRecord,
   FsEditReplacement,
   FileDiffRecord,
@@ -98,6 +101,7 @@ export {
   httpProxyRequest,
   mcpCallTool,
 } from './mcp'
+export { default as webFetch } from './web-fetch'
 export {
   shellSpawnPty,
   shellWritePty,

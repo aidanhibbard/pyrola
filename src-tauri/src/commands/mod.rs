@@ -22,6 +22,7 @@ pub mod registry;
 pub mod sandbox;
 pub mod shell;
 pub mod watch;
+pub mod web_fetch;
 #[cfg(feature = "cef")]
 pub use browser_cef::{
   browser_cef_bench, browser_cef_can_go_back, browser_cef_can_go_forward, browser_cef_cdp_endpoint,
@@ -52,6 +53,7 @@ pub use git::{
 pub use glob::workspace_glob;
 pub use grep::workspace_grep;
 pub use http::{http_proxy_request, http_proxy_stream, http_proxy_stream_cancel};
+pub use web_fetch::web_fetch;
 pub use keychain::{delete_secret, get_secret, set_secret};
 pub use lsp::{
   lsp_catalog, lsp_ensure_server, lsp_request, lsp_set_server_disabled, lsp_status, lsp_stop_server,
