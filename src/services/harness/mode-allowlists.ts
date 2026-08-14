@@ -71,6 +71,7 @@ const ORCHESTRATOR_TOOLS = [
   'update_plan_todo',
   'write_todos',
   'spawn_subagent',
+  'resolve_models',
   ...BROWSER_TOOLS,
 ] as const
 
@@ -128,6 +129,7 @@ export const MODE_TOOL_ALLOWLIST: Record<PyrolaChatMode, string[]> = {
     'write_todos',
     'write_studio_artifact',
     'spawn_subagent',
+    'resolve_models',
     ...BROWSER_TOOLS,
   ],
   orchestrator: [...ORCHESTRATOR_TOOLS],

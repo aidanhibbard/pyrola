@@ -31,6 +31,7 @@ const TOOL_LABELS_DONE: Record<string, string> = {
   lsp: 'LSP lookup',
   diagnostics: 'Read diagnostics',
   web_fetch: 'Fetched',
+  resolve_models: 'Looked up models',
 }
 
 const TOOL_LABELS_RUNNING: Record<string, string> = {
@@ -64,6 +65,7 @@ const TOOL_LABELS_RUNNING: Record<string, string> = {
   lsp: 'LSP lookup',
   diagnostics: 'Reading diagnostics',
   web_fetch: 'Fetching',
+  resolve_models: 'Looking up models',
 }
 
 const formatArgsHint = (

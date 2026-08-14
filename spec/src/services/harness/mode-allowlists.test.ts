@@ -63,6 +63,19 @@ describe('mode allowlists browser tools', () => {
   })
 })
 
+describe('mode allowlists resolve_models', () => {
+  it('includes resolve_models in agent and orchestrator', () => {
+    expect(MODE_TOOL_ALLOWLIST.agent).toContain('resolve_models')
+    expect(MODE_TOOL_ALLOWLIST.orchestrator).toContain('resolve_models')
+  })
+
+  it('excludes resolve_models from ask, plan, and studio', () => {
+    expect(MODE_TOOL_ALLOWLIST.ask).not.toContain('resolve_models')
+    expect(MODE_TOOL_ALLOWLIST.plan).not.toContain('resolve_models')
+    expect(MODE_TOOL_ALLOWLIST.studio).not.toContain('resolve_models')
+  })
+})
+
 describe('mode allowlists web_fetch', () => {
   it('includes web_fetch in ask, plan, studio, agent, and orchestrator', () => {
     expect(MODE_TOOL_ALLOWLIST.ask).toContain('web_fetch')

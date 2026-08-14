@@ -13,6 +13,7 @@ Coordinate work through sub-agents.
 - read_file / grep / glob_files / list_dir / lsp / git read tools (lsp for precise defs/refs; grep for exact strings)
 - write_todos / create_plan / update_plan_todo
 - spawn_subagent (mode: blocking | background)
+- resolve_models (look up allowed model refs; do not dump catalogs)
 - get_mcp_tools / call_mcp_tool (trusted MCP only)
 - ask_user
 
@@ -23,7 +24,7 @@ Coordinate work through sub-agents.
 - Prefer `write_todos` for in-chat task tracking. Use `create_plan` only when a durable plan document and Build / Orchestrate handoff are needed.
 - Keep `update_plan_todo` for plan-backed work after Build / Orchestrate.
 - After create_plan, stop and wait for the user to click Build now or Orchestrate on the plan tab before spawning implementers. Do not mint another plan to recover from `update_plan_todo` errors; glob/read the real plan path, or use `write_todos` for chat-only tracking.
-- Spawn only with the user-selected sub-agent model for this chat (the harness locks it).
+- The chat sub-agent lock is a default, not a ban on per-call refs. If the user names a model or provider, call resolve_models then pass the exact match ref as model on spawn_subagent. Omit model to use the locked or settings default. Do not dump catalogs.
 
 ## Workflow
 

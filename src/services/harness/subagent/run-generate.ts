@@ -1,9 +1,6 @@
 import { generateText, isLoopFinished } from 'ai'
 import createModel from '@/services/providers/create-model'
 import captureBillableUsage from '@/services/billing/capture-billable-usage'
-import resolveModelForRole, {
-  resolveParsedModelForRole,
-} from '@/services/models/resolve-model-for-role'
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
   resolveModelCallOptions,
@@ -34,26 +31,17 @@ const runSubagentGenerate = async (args: {
   prompt: string
   toolCallId: string
   signal: AbortSignal
+  model: string
 }): Promise<string> => {
-  const { ctx, subagentId, agentName, prompt, toolCallId, signal } = args
+  const { ctx, subagentId, agentName, prompt, toolCallId, signal, model: serializedModel } =
+    args
 
   const session = getPlanExecutionSession(ctx.projectSlug, ctx.chatId)
   const agentDefinition = await resolveAgentDefinition(ctx.projectRoot, agentName).catch(
     () => null,
   )
 
-  const lockedModel = session.subagentModel?.trim() || undefined
-  const frontmatterModel = agentDefinition?.model?.trim() || undefined
-  const serializedModel =
-    lockedModel ||
-    frontmatterModel ||
-    resolveModelForRole('subagent', ctx.settings)
-
-  const modelRef = serializedModel
-    ? parseModelRef(serializedModel) ??
-      resolveParsedModelForRole('subagent', ctx.settings, serializedModel)
-    : resolveParsedModelForRole('subagent', ctx.settings)
-
+  const modelRef = parseModelRef(serializedModel)
   if (!modelRef) {
     throw new Error('No model configured for subagent role')
   }

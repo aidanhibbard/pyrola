@@ -39,6 +39,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   write_todos: 'Replace the in-chat todo list (Tasks UI)',
   write_studio_artifact: 'Write a studio artifact',
   spawn_subagent: 'Spawn sub-agent (background: end turn, harness resumes)',
+  resolve_models:
+    'Look up allowed model refs by query and optional provider (capped)',
   browser_tabs: 'List or select CEF browser sessions (workbench Browser tabs)',
   browser_navigate: 'Navigate a CEF browser session to a URL (auto-acquires per-session lock when free)',
   browser_lock: 'Acquire or release a per-session CEF browser lock for this chat',

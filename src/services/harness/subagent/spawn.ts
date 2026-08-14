@@ -1,7 +1,6 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import resolveAgentDefinition from '@/services/agents/resolve-agent-definition'
-import resolveModelForRole from '@/services/models/resolve-model-for-role'
 import {
   assertNotAwaitingPlanGo,
   getPlanExecutionSession,
@@ -14,6 +13,7 @@ import {
   emitSubagentResult,
   finishSubagentWithError,
 } from '@/services/harness/subagent/helpers'
+import resolveSpawnModel from '@/services/harness/subagent/resolve-spawn-model'
 import runSubagentGenerate from '@/services/harness/subagent/run-generate'
 import withToolExamples from '@/services/harness/with-tool-examples'
 import linkAbortSignal from '@/utils/link-abort-signal'
@@ -28,6 +28,7 @@ const spawnSubagent = (ctx: HarnessToolContext) =>
           agentName: 'Reading auth',
           prompt: 'Find where MCP trust is granted and summarize the flow.',
           mode: 'blocking',
+          model: 'anthropic::claude-sonnet-4',
         },
         {
           agentName: 'Scanning permissions',
@@ -49,9 +50,15 @@ const spawnSubagent = (ctx: HarnessToolContext) =>
         .describe(
           'blocking waits inline; background returns running, then end your turn and wait for harness resume',
         ),
+      model: z
+        .string()
+        .optional()
+        .describe(
+          'Exact provider::modelId from resolve_models (for example anthropic::claude-sonnet-4). Fuzzy names are rejected.',
+        ),
     }),
     execute: async (
-      { agentName, prompt, mode },
+      { agentName, prompt, mode, model: callModel },
       { toolCallId },
     ): Promise<
       | { subagentId: string; name: string; summary: string }
@@ -76,13 +83,12 @@ const spawnSubagent = (ctx: HarnessToolContext) =>
         ctx.projectRoot,
         agentName,
       ).catch(() => null)
-      const model =
-        lockedSubagentModel?.trim() ||
-        agentDefinition?.model?.trim() ||
-        resolveModelForRole('subagent', ctx.settings)
-      if (!model) {
-        throw new Error('No sub-agent model configured')
-      }
+      const model = await resolveSpawnModel({
+        callModel,
+        lockedModel: lockedSubagentModel,
+        frontmatterModel: agentDefinition?.model,
+        settings: ctx.settings,
+      })
       const blocking = mode === 'blocking'
       const controller = new AbortController()
       linkAbortSignal(ctx.signal, controller)
@@ -128,6 +134,7 @@ const spawnSubagent = (ctx: HarnessToolContext) =>
               prompt,
               toolCallId,
               signal: controller.signal,
+              model,
             })
 
             resolveSubagent(subagentId, { subagentId, name: agentName, summary })
@@ -169,6 +176,7 @@ const spawnSubagent = (ctx: HarnessToolContext) =>
           prompt,
           toolCallId,
           signal: controller.signal,
+          model,
         })
 
         resolveSubagent(subagentId, { subagentId, name: agentName, summary })
