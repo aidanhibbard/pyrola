@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { toast } from 'vue-sonner'
+import useFleetSidebar, { chatTitleForId } from '@/composables/use-fleet-sidebar'
 import { isHomeChatSlug } from '@/constants/home-chat'
 import {
   assignExclusivePreferredSession,
