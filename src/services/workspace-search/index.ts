@@ -1,0 +1,8 @@
+export { default as groupMatches } from './group-matches'
+export { default as applyReplace, applyReplaceAt } from './apply-replace'
+export { default as getWorkingModel } from './get-working-model'
+export { default as readReplaceTarget } from './read-replace-target'
+export { default as writeReplaceTarget } from './write-replace-target'
+export { default as replaceHit } from './replace-hit'
+export { default as replaceInFile } from './replace-in-file'
+export { default as replaceAllFiles } from './replace-all-files'

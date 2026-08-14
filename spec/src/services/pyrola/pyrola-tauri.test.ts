@@ -56,6 +56,46 @@ describe('pyrola-tauri IPC adapters', () => {
     expect(result.matches).toHaveLength(1)
   })
 
+  it('forwards optional workspace_grep search flags', async () => {
+    invoke.mockResolvedValueOnce({
+      matches: [
+        {
+          path: 'src/main.ts',
+          lineNumber: 1,
+          line: 'foo foo',
+          startColumn: 1,
+          endColumn: 4,
+        },
+      ],
+      truncated: false,
+    })
+
+    const { workspaceGrep } = await import('@/services/pyrola/pyrola-tauri')
+    const result = await workspaceGrep({
+      projectRoot: '/project',
+      pattern: 'foo',
+      regex: false,
+      wholeWord: true,
+      excludeGlob: 'node_modules/**',
+      caseInsensitive: true,
+      maxResults: 50,
+    })
+
+    expect(invoke).toHaveBeenCalledWith('workspace_grep', {
+      request: {
+        projectRoot: '/project',
+        pattern: 'foo',
+        regex: false,
+        wholeWord: true,
+        excludeGlob: 'node_modules/**',
+        caseInsensitive: true,
+        maxResults: 50,
+      },
+    })
+    expect(result.matches[0]?.startColumn).toBe(1)
+    expect(result.matches[0]?.endColumn).toBe(4)
+  })
+
   it('passes tagged write request to fs_stage_preview', async () => {
     invoke.mockResolvedValueOnce([])
 

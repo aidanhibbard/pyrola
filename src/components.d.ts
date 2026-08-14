@@ -173,6 +173,7 @@ declare module 'vue' {
     Cursor: typeof import('./components/ai-elements/open-in-chat/providers/icons/Cursor.vue')['default']
     EditorFileSearchDialog: typeof import('./components/workbench/EditorFileSearchDialog.vue')['default']
     EditorMarkdownPreview: typeof import('./components/workbench/EditorMarkdownPreview.vue')['default']
+    EditorSidePane: typeof import('./components/workbench/EditorSidePane.vue')['default']
     EditorTab: typeof import('./components/workbench/tabs/EditorTab.vue')['default']
     EnvironmentVariable: typeof import('./components/ai-elements/environment-variables/EnvironmentVariable.vue')['default']
     EnvironmentVariableCopyButton: typeof import('./components/ai-elements/environment-variables/EnvironmentVariableCopyButton.vue')['default']
@@ -529,5 +530,10 @@ declare module 'vue' {
     WorkbenchTabDuplicateDialog: typeof import('./components/workbench/WorkbenchTabDuplicateDialog.vue')['default']
     WorkbenchTabMenu: typeof import('./components/workbench/WorkbenchTabMenu.vue')['default']
     WorkbenchTabPicker: typeof import('./components/workbench/WorkbenchTabPicker.vue')['default']
+    WorkspaceSearchFileReplace: typeof import('./components/workbench/search/WorkspaceSearchFileReplace.vue')['default']
+    WorkspaceSearchForm: typeof import('./components/workbench/search/WorkspaceSearchForm.vue')['default']
+    WorkspaceSearchHitReplace: typeof import('./components/workbench/search/WorkspaceSearchHitReplace.vue')['default']
+    WorkspaceSearchPanel: typeof import('./components/workbench/search/WorkspaceSearchPanel.vue')['default']
+    WorkspaceSearchResults: typeof import('./components/workbench/search/WorkspaceSearchResults.vue')['default']
   }
 }

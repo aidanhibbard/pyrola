@@ -34,7 +34,6 @@ export type MonacoEditorContext = {
   diffEditor: monaco.editor.IStandaloneDiffEditor | null
   editorInitializing: boolean
   resizeObserver: ResizeObserver | null
-  contentChangeDisposable: monaco.IDisposable | null
   lspProviderDisposables: monaco.IDisposable[]
   unlistenDiagnostics: (() => void) | null
   stopThemeObserver: (() => void) | null

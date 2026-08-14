@@ -39,7 +39,6 @@ export default (props: MonacoEditorProps, emit: MonacoEditorEmit) => {
     diffEditor: null,
     editorInitializing: false,
     resizeObserver: null,
-    contentChangeDisposable: null,
     lspProviderDisposables: [],
     unlistenDiagnostics: null,
     stopThemeObserver: null,

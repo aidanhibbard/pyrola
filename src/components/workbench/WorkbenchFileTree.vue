@@ -28,10 +28,16 @@ import { FileTree } from '@/components/ai-elements/file-tree'
 import WorkbenchFileTreeNode from '@/components/workbench/FileTreeNode.vue'
 import useFileTreeView from '@/composables/file-tree-view'
 
-const props = defineProps<{
-  projectId: string
-  selectedPath?: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    projectId: string
+    selectedPath?: string | null
+    showToolbar?: boolean
+  }>(),
+  {
+    showToolbar: true,
+  },
+)
 
 const emit = defineEmits<{
   select: [path: string]
@@ -72,7 +78,10 @@ defineExpose({
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-hidden font-sans text-[13px]">
-    <div class="flex h-7 shrink-0 items-center justify-end border-b border-border/20 px-2">
+    <div
+      v-if="showToolbar"
+      class="flex h-7 shrink-0 items-center justify-end border-b border-border/20 px-2"
+    >
       <slot name="toolbar" />
     </div>
     <div class="flex items-center justify-between px-2 py-1">

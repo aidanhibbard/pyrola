@@ -1,7 +1,7 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { toast } from 'vue-sonner'
-import { fsReadFile, isTauri } from '@/services/pyrola/pyrola-tauri'
+import { isTauri } from '@/services/pyrola/pyrola-tauri'
 import { formatError } from './helpers'
 import type { MonacoHelpers } from './helpers'
 import type { MonacoLsp } from './lsp'
@@ -100,28 +100,12 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
       if (!paths.includes(path)) {
         return
       }
-      const root = ctx.projectRoot.value
-      if (!root) {
-        return
-      }
       try {
-        const model = ctx.models.get(path)
-        if (!model) {
-          return
-        }
-        const result = await fsReadFile({ projectRoot: root, path })
-        if (model.getValue() !== result.content) {
-          model.setValue(result.content)
-        }
-        ctx.dirtyByPath.set(path, false)
-        ctx.emit('dirty-change', { path, dirty: false })
-      } catch {
-        const model = ctx.models.get(path)
-        if (model && model.getValue() !== '') {
-          model.setValue('')
-        }
-        ctx.dirtyByPath.set(path, false)
-        ctx.emit('dirty-change', { path, dirty: false })
+        await deps.models.reloadFromDisk(path)
+      } catch (error) {
+        toast.error('Failed to reload file', {
+          description: formatError(error),
+        })
       }
     },
   )
@@ -157,9 +141,6 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
   })
 
   onBeforeUnmount(() => {
-    ctx.contentChangeDisposable?.dispose()
-    ctx.contentChangeDisposable = null
-
     ctx.unlistenDiagnostics?.()
     ctx.unlistenDiagnostics = null
 

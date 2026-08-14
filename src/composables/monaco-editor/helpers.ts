@@ -73,8 +73,6 @@ export const createHelpers = (ctx: MonacoEditorContext) => {
   }
 
   const disposeCodeEditor = (): void => {
-    ctx.contentChangeDisposable?.dispose()
-    ctx.contentChangeDisposable = null
     ctx.editor?.dispose()
     ctx.editor = null
   }

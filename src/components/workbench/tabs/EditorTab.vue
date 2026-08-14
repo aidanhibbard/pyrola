@@ -1,21 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
-  Check,
   ChevronLeft,
   ChevronRight,
-  ClipboardCopy,
   FileCode,
-  FolderSearch,
-  GitCompareArrows,
+  FileSearch,
   List,
-  ListOrdered,
-  MoreHorizontal,
-  Save,
-  SaveAll,
-  Search,
-  WandSparkles,
-  WrapText,
+  Replace,
   X,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -29,15 +20,6 @@ import {
   AlertDialogTitle,
 } from '@/components/shadcn/ui/alert-dialog'
 import { Button } from '@/components/shadcn/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from '@/components/shadcn/ui/dropdown-menu'
 import {
   Empty,
   EmptyHeader,
@@ -54,10 +36,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
+import type { EditorSidePaneMode } from '@/components/workbench/EditorSidePane.vue'
 import WorkbenchEditorFileSearchDialog from '@/components/workbench/EditorFileSearchDialog.vue'
 import WorkbenchEditorMarkdownPreview from '@/components/workbench/EditorMarkdownPreview.vue'
-import WorkbenchFileTree from '@/components/workbench/WorkbenchFileTree.vue'
-import WorkbenchLspStatus from '@/components/workbench/WorkbenchLspStatus.vue'
+import WorkbenchEditorSidePane from '@/components/workbench/EditorSidePane.vue'
 import WorkbenchMonacoEditor from '@/components/workbench/MonacoEditor.vue'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import { fsReadFile, revealInFolder } from '@/services/pyrola/pyrola-tauri'
@@ -72,6 +54,7 @@ const props = defineProps<{
 const workbench = useWorkbenchStore()
 
 const monacoRef = ref<InstanceType<typeof WorkbenchMonacoEditor> | null>(null)
+const sidePaneRef = ref<{ openSearch: (expandReplace?: boolean) => void } | null>(null)
 const editorMode = ref<EditorMode>('edit')
 const fileContent = ref('')
 const fileDirty = ref<Record<string, boolean>>({})
@@ -79,7 +62,8 @@ const closeConfirmOpen = ref(false)
 const closeTargetPath = ref<string | null>(null)
 const closeSaving = ref(false)
 const fileSearchOpen = ref(false)
-const fileTreeOpen = ref(true)
+const sidePaneOpen = ref(true)
+const sidePaneMode = ref<EditorSidePaneMode>('explorer')
 const isNavigatingHistory = ref(false)
 const pathHistory = ref<string[]>([])
 const historyIndex = ref(-1)
@@ -92,6 +76,8 @@ const formatOnSave = ref(false)
 const editorPayload = computed(() => props.tab.payload as EditorPayload)
 
 const diffView = computed(() => editorPayload.value.diffView === true)
+
+const isActiveTab = computed(() => workbench.activeTabId.value === props.tab.id)
 
 const handleToggleDiffView = (): void => {
   workbench.setEditorDiffView(props.tab.id, !diffView.value)
@@ -182,7 +168,7 @@ const handleFileTabMiddleClick = (event: MouseEvent, path: string): void => {
   handleSubTabClose(path)
 }
 
-const handleOpenSearch = (): void => {
+const handleOpenFileSearch = (): void => {
   fileSearchOpen.value = true
 }
 
@@ -190,8 +176,25 @@ const handleFileSearchSelect = (path: string): void => {
   workbench.openEditor(props.tab.projectId, path)
 }
 
+const openWorkspaceSearch = (expandReplace = false): void => {
+  sidePaneOpen.value = true
+  sidePaneMode.value = 'search'
+  nextTick(() => {
+    sidePaneRef.value?.openSearch(expandReplace)
+  })
+}
+
 const handleToggleFileTree = (): void => {
-  fileTreeOpen.value = !fileTreeOpen.value
+  if (!sidePaneOpen.value) {
+    sidePaneOpen.value = true
+    sidePaneMode.value = 'explorer'
+    return
+  }
+  if (sidePaneMode.value === 'search') {
+    sidePaneMode.value = 'explorer'
+    return
+  }
+  sidePaneOpen.value = false
 }
 
 const handleBack = (): void => {
@@ -412,6 +415,26 @@ watch(
   },
   { immediate: true },
 )
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (!isActiveTab.value) {
+    return
+  }
+  const modifier = event.metaKey || event.ctrlKey
+  if (!modifier || !event.shiftKey || event.altKey) {
+    return
+  }
+  const key = event.key.toLowerCase()
+  if (key === 'f') {
+    event.preventDefault()
+    openWorkspaceSearch(false)
+    return
+  }
+  if (key === 'h') {
+    event.preventDefault()
+    openWorkspaceSearch(true)
+  }
+})
 </script>
 
 <template>
@@ -499,7 +522,7 @@ watch(
           </div>
 
           <div
-            v-if="!fileTreeOpen || isMarkdownFile"
+            v-if="!sidePaneOpen || isMarkdownFile"
             class="flex shrink-0 items-center gap-0.5"
           >
             <template v-if="isMarkdownFile">
@@ -531,7 +554,37 @@ watch(
               </Button>
             </template>
 
-            <Tooltip v-if="!fileTreeOpen">
+            <Tooltip v-if="!sidePaneOpen">
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  aria-label="Search files"
+                  @click="handleOpenFileSearch"
+                >
+                  <FileSearch class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent class="z-60">Search files</TooltipContent>
+            </Tooltip>
+
+            <Tooltip v-if="!sidePaneOpen">
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-6 w-6 text-muted-foreground"
+                  aria-label="Find and replace"
+                  @click="openWorkspaceSearch(false)"
+                >
+                  <Replace class="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent class="z-60">Find and replace</TooltipContent>
+            </Tooltip>
+
+            <Tooltip v-if="!sidePaneOpen">
               <TooltipTrigger as-child>
                 <Button
                   variant="ghost"
@@ -560,9 +613,9 @@ watch(
               variant="ghost"
               size="sm"
               class="mt-2 text-muted-foreground"
-              @click="handleOpenSearch"
+              @click="handleOpenFileSearch"
             >
-              <Search class="mr-2 h-3.5 w-3.5" />
+              <FileSearch class="mr-2 h-3.5 w-3.5" />
               Search files
             </Button>
           </EmptyHeader>
@@ -603,122 +656,34 @@ watch(
         </div>
       </div>
     </ResizablePanel>
-    <ResizableHandle v-if="fileTreeOpen" />
+    <ResizableHandle v-if="sidePaneOpen" />
     <ResizablePanel
-      v-if="fileTreeOpen"
+      v-if="sidePaneOpen"
       :default-size="25"
       :min-size="15"
       :max-size="55"
       class="min-h-0 min-w-0 overflow-hidden"
     >
-      <WorkbenchFileTree
+      <WorkbenchEditorSidePane
+        ref="sidePaneRef"
+        v-model:open="sidePaneOpen"
+        v-model:mode="sidePaneMode"
         :project-id="tab.projectId"
+        :project-root="projectRoot"
         :selected-path="selectedPath"
+        :diff-view="diffView"
+        v-model:line-numbers="lineNumbers"
+        v-model:word-wrap="wordWrap"
+        v-model:auto-save="autoSave"
+        v-model:format-on-save="formatOnSave"
         @select="handleSelect"
         @tree-changed="refreshMissing"
-      >
-        <template #toolbar>
-          <div class="flex shrink-0 items-center gap-0.5">
-            <Tooltip :disable-closing-trigger="true">
-              <TooltipTrigger as-child>
-                <span class="inline-flex shrink-0">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger as-child>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        class="h-6 w-6 text-muted-foreground"
-                        aria-label="File actions"
-                      >
-                        <MoreHorizontal class="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" class="w-56">
-                      <DropdownMenuLabel>File</DropdownMenuLabel>
-                      <DropdownMenuItem @click="handleSave">
-                        <Save class="mr-2 h-4 w-4" />
-                        Save
-                        <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="handleRevealInFinder">
-                        <FolderSearch class="mr-2 h-4 w-4" />
-                        Reveal in Finder
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="handleCopyRelativePath">
-                        <ClipboardCopy class="mr-2 h-4 w-4" />
-                        Copy Relative Path
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>View</DropdownMenuLabel>
-                      <DropdownMenuItem @click="handleToggleDiffView">
-                        <GitCompareArrows class="mr-2 h-4 w-4" />
-                        Diff View
-                        <Check v-if="diffView" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="lineNumbers = !lineNumbers">
-                        <ListOrdered class="mr-2 h-4 w-4" />
-                        Line Numbers
-                        <Check v-if="lineNumbers" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="wordWrap = !wordWrap">
-                        <WrapText class="mr-2 h-4 w-4" />
-                        Word Wrap
-                        <Check v-if="wordWrap" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>Editor</DropdownMenuLabel>
-                      <DropdownMenuItem @click="autoSave = !autoSave">
-                        <SaveAll class="mr-2 h-4 w-4" />
-                        Auto Save
-                        <Check v-if="autoSave" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                      <DropdownMenuItem @click="formatOnSave = !formatOnSave">
-                        <WandSparkles class="mr-2 h-4 w-4" />
-                        Format on Save
-                        <Check v-if="formatOnSave" class="ml-auto h-4 w-4" />
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent class="z-60">File actions</TooltipContent>
-            </Tooltip>
-
-            <WorkbenchLspStatus />
-
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-6 w-6 text-muted-foreground"
-                  aria-label="Search files"
-                  @click="handleOpenSearch"
-                >
-                  <Search class="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent class="z-60">Search files</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-6 w-6 text-muted-foreground"
-                  :class="fileTreeOpen ? 'text-foreground' : ''"
-                  aria-label="Toggle file list"
-                  @click="handleToggleFileTree"
-                >
-                  <List class="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent class="z-60">Toggle file list</TooltipContent>
-            </Tooltip>
-          </div>
-        </template>
-      </WorkbenchFileTree>
+        @save="handleSave"
+        @reveal-in-finder="handleRevealInFinder"
+        @copy-relative-path="handleCopyRelativePath"
+        @toggle-diff-view="handleToggleDiffView"
+        @open-file-search="handleOpenFileSearch"
+      />
     </ResizablePanel>
   </ResizablePanelGroup>
 

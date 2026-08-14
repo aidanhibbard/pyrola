@@ -197,6 +197,10 @@ export const workspaceGrep = async (args: {
   path?: string
   caseInsensitive?: boolean
   maxResults?: number
+  /** When false, literal match (`--fixed-strings`). Omitted defaults to regex on the Rust side. */
+  regex?: boolean
+  wholeWord?: boolean
+  excludeGlob?: string
 }): Promise<WorkspaceGrepResult> => {
   const result = await call<WorkspaceGrepResult>('workspace_grep', { request: args })
   return result

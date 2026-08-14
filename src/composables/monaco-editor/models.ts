@@ -3,6 +3,7 @@ import * as monaco from 'monaco-editor'
 import { fsReadFile, fsWriteFile, gitShowFile } from '@/services/pyrola/pyrola-tauri'
 import { detectMonacoLanguage } from '@/utils/monaco-language'
 import { ensureMonacoLanguage } from '@/utils/monaco-shiki'
+import { GIT_HEAD_SCHEME, workingFileUri } from '@/utils/monaco-working-uri'
 import { ensureLanguageRegistered, formatError } from './helpers'
 import type { MonacoHelpers } from './helpers'
 import type { MonacoLsp } from './lsp'
@@ -15,6 +16,46 @@ type ModelsDeps = {
 }
 
 export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
+  const contentListeners = new Map<string, monaco.IDisposable>()
+  let suppressDirtyCount = 0
+
+  const withoutDirty = <T>(fn: () => T): T => {
+    suppressDirtyCount += 1
+    try {
+      return fn()
+    } finally {
+      suppressDirtyCount -= 1
+    }
+  }
+
+  const setModelValueQuiet = (
+    model: monaco.editor.ITextModel,
+    content: string,
+  ): void => {
+    withoutDirty(() => {
+      if (model.getValue() !== content) {
+        model.setValue(content)
+      }
+    })
+  }
+
+  const attachContentListener = (
+    path: string,
+    model: monaco.editor.ITextModel,
+  ): void => {
+    contentListeners.get(path)?.dispose()
+    const disposable = model.onDidChangeContent(() => {
+      if (suppressDirtyCount > 0) {
+        return
+      }
+      deps.helpers.setPathDirty(path, true)
+      if (ctx.lspActive.value) {
+        deps.lsp.debouncedRefreshDiagnostics(path, model)
+      }
+    })
+    contentListeners.set(path, disposable)
+  }
+
   const getOrCreateOriginalModel = async (
     path: string,
   ): Promise<monaco.editor.ITextModel> => {
@@ -35,15 +76,13 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
 
     const existing = ctx.originalModels.get(path)
     if (existing) {
-      if (existing.getValue() !== content) {
-        existing.setValue(content)
-      }
+      setModelValueQuiet(existing, content)
       return existing
     }
 
     const languageId = detectMonacoLanguage(path)
     ensureLanguageRegistered(languageId)
-    const uri = monaco.Uri.parse(`pyrola-git-head://${encodeURIComponent(path)}`)
+    const uri = monaco.Uri.parse(`${GIT_HEAD_SCHEME}://${encodeURIComponent(path)}`)
     const model = monaco.editor.createModel(content, languageId, uri)
     ctx.originalModels.set(path, model)
     ensureMonacoLanguage(monaco, languageId).catch(() => {
@@ -66,13 +105,9 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
       if (options?.allowMissing && !deps.helpers.isPathDirty(path)) {
         try {
           const result = await fsReadFile({ projectRoot: root, path })
-          if (existing.getValue() !== result.content) {
-            existing.setValue(result.content)
-          }
+          setModelValueQuiet(existing, result.content)
         } catch {
-          if (existing.getValue() !== '') {
-            existing.setValue('')
-          }
+          setModelValueQuiet(existing, '')
         }
       }
       return existing
@@ -90,9 +125,11 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
 
     const languageId = detectMonacoLanguage(path)
     ensureLanguageRegistered(languageId)
-    const model = monaco.editor.createModel(content, languageId)
+    const uri = workingFileUri(path)
+    const model = monaco.editor.createModel(content, languageId, uri)
     ctx.models.set(path, model)
     ctx.pathByModel.set(model, path)
+    attachContentListener(path, model)
 
     // Upgrade highlighting in the background; do not block showing file contents.
     ensureMonacoLanguage(monaco, languageId).catch(() => {
@@ -127,22 +164,12 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
       return
     }
 
-    ctx.contentChangeDisposable?.dispose()
-    ctx.contentChangeDisposable = null
-
     const model = await getOrCreateModel(path)
     if (ctx.editor !== activeEditor) {
       return
     }
 
     activeEditor.setModel(model)
-
-    ctx.contentChangeDisposable = model.onDidChangeContent(() => {
-      deps.helpers.setPathDirty(path, true)
-      if (ctx.lspActive.value) {
-        deps.lsp.debouncedRefreshDiagnostics(path, model)
-      }
-    })
 
     await deps.lsp.setupLspForPath(path, model)
 
@@ -152,11 +179,31 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
 
   deps.attachModelRef.current = attachModel
 
+  const reloadFromDisk = async (path: string): Promise<void> => {
+    const root = ctx.projectRoot.value
+    const model = ctx.models.get(path)
+    if (!root || !model) {
+      return
+    }
+
+    try {
+      const result = await fsReadFile({ projectRoot: root, path })
+      setModelValueQuiet(model, result.content)
+      deps.helpers.setPathDirty(path, false)
+    } catch {
+      setModelValueQuiet(model, '')
+      deps.helpers.setPathDirty(path, false)
+    }
+  }
+
   const disposeModel = (path: string): void => {
     const model = ctx.models.get(path)
     if (!model) {
       return
     }
+
+    contentListeners.get(path)?.dispose()
+    contentListeners.delete(path)
 
     deps.lsp.teardownLspForPath(path, model).catch(() => {
       deps.lsp.clearLspMarkers(model)
@@ -235,6 +282,7 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
     getOrCreateModel,
     attachDiffModels,
     attachModel,
+    reloadFromDisk,
     disposeModel,
     syncOpenModels,
     save,
