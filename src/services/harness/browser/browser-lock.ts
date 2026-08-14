@@ -5,6 +5,7 @@ import {
   releaseLock,
   resolveSessionIdForWorkspace,
 } from '@/services/browser/registry'
+import lockErrorResult from '@/services/harness/browser/lock-error-result'
 import { gateToolPermission } from '@/services/harness/permission/gate'
 import toPermCtx from '@/services/harness/shared/to-perm-ctx'
 import withToolExamples from '@/services/harness/with-tool-examples'
@@ -13,11 +14,11 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserLock = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Acquire or release an exclusive lock on a CEF browser session for this chat. Lock before interacting. Unlock when finished so other chats can take over the same session. Different sessions do not contend.',
+      'Acquire an exclusive lock on a CEF session for this chat. After browser_tabs list, lock that session_id when you need wait or a specific session. The harness holds the lock for this run and releases it when the run ends (or the user Takes Control / Stop). Do not unlock. wait:true queues FIFO. wait:false (default) bails with browser_locked. Same chat (including subagents) may re-acquire. Different sessions do not contend. If no session exists, browser_tabs new or browser_navigate may open the workbench browser.',
       [
         { action: 'lock' },
+        { action: 'lock', wait: true },
         { action: 'lock', session_id: 'CEF_SESSION_ID' },
-        { action: 'unlock' },
       ],
     ),
     inputSchema: z.object({
@@ -25,17 +26,19 @@ const browserLock = (ctx: HarnessToolContext) =>
       session_id: z
         .string()
         .optional()
-        .describe('CEF session id; defaults to last interacted for this project'),
+        .describe('CEF session id; defaults to this chat preferred session, else last interacted'),
       viewId: z
         .string()
         .optional()
         .describe('Legacy alias for session_id'),
-      leaseMs: z
-        .number()
+      wait: z
+        .boolean()
         .optional()
-        .describe('Optional lease duration in ms when action=lock'),
+        .describe(
+          'When action=lock, wait:true queues FIFO until granted; wait:false (default) bails with browser_locked',
+        ),
     }),
-    execute: async ({ action, session_id, viewId, leaseMs }, { toolCallId }) => {
+    execute: async ({ action, session_id, viewId, wait }, { toolCallId }) => {
       const allowed = await gateToolPermission({
         ctx: toPermCtx(ctx),
         toolCallId,
@@ -53,29 +56,27 @@ const browserLock = (ctx: HarnessToolContext) =>
       const sessionId = resolveSessionIdForWorkspace(
         workspaceId,
         session_id ?? viewId,
+        ctx.chatId,
       )
       if (!sessionId) {
         return {
           error:
-            'No CEF browser session. Open a Browser tab in the workbench, then pass session_id.',
+            'No CEF browser session. Use browser_tabs action new or browser_navigate to open one, then pass session_id.',
         }
       }
 
       if (action === 'lock') {
         try {
-          const acquired = acquireLock({
+          const acquired = await acquireLock({
             sessionId,
             workspaceId,
             chatId: ctx.chatId,
             subagentId: ctx.subagentId,
-            leaseMs,
+            wait: wait === true,
+            signal: ctx.signal,
           })
           if (!acquired.ok) {
-            return {
-              error: 'browser_locked',
-              ownerChatId: acquired.ownerChatId,
-              leaseExpiresAt: acquired.leaseExpiresAt,
-            }
+            return lockErrorResult(acquired)
           }
           return { locked: true, workspaceId, session_id: sessionId, viewId: sessionId }
         } catch (error) {

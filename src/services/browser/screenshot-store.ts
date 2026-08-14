@@ -9,14 +9,18 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary)
 }
 
-const saveScreenshot = async (bytes: Uint8Array): Promise<ToolImagePart> => {
+const saveScreenshot = async (
+  bytes: Uint8Array,
+  mimeType = 'image/png',
+): Promise<ToolImagePart> => {
+  const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png'
   const { path } = await writeTempBytes({
     contentBase64: bytesToBase64(bytes),
     kind: 'screenshots',
-    extension: 'png',
+    extension,
   })
   return {
-    mimeType: 'image/png',
+    mimeType,
     path,
   }
 }

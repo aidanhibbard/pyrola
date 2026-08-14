@@ -73,6 +73,13 @@ const isError = computed(() => props.run.status === 'error')
 const hasDetails = computed(
   () => props.run.args !== undefined || props.run.result !== undefined,
 )
+const ownerTitle = computed((): string | null => {
+  if (!isRecord(props.run.result)) {
+    return null
+  }
+  const title = props.run.result.ownerTitle
+  return typeof title === 'string' && title.length > 0 ? title : null
+})
 const diffs = computed((): FileDiff[] => props.run.diffs ?? [])
 const hasDiffs = computed(
   () => diffs.value.length > 0 && props.run.status === 'done',
@@ -201,6 +208,12 @@ const diffCounts = computed(() => {
         class="text-muted-foreground"
       >
         Running…
+      </p>
+      <p
+        v-if="ownerTitle"
+        class="text-muted-foreground"
+      >
+        Held by {{ ownerTitle }}
       </p>
       <div v-if="argsText">
         <p class="mb-1 font-medium text-foreground/80">

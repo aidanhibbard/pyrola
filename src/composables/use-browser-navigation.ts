@@ -25,11 +25,8 @@ type NavigationArgs = {
 
 export default (args: NavigationArgs) => {
   const requireSessionId = async (): Promise<string | null> => {
-    if (!args.cefReady.value) {
-      return null
-    }
     let sessionId = args.getCefSessionId()
-    if (!sessionId) {
+    if (!args.cefReady.value || !sessionId) {
       const ok = await args.ensureCefSession()
       if (!ok) {
         return null
@@ -47,13 +44,6 @@ export default (args: NavigationArgs) => {
     const url = normalizeBrowserUrl(rawUrl ?? args.addressBarValue.value)
     if (!url) {
       return
-    }
-    if (!args.cefReady.value) {
-      await args.ensureCefSession()
-      if (!args.cefReady.value) {
-        toast.error('Browser view is not ready')
-        return
-      }
     }
     try {
       const sessionId = await requireSessionId()

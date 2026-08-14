@@ -10,6 +10,9 @@ import {
   getSessionCdpClient,
   resolveSessionIdForWorkspace,
 } from '@/services/browser/registry'
+import ensureWorkspaceCefSession from '@/services/browser/ensure-workspace-cef-session'
+import lockErrorResult from '@/services/harness/browser/lock-error-result'
+import ensureWorkbenchBrowser from '@/services/harness/browser/ensure-workbench-browser'
 import type { HarnessToolContext } from '@/types/harness/tool-context'
 
 type PrepareSuccess = {
@@ -33,13 +36,16 @@ type PrepareOptions = {
   autoAcquireLock?: boolean
   /** When true (default), require an active lock owned by this chat. */
   requireLock?: boolean
+  /** When creating a missing workbench tab, focus it (active/side). */
+  revealPosition?: 'active' | 'side'
 }
 
 /**
  * Selection rule: tools pass optional session_id (preferred) or viewId.
- * Both identify a CEF workbench browser session. If omitted, use the
- * workspace's last-interacted CEF session. Agents do not spawn hosts;
- * open a Browser tab in the workbench first so the session is registered.
+ * Both identify a CEF workbench browser session. If omitted, use this
+ * chat's preferred CEF session, then the workspace last-interacted
+ * session. If none exists, open the workbench Browser tab and create
+ * a CEF session.
  */
 const prepareBrowserContext = async (
   ctx: HarnessToolContext,
@@ -48,33 +54,61 @@ const prepareBrowserContext = async (
   const workspaceId = ctx.projectSlug
   const requireLock = options.requireLock ?? true
 
-  const sessionId = resolveSessionIdForWorkspace(workspaceId, options.sessionId)
+  let sessionId: string | null
+  const requestedId = options.sessionId?.trim()
+  if (requestedId) {
+    const resolved = resolveSessionIdForWorkspace(
+      workspaceId,
+      requestedId,
+      ctx.chatId,
+    )
+    if (!resolved) {
+      return {
+        ok: false,
+        result: { error: `Unknown CEF session: ${requestedId}` },
+      }
+    }
+    sessionId = resolved
+  } else {
+    sessionId = resolveSessionIdForWorkspace(workspaceId, undefined, ctx.chatId)
+  }
+
   if (!sessionId) {
-    return {
-      ok: false,
-      result: {
-        error:
-          'No CEF browser session. Open a Browser tab in the workbench, then retry (optional session_id).',
-      },
+    const opened = await ensureWorkbenchBrowser({
+      projectSlug: workspaceId,
+      position: options.revealPosition,
+    })
+    if (!opened.ok) {
+      return { ok: false, result: { error: opened.error } }
+    }
+    try {
+      sessionId = await ensureWorkspaceCefSession(workspaceId)
+    } catch (error) {
+      return {
+        ok: false,
+        result: {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to create a CEF browser session',
+        },
+      }
     }
   }
 
   if (options.autoAcquireLock) {
     try {
-      const acquired = acquireLock({
+      const acquired = await acquireLock({
         sessionId,
         workspaceId,
         chatId: ctx.chatId,
         subagentId: ctx.subagentId,
+        wait: false,
       })
       if (!acquired.ok) {
         return {
           ok: false,
-          result: {
-            error: 'browser_locked',
-            ownerChatId: acquired.ownerChatId,
-            leaseExpiresAt: acquired.leaseExpiresAt,
-          },
+          result: lockErrorResult(acquired),
         }
       }
     } catch (error) {

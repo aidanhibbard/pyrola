@@ -33,6 +33,7 @@ type ResolveResult = ResolveSuccess | ResolveFailure
  */
 const resolveBrowserSession = async (
   browser: BrowserSessionInput,
+  options?: { touchLastInteracted?: boolean },
 ): Promise<ResolveResult> => {
   await applyUserAgentOverride(
     browser.client,
@@ -40,7 +41,9 @@ const resolveBrowserSession = async (
     browser.userAgent,
     browser.userAgentData,
   )
-  setLastInteractedViewId(browser.workspaceId, browser.sessionId)
+  if (options?.touchLastInteracted !== false) {
+    setLastInteractedViewId(browser.workspaceId, browser.sessionId)
+  }
   return { ok: true, viewId: browser.sessionId, sessionId: '' }
 }
 

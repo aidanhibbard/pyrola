@@ -95,19 +95,20 @@ html {
   }
 }
 
-/* Soft full-perimeter pastel ring around the chat prompt while waiting on a reply */
-@property --chat-prompt-aurora-angle {
+/* Soft full-perimeter pastel ring (chat prompt while waiting, locked browser pane) */
+@property --agent-aurora-angle {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
 }
 
 .chat-prompt-aurora [data-slot='input-group'] {
+  --agent-aurora-fill: var(--background);
   border-color: transparent !important;
   background:
-    linear-gradient(var(--background), var(--background)) padding-box,
+    linear-gradient(var(--agent-aurora-fill), var(--agent-aurora-fill)) padding-box,
     conic-gradient(
-      from var(--chat-prompt-aurora-angle),
+      from var(--agent-aurora-angle),
       color-mix(in oklab, #b89ad4 55%, var(--border)),
       color-mix(in oklab, #7eb6d9 55%, var(--border)),
       color-mix(in oklab, #7ec9a0 55%, var(--border)),
@@ -117,16 +118,49 @@ html {
     border-box !important;
   background-origin: border-box !important;
   background-clip: padding-box, border-box !important;
-  animation: chat-prompt-aurora-drift 14s linear infinite;
+  animation: agent-aurora-drift 14s linear infinite;
 }
 
-@keyframes chat-prompt-aurora-drift {
+/* Locked browser: 2px rotating ring only. Interior is masked out so CEF stays visible. */
+.agent-aurora-ring {
+  position: relative;
+}
+
+.agent-aurora-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--agent-aurora-angle),
+    color-mix(in oklab, #b89ad4 55%, var(--border)),
+    color-mix(in oklab, #7eb6d9 55%, var(--border)),
+    color-mix(in oklab, #7ec9a0 55%, var(--border)),
+    color-mix(in oklab, #a894d4 55%, var(--border)),
+    color-mix(in oklab, #b89ad4 55%, var(--border))
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: agent-aurora-drift 14s linear infinite;
+}
+
+@keyframes agent-aurora-drift {
   to {
-    --chat-prompt-aurora-angle: 360deg;
+    --agent-aurora-angle: 360deg;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .agent-aurora-ring::before,
   .chat-prompt-aurora [data-slot='input-group'] {
     animation: none;
   }

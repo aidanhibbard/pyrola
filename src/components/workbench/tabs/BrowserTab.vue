@@ -2,9 +2,6 @@
 import { computed, onMounted } from 'vue'
 import { Globe } from '@lucide/vue'
 import { toast } from 'vue-sonner'
-import WorkbenchTabsBrowserBookmarkBar from '@/components/workbench/tabs/browser/BrowserBookmarkBar.vue'
-import WorkbenchTabsBrowserConsolePanel from '@/components/workbench/tabs/browser/BrowserConsolePanel.vue'
-import WorkbenchTabsBrowserToolbar from '@/components/workbench/tabs/browser/BrowserToolbar.vue'
 import {
   Empty,
   EmptyContent,
@@ -31,7 +28,10 @@ const {
   hostEl,
   cefReady,
   hasPage,
+  layoutBusy,
   activeLock,
+  lockOwnerTitle,
+  lockWaiterCount,
   currentUrl,
   currentTabTitle,
   bookmarks,
@@ -56,12 +56,18 @@ const {
   handleClearCookies,
   handleClearCache,
   handleTakeControl,
+  handleOpenOwnerChat,
   handleNavigate,
   handleBack,
   handleForward,
   handleReload,
   handleAddressBlur,
   bootstrap,
+  pages,
+  activePageSessionId,
+  selectPage,
+  closePage,
+  addPage,
 } = useBrowserTab(workspaceId.value, props.tab.id)
 
 const setAddressInputRef = (el: HTMLInputElement | null): void => {
@@ -84,7 +90,7 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <WorkbenchTabsBrowserToolbar
+    <BrowserToolbar
       :starting="starting"
       :can-back="canBack"
       :can-forward="canForward"
@@ -98,7 +104,6 @@ onMounted(() => {
       :show-bookmark-bar="showBookmarkBar"
       :bookmarks="bookmarks"
       :history-urls="historyUrls"
-      :active-lock="activeLock"
       @update:address-bar-value="addressBarValue = $event"
       @set-address-input-ref="setAddressInputRef"
       @back="handleBack"
@@ -119,10 +124,18 @@ onMounted(() => {
       @clear-cache="handleClearCache"
       @refresh-history="refreshHistoryUrls"
       @remove-bookmark="removeBookmarkUrl"
-      @take-control="handleTakeControl"
     />
 
-    <WorkbenchTabsBrowserBookmarkBar
+    <BrowserPageStrip
+      :pages="pages"
+      :active-session-id="activePageSessionId"
+      :workspace-id="workspaceId"
+      @select="selectPage"
+      @close="closePage"
+      @add="addPage"
+    />
+
+    <BrowserBookmarkBar
       v-if="showBookmarkBar"
       :bookmarks="bookmarks"
       @navigate="handleNavigate($event)"
@@ -130,13 +143,23 @@ onMounted(() => {
     />
 
     <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+        :class="activeLock ? 'agent-aurora-ring border border-transparent' : undefined"
+      >
         <!-- Hole is transparent only while a page is showing; CEF paints behind. -->
         <div
           ref="hostEl"
           class="absolute inset-0 h-full w-full"
-          :class="hasPage ? '' : 'bg-background'"
+          :class="hasPage && !layoutBusy ? '' : 'bg-background'"
           aria-hidden="true"
+        />
+        <BrowserLockOverlay
+          v-if="activeLock"
+          :owner-title="lockOwnerTitle"
+          :waiter-count="lockWaiterCount"
+          @open-chat="handleOpenOwnerChat"
+          @take-control="handleTakeControl"
         />
         <Empty
           v-if="!hasPage"
@@ -152,7 +175,7 @@ onMounted(() => {
           </EmptyHeader>
         </Empty>
       </div>
-      <WorkbenchTabsBrowserConsolePanel
+      <BrowserConsolePanel
         v-if="consoleOpen"
         :lines="lines"
         @clear="clearConsole"

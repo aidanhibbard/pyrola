@@ -1,7 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
-import { getAccessibilitySnapshot, takeScreenshot } from '@/services/browser/cdp-ops'
-import saveScreenshot from '@/services/browser/screenshot-store'
+import { getAccessibilitySnapshot } from '@/services/browser/cdp-ops'
+import attachScreenshotAfterwards from '@/services/harness/browser/attach-screenshot-afterwards'
 import formatSnapshotYaml from '@/services/harness/browser/format-snapshot-yaml'
 import pickBrowserSessionId from '@/services/harness/browser/pick-browser-session-id'
 import prepareBrowserContext from '@/services/harness/browser/prepare-browser-context'
@@ -15,24 +15,50 @@ import type { ToolImagePart } from '@/types/harness/tool-image-part'
 const browserSnapshot = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Capture an accessibility snapshot of the active browser tab. Returns YAML-like tree text and snapshotId for ref-based interactions. Optionally take a screenshot afterwards.',
-      [{ take_screenshot_afterwards: false }, { viewId: 'TAB_ID' }],
+      'Capture an accessibility snapshot. Call after every DOM-changing action. Use snapshot refs for clicks, not screenshots. includeDiff is accepted but diffs are not supported. take_screenshot_afterwards is an optional visual check only.',
+      [{ take_screenshot_afterwards: false }, { interactive: true, compact: true }],
     ),
     inputSchema: z.object({
       session_id: z
         .string()
         .optional()
         .describe('CEF session id; defaults to last interacted'),
-      viewId: z
-        .string()
-        .optional()
-        .describe('Legacy alias for session_id'),
+      viewId: z.string().optional().describe('Legacy alias for session_id'),
       take_screenshot_afterwards: z
         .boolean()
         .optional()
-        .describe('If true, include a screenshot imagePart after the snapshot'),
+        .describe('Optional visual check only; do not use for targeting'),
+      interactive: z
+        .boolean()
+        .optional()
+        .describe('If true, keep interactive roles and their ancestors'),
+      maxDepth: z.number().optional().describe('Max tree depth (0 is the root)'),
+      compact: z
+        .boolean()
+        .optional()
+        .describe('Drop nameless generic leaf nodes'),
+      selector: z
+        .string()
+        .optional()
+        .describe('CSS selector; keep matching DOM nodes and ancestors'),
+      includeDiff: z
+        .boolean()
+        .optional()
+        .describe('Not supported; returns diffSupported: false when true'),
     }),
-    execute: async ({ session_id, viewId, take_screenshot_afterwards }, { toolCallId }) => {
+    execute: async (
+      {
+        session_id,
+        viewId,
+        take_screenshot_afterwards,
+        interactive,
+        maxDepth,
+        compact,
+        selector,
+        includeDiff,
+      },
+      { toolCallId },
+    ) => {
       const allowed = await gateToolPermission({
         ctx: toPermCtx(ctx),
         toolCallId,
@@ -61,29 +87,32 @@ const browserSnapshot = (ctx: HarnessToolContext) =>
       const snapshot = await getAccessibilitySnapshot(
         prepared.browser.client,
         session.sessionId,
+        { interactive, maxDepth, compact, selector },
       )
       const yaml = formatSnapshotYaml(snapshot.nodes)
+      const imageParts = await attachScreenshotAfterwards(
+        prepared.browser.client,
+        session.sessionId,
+        take_screenshot_afterwards,
+      )
 
       const result: {
         snapshotId: string
         viewId: string
         yaml: string
         imageParts?: ToolImagePart[]
+        diffSupported?: false
       } = {
         snapshotId: snapshot.snapshotId,
         viewId: session.viewId,
         yaml,
       }
-
-      if (take_screenshot_afterwards) {
-        const shot = await takeScreenshot(
-          prepared.browser.client,
-          session.sessionId,
-        )
-        const imagePart = await saveScreenshot(shot.data)
-        result.imageParts = [imagePart]
+      if (imageParts) {
+        result.imageParts = imageParts
       }
-
+      if (includeDiff) {
+        result.diffSupported = false
+      }
       return result
     },
   })

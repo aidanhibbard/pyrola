@@ -6,6 +6,7 @@ type ClickOptions = {
   offsetX?: number
   offsetY?: number
   modifiers?: number
+  holdDurationMs?: number
 }
 
 export type { ClickOptions }
@@ -78,6 +79,34 @@ export const keyDefinition = (
   }
 }
 
+export const modifierMask = (modifiers: string[] | undefined): number => {
+  if (!modifiers || modifiers.length === 0) {
+    return 0
+  }
+  let mask = 0
+  for (const name of modifiers) {
+    switch (name.toLowerCase()) {
+      case 'alt':
+        mask |= 1
+        break
+      case 'ctrl':
+      case 'control':
+        mask |= 2
+        break
+      case 'meta':
+      case 'command':
+        mask |= 4
+        break
+      case 'shift':
+        mask |= 8
+        break
+      default:
+        break
+    }
+  }
+  return mask
+}
+
 export const dispatchClickAt = async (
   client: CdpClient,
   sessionId: string,
@@ -101,6 +130,11 @@ export const dispatchClickAt = async (
     },
     sessionId,
   )
+  if (options.holdDurationMs && options.holdDurationMs > 0) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, options.holdDurationMs)
+    })
+  }
   await client.send(
     'Input.dispatchMouseEvent',
     {

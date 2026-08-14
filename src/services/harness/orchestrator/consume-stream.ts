@@ -4,6 +4,7 @@ import { rejectPendingForChat } from '@/services/harness/permission/approval-gat
 import { rejectPendingQuestionsForChat } from '@/services/harness/permission/question-gate'
 import { rejectPendingMcpAuthForChat } from '@/services/mcp/mcp-auth-gate'
 import enrichToolError from '@/services/harness/enrich-tool-error'
+import { releaseLocksForChat } from '@/services/browser/registry'
 import { killShellsForChat } from '@/services/harness/shell/registry'
 import { abort as abortSubagentsForChat } from '@/services/harness/subagent/registry'
 import {
@@ -64,6 +65,7 @@ export default async (prepared: PreparedHarnessStream): Promise<void> => {
       rejectPendingForChat(chatId)
       rejectPendingQuestionsForChat(chatId)
       rejectPendingMcpAuthForChat(chatId)
+      releaseLocksForChat(chatId, 'aborted')
       await killShellsForChat(chatId)
       abortSubagentsForChat(chatId)
       if (steps.trailingText || steps.assistantReasoning) {

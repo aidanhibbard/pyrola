@@ -1,0 +1,105 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { HarnessStreamInput } from '@/types/harness/harness-stream-input'
+import { mockPyrolaTauri } from '../../../test-utils/mocks/pyrola-tauri'
+
+const releaseLocksForChat = vi.hoisted(() =>
+  vi.fn<(chatId: string, cancelled?: string) => void>(),
+)
+const hasRunningSubagentsForChat = vi.hoisted(() =>
+  vi.fn<(chatId: string) => boolean>(),
+)
+const consumeStream = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<void>>().mockResolvedValue(undefined),
+)
+const prepareStream = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<unknown>>().mockResolvedValue({
+    steps: { stepCount: 0 },
+  }),
+)
+const updateChatMeta = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<unknown>>().mockResolvedValue(undefined),
+)
+
+vi.mock('@/services/pyrola/pyrola-tauri', () =>
+  mockPyrolaTauri({
+    updateChatMeta: (...args: unknown[]) => updateChatMeta(...args),
+  }),
+)
+
+vi.mock('@/services/browser/registry', () => ({
+  releaseLocksForChat: (...args: unknown[]) =>
+    releaseLocksForChat(...(args as [string, string?])),
+}))
+
+vi.mock('@/services/harness/permission/approval-gate', () => ({
+  rejectPendingForChat: vi.fn<() => void>(),
+}))
+
+vi.mock('@/services/harness/permission/question-gate', () => ({
+  rejectPendingQuestionsForChat: vi.fn<() => void>(),
+}))
+
+vi.mock('@/services/mcp/mcp-auth-gate', () => ({
+  rejectPendingMcpAuthForChat: vi.fn<() => void>(),
+}))
+
+vi.mock('@/services/harness/shell/registry', () => ({
+  setAgentShellEventEmitter: vi.fn<() => void>(),
+}))
+
+vi.mock('@/services/harness/subagent/registry', () => ({
+  hasRunningSubagentsForChat: (chatId: string) =>
+    hasRunningSubagentsForChat(chatId),
+}))
+
+vi.mock('@/services/harness/orchestrator/consume-stream', () => ({
+  default: (...args: unknown[]) => consumeStream(...args),
+}))
+
+vi.mock('@/services/harness/orchestrator/prepare-stream', () => ({
+  default: (...args: unknown[]) => prepareStream(...args),
+}))
+
+import runStream from '@/services/harness/orchestrator/stream'
+
+const buildInput = (signal: AbortSignal): HarnessStreamInput =>
+  ({
+    projectSlug: 'proj',
+    chatId: 'chat-1',
+    signal,
+    onEvent: vi.fn<(...args: unknown[]) => void>(),
+  }) as unknown as HarnessStreamInput
+
+describe('harness stream lock release', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    consumeStream.mockResolvedValue(undefined)
+    prepareStream.mockResolvedValue({ steps: { stepCount: 0 } })
+    updateChatMeta.mockResolvedValue(undefined)
+    hasRunningSubagentsForChat.mockReturnValue(false)
+  })
+
+  it('releases locks with run_complete when the chat is idle', async () => {
+    await runStream(buildInput(new AbortController().signal))
+
+    expect(releaseLocksForChat).toHaveBeenCalledWith('chat-1', 'run_complete')
+  })
+
+  it('keeps the lock when waiting on background subagents', async () => {
+    hasRunningSubagentsForChat.mockReturnValue(true)
+
+    await runStream(buildInput(new AbortController().signal))
+
+    expect(releaseLocksForChat).not.toHaveBeenCalled()
+  })
+
+  it('releases locks with aborted when the stream is aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    hasRunningSubagentsForChat.mockReturnValue(true)
+
+    await runStream(buildInput(controller.signal))
+
+    expect(releaseLocksForChat).toHaveBeenCalledWith('chat-1', 'aborted')
+  })
+})

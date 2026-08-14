@@ -235,17 +235,23 @@ export const openChanges = async (projectId: string): Promise<void> => {
   focusTab(tab.id)
 }
 
-export const openBrowser = async (projectId: string): Promise<void> => {
+export const openBrowser = async (
+  projectId: string,
+  options?: { focus?: boolean },
+): Promise<void> => {
   if (isHomeChatSlug(projectId)) {
     await ensureHomeRoot()
   }
 
+  const focus = options?.focus !== false
   const predicate = (tab: WorkbenchTab) =>
     tab.type === 'browser' && tab.projectId === projectId
   const existing = findTab(predicate)
 
   if (existing) {
-    focusTab(existing.id)
+    if (focus) {
+      focusTab(existing.id)
+    }
     return
   }
 
@@ -265,5 +271,7 @@ export const openBrowser = async (projectId: string): Promise<void> => {
     payload: { workspaceId: project.slug } satisfies BrowserPayload,
   }
   tabs.value.push(tab)
-  focusTab(tab.id)
+  if (focus) {
+    focusTab(tab.id)
+  }
 }

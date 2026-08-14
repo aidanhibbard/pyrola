@@ -41,7 +41,14 @@ export const setAgentShellEventEmitter = (
 }
 
 const emitHarnessEvent = (chatId: string, event: HarnessEvent): void => {
-  eventEmitters.get(chatId)?.(event)
+  if (!eventEmitters.has(chatId)) {
+    return
+  }
+  const emitter = eventEmitters.get(chatId)
+  if (typeof emitter !== 'function') {
+    return
+  }
+  emitter(event)
 }
 
 const setShellStatus = (

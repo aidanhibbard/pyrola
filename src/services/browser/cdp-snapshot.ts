@@ -1,4 +1,8 @@
 import type CdpClient from '@/services/browser/cdp-client'
+import pruneSnapshotTree from '@/services/browser/prune-snapshot-tree'
+import filterSnapshotByBackendIds from '@/services/browser/filter-snapshot-by-backend-ids'
+import queryBackendNodeIds from '@/services/browser/query-backend-node-ids'
+import type { SnapshotCaptureOptions } from '@/types/browser/snapshot-capture-options'
 import type { AccessibilitySnapshot, SnapshotNode } from '@/types/browser/snapshot-node'
 
 type AxPropertyValue = {
@@ -45,6 +49,7 @@ const axString = (value: AxPropertyValue | undefined): string | null => {
 export const getAccessibilitySnapshot = async (
   client: CdpClient,
   sessionId: string,
+  options: SnapshotCaptureOptions = {},
 ): Promise<AccessibilitySnapshot> => {
   await client.send('Accessibility.enable', {}, sessionId)
   const result = (await client.send(
@@ -95,13 +100,39 @@ export const getAccessibilitySnapshot = async (
     }
   }
 
+  let nodes = roots
+  if (options.selector?.trim()) {
+    const backendIds = await queryBackendNodeIds(
+      client,
+      sessionId,
+      options.selector.trim(),
+    )
+    nodes = filterSnapshotByBackendIds(nodes, backendIds)
+  }
+  nodes = pruneSnapshotTree(nodes, {
+    interactive: options.interactive,
+    maxDepth: options.maxDepth,
+    compact: options.compact,
+  })
+
+  const nodesByRef = new Map<string, SnapshotNode>()
+  const collect = (node: SnapshotNode): void => {
+    nodesByRef.set(node.ref, node)
+    for (const child of node.children) {
+      collect(child)
+    }
+  }
+  for (const node of nodes) {
+    collect(node)
+  }
+
   const snapshotId = crypto.randomUUID()
   lastSnapshots.set(sessionId, {
     snapshotId,
-    nodesByRef: byId,
+    nodesByRef,
   })
 
-  return { snapshotId, nodes: roots }
+  return { snapshotId, nodes }
 }
 
 export const getSnapshotNode = (
@@ -123,6 +154,7 @@ export const resolveRef = async (
     return null
   }
 
+  await client.send('DOM.enable', {}, sessionId)
   const resolved = (await client.send(
     'DOM.resolveNode',
     { backendNodeId: node.backendDOMNodeId },

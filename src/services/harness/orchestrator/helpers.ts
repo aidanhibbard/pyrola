@@ -4,6 +4,7 @@ import type { SubagentResult } from '@/types/harness/subagent-record'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
 import { fileDiffListSchema } from '@/schemas/file-diff'
 import buildTools from '@/services/harness/build-tools'
+import formatToolValidationError from '@/services/harness/format-tool-validation-error'
 import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import {
   PLAN_GO_BLOCKED_TOOLS,
@@ -60,6 +61,10 @@ export const resolveStreamError = (error: unknown): Error => {
 }
 
 export const resolveToolErrorMessage = (error: unknown): string => {
+  const validation = formatToolValidationError(error)
+  if (validation) {
+    return validation
+  }
   if (error instanceof Error) {
     return error.message
   }

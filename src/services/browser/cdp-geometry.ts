@@ -49,6 +49,7 @@ export const getBoxModelForObject = async (
   sessionId: string,
   objectId: string,
 ): Promise<BoundingBox | null> => {
+  await client.send('DOM.enable', {}, sessionId)
   const result = (await client.send(
     'DOM.getBoxModel',
     { objectId },
@@ -87,6 +88,9 @@ export const highlight = async (
     throw new Error(`Unable to resolve ref: ${ref}`)
   }
 
+  await client.send('DOM.enable', {}, sessionId)
+  await client.send('DOM.getDocument', { depth: 0 }, sessionId)
+  await client.send('CSS.enable', {}, sessionId)
   await client.send('Overlay.enable', {}, sessionId)
   await client.send(
     'Overlay.highlightNode',

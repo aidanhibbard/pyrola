@@ -41,21 +41,30 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   spawn_subagent: 'Spawn sub-agent (background: end turn, harness resumes)',
   resolve_models:
     'Look up allowed model refs by query and optional provider (capped)',
-  browser_tabs: 'List or select CEF browser sessions (workbench Browser tabs)',
-  browser_navigate: 'Navigate a CEF browser session to a URL (auto-acquires per-session lock when free)',
-  browser_lock: 'Acquire or release a per-session CEF browser lock for this chat',
-  browser_snapshot: 'Capture an accessibility snapshot of a CEF browser session',
-  browser_take_screenshot: 'Capture a PNG screenshot of a CEF browser session or an element',
-  browser_click: 'Click an element by snapshot ref',
-  browser_type: 'Type text into an element by snapshot ref',
-  browser_fill: 'Clear and fill an input by snapshot ref',
-  browser_select_option: 'Select an option on a select element by snapshot ref',
-  browser_press_key: 'Press a key in a CEF browser session',
-  browser_scroll: 'Scroll the page or an element into view',
-  browser_drag: 'Drag from a source ref to a target ref or coordinates',
+  browser_tabs:
+    'List CEF pages, then lock a session_id. If none exist, new (or browser_navigate) may open the workbench browser. Omit position unless the user asked to focus.',
+  browser_navigate:
+    'Navigate a CEF session (auto-lock when free). Omit position unless the user asked to reveal the browser. Snapshot afterwards.',
+  browser_lock:
+    'Lock a CEF session. The harness holds the lock for this run and releases it when the run ends (or the user Takes Control / Stop). Do not unlock. wait:true queues FIFO; wait:false (default) bails with browser_locked.',
+  browser_snapshot:
+    'Accessibility snapshot after DOM-changing actions. Use refs for clicks, not screenshots.',
+  browser_take_screenshot:
+    'Optional visual check (PNG/JPEG). Do not use screenshots to target clicks.',
+  browser_click:
+    'Click by snapshot ref. Prefer this over browser_mouse_click_xy. Snapshot afterwards.',
+  browser_mouse_click_xy:
+    'Click viewport coordinates. Prefer browser_click with a snapshot ref.',
+  browser_type: 'Type into an element by snapshot ref. Snapshot afterwards.',
+  browser_fill: 'Clear and fill an input by snapshot ref. Snapshot afterwards.',
+  browser_select_option: 'Select an option by snapshot ref. Snapshot afterwards.',
+  browser_press_key: 'Press a key in a CEF session. Snapshot afterwards if the DOM changes.',
+  browser_scroll: 'Scroll the page or an element into view. Snapshot afterwards if the DOM changes.',
+  browser_drag: 'Drag from a source ref to a target ref or coordinates. Snapshot afterwards.',
   browser_get_bounding_box: 'Get the bounding box for a snapshot ref',
   browser_highlight: 'Briefly highlight an element by snapshot ref',
-  browser_cdp: 'Send a raw Chrome DevTools Protocol method (restricted denylist)',
+  browser_cdp:
+    'Raw CDP (restricted). Prefer dedicated browser_* tools. Input.* denied. Runtime.evaluate expression is a JS string (wrong: nested { expression: { expression: "..." } }; right: expression: "document.title"). Snapshot after DOM changes.',
   web_fetch:
     'Fetch an http(s) URL as markdown, text, or html (not the CEF browser; use browser_* for JS SPAs)',
 }

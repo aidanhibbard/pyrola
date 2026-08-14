@@ -49,6 +49,16 @@ describe('openBrowser', () => {
     expect(activeTabId.value).toBe(tab.id)
   })
 
+  it('creates a browser tab without stealing focus when focus is false', async () => {
+    const { openBrowser } = await import('@/composables/workbench-store/open-tabs')
+    const { tabs, activeTabId } = await import('@/composables/workbench-store/state')
+
+    await openBrowser(project.id, { focus: false })
+
+    expect(tabs.value).toHaveLength(1)
+    expect(activeTabId.value).toBeNull()
+  })
+
   it('reuses an existing browser tab for the same project', async () => {
     const { openBrowser } = await import('@/composables/workbench-store/open-tabs')
     const { tabs, activeTabId } = await import('@/composables/workbench-store/state')

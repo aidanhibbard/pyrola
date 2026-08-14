@@ -1,7 +1,6 @@
 import {
   computed,
   onBeforeUnmount,
-  onMounted,
   ref,
   watch,
 } from 'vue'
@@ -10,15 +9,12 @@ import createBrowserTabSession from '@/composables/create-browser-tab-session'
 import useBrowserBookmarks from '@/composables/use-browser-bookmarks'
 import useBrowserConsole from '@/composables/use-browser-console'
 import useBrowserElementSelect from '@/composables/use-browser-element-select'
+import useBrowserHostResize from '@/composables/use-browser-host-resize'
+import useBrowserLockOverlay from '@/composables/use-browser-lock-overlay'
 import useBrowserNavigation from '@/composables/use-browser-navigation'
 import useBrowserPassthroughSuspend from '@/composables/use-browser-passthrough-suspend'
 import useBrowserToolbar from '@/composables/use-browser-toolbar'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import {
-  browserRegistryRevision,
-  getSessionLock,
-  takeControl,
-} from '@/services/browser/registry'
 
 export default (workspaceId: string, tabId: string) => {
   const workbench = useWorkbenchStore()
@@ -34,8 +30,6 @@ export default (workspaceId: string, tabId: string) => {
   const hasPage = ref(false)
   const pageTitle = ref('')
   const pageUrl = ref('')
-
-  let resizeObserver: ResizeObserver | null = null
 
   const isTabActive = computed(
     () => workbench.activeTabId.value === tabId,
@@ -64,11 +58,9 @@ export default (workspaceId: string, tabId: string) => {
     hostEl,
   })
 
-  const activeLock = computed(() => {
-    const sessionId = session.cefSessionId.value
-    const lock = sessionId ? getSessionLock(sessionId) : null
-    // Depend on registry revision so Take Control UI updates.
-    return browserRegistryRevision.value >= 0 ? lock : null
+  const lockOverlay = useBrowserLockOverlay({
+    getCefSessionId: session.getCefSessionId,
+    cefSessionId: session.cefSessionId,
   })
 
   const bookmarksApi = useBrowserBookmarks(workspaceId, currentUrl)
@@ -101,20 +93,12 @@ export default (workspaceId: string, tabId: string) => {
     recordHistoryUrl: toolbar.recordHistoryUrl,
   })
 
-  const handleTakeControl = (): void => {
-    const sessionId = session.getCefSessionId()
-    if (!sessionId) {
-      toast.error('No browser session to take control of')
-      return
-    }
-    try {
-      takeControl(sessionId)
-    } catch (error) {
-      toast.error('Failed to take control', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
+  const pages = useBrowserPages({
+    workspaceId,
+    getActiveSessionId: session.getCefSessionId,
+    switchToSession: session.switchToSession,
+    detachActiveSession: session.detachActiveSession,
+  })
 
   const bootstrap = async (): Promise<void> => {
     starting.value = true
@@ -153,11 +137,7 @@ export default (workspaceId: string, tabId: string) => {
     session.stopPolling()
     elementSelect.stopElementSelect()
     consoleApi.detachConsole()
-    if (resizeObserver) {
-      resizeObserver.disconnect()
-      resizeObserver = null
-    }
-    session.destroyCefSession().catch((error: unknown) => {
+    session.destroyAllSessions().catch((error: unknown) => {
       toast.error('Failed to close browser view', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
@@ -211,45 +191,12 @@ export default (workspaceId: string, tabId: string) => {
     },
   )
 
-  const attachResizeObserver = (el: HTMLElement): void => {
-    if (resizeObserver) {
-      resizeObserver.disconnect()
-      resizeObserver = null
-    }
-    resizeObserver = new ResizeObserver(() => {
-      // Keep CEF hidden when there is no page; resizing to host bounds would
-      // reveal a blank native view through the transparent hole.
-      const resize = hasPage.value
-        ? session.resizeToHost()
-        : session.hideCefView()
-      resize.catch((error: unknown) => {
-        toast.error(
-          hasPage.value
-            ? 'Failed to resize browser'
-            : 'Failed to hide browser view',
-          {
-            description:
-              error instanceof Error ? error.message : 'Unknown error',
-          },
-        )
-      })
-    })
-    resizeObserver.observe(el)
-  }
-
-  watch(hostEl, (el) => {
-    if (!el) {
-      resizeObserver?.disconnect()
-      resizeObserver = null
-      return
-    }
-    attachResizeObserver(el)
-  })
-
-  onMounted(() => {
-    if (hostEl.value && !resizeObserver) {
-      attachResizeObserver(hostEl.value)
-    }
+  const { layoutBusy } = useBrowserHostResize({
+    hostEl,
+    hasPage,
+    getCefSessionId: session.getCefSessionId,
+    hideCefView: session.hideCefView,
+    resizeToHost: session.resizeToHost,
   })
 
   onBeforeUnmount(() => {
@@ -269,13 +216,18 @@ export default (workspaceId: string, tabId: string) => {
     hostEl,
     cefReady,
     hasPage,
-    activeLock,
+    layoutBusy,
+    activeLock: lockOverlay.activeLock,
+    lockOwnerTitle: lockOverlay.ownerTitle,
+    lockOwnerSubagentLabel: lockOverlay.ownerSubagentLabel,
+    lockWaiterCount: lockOverlay.waiterCount,
     currentUrl,
     currentTabTitle,
     elementSelectMode: elementSelect.elementSelectMode,
     elementSelectDisabled: false,
     toggleElementSelect: elementSelect.toggleElementSelect,
-    handleTakeControl,
+    handleTakeControl: lockOverlay.handleTakeControl,
+    handleOpenOwnerChat: lockOverlay.handleOpenOwnerChat,
     handleNavigate: navigation.handleNavigate,
     handleBack: navigation.handleBack,
     handleForward: navigation.handleForward,
@@ -283,6 +235,11 @@ export default (workspaceId: string, tabId: string) => {
     handleAddressBlur,
     bootstrap,
     cleanup,
+    pages: pages.pages,
+    activePageSessionId: pages.activeSessionId,
+    selectPage: pages.selectPage,
+    closePage: pages.closePage,
+    addPage: pages.addPage,
     ...bookmarksApi,
     consoleOpen: consoleApi.consoleOpen,
     lines: consoleApi.lines,

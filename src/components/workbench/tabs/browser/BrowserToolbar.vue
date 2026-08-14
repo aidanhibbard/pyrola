@@ -16,7 +16,6 @@ import {
   Trash2,
   X,
 } from '@lucide/vue'
-import { Badge } from '@/components/shadcn/ui/badge'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   DropdownMenu,
@@ -31,7 +30,6 @@ import {
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
 import type { BrowserBookmark } from '@/services/browser/bookmarks'
-import type { BrowserLock } from '@/types/browser/browser-lock'
 import { faviconForUrl } from '@/utils/browser-tab-url'
 
 defineProps<{
@@ -48,7 +46,6 @@ defineProps<{
   showBookmarkBar: boolean
   bookmarks: BrowserBookmark[]
   historyUrls: string[]
-  activeLock: BrowserLock | null
 }>()
 
 const emit = defineEmits<{
@@ -72,7 +69,6 @@ const emit = defineEmits<{
   'clear-cache': []
   'refresh-history': []
   'remove-bookmark': [url: string]
-  'take-control': []
 }>()
 
 const passthroughSuspend = useBrowserPassthroughSuspend()
@@ -187,7 +183,7 @@ onBeforeUnmount(() => {
         type="text"
         class="h-8 w-full rounded-full bg-muted/50 px-3 text-sm text-foreground outline-none focus:bg-muted"
         placeholder="Enter URL or search"
-        :disabled="starting || !cefReady"
+        :disabled="starting"
         @input="emit('update:addressBarValue', ($event.target as HTMLInputElement).value)"
         @keydown.enter.prevent="emit('navigate')"
         @blur="emit('blur-address')"
@@ -334,22 +330,5 @@ onBeforeUnmount(() => {
       </TooltipTrigger>
       <TooltipContent class="z-60">Bookmarks and history</TooltipContent>
     </Tooltip>
-
-    <Badge
-      v-if="activeLock"
-      variant="secondary"
-      class="text-[10px] font-normal"
-    >
-      Locked by {{ activeLock.ownerChatId.slice(0, 8) }}
-    </Badge>
-    <Button
-      v-if="activeLock"
-      variant="ghost"
-      size="sm"
-      class="h-7"
-      @click="emit('take-control')"
-    >
-      Take Control
-    </Button>
   </div>
 </template>

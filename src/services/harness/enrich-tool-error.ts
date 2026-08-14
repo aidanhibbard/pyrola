@@ -23,6 +23,10 @@ const ERROR_HINTS: Array<{ pattern: RegExp; hint: string }> = [
     pattern: /command failed/i,
     hint: 'The shell command returned a non-zero exit code. Check stderr and prefer edit_file/write_file for file changes.',
   },
+  {
+    pattern: /-32602|invalid_cdp_params|params\.expression/i,
+    hint: 'For Runtime.evaluate, params.expression must be a JavaScript source string (e.g. "document.title"), never { expression: "..." }.',
+  },
 ]
 
 export default (message: string): string => {

@@ -61,4 +61,33 @@ describe('agent shell event emitters per chat', () => {
     expect(eventsA.some((event) => event.type === 'terminal-output')).toBe(true)
     expect(eventsB).toHaveLength(0)
   })
+
+  it('does not throw or invoke another chat emitter for an unknown chatId', async () => {
+    const { createAgentShell, setAgentShellEventEmitter } = await import(
+      '@/services/harness/shell/registry'
+    )
+
+    const eventsA: HarnessEvent[] = []
+    setAgentShellEventEmitter('chat-a', (event) => {
+      eventsA.push(event)
+    })
+
+    const unknownShell = await createAgentShell({
+      chatId: 'chat-unknown',
+      projectRoot: '/project',
+      command: 'echo unknown',
+    })
+
+    const { listen } = await import('@tauri-apps/api/event')
+    const listenMock = listen as unknown as ReturnType<typeof vi.fn>
+    const outputHandler = listenMock.mock.calls.find(
+      (call) => call[0] === `shell-output-${unknownShell.shellId}`,
+    )?.[1] as ((event: { payload: { stream: 'stdout' | 'stderr'; data: string } }) => void) | undefined
+
+    expect(outputHandler).toBeTypeOf('function')
+    expect(() => {
+      outputHandler?.({ payload: { stream: 'stdout', data: 'from-unknown' } })
+    }).not.toThrow()
+    expect(eventsA).toHaveLength(0)
+  })
 })

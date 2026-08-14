@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { fill } from '@/services/browser/cdp-ops'
+import attachScreenshotAfterwards from '@/services/harness/browser/attach-screenshot-afterwards'
 import pickBrowserSessionId from '@/services/harness/browser/pick-browser-session-id'
 import prepareBrowserContext from '@/services/harness/browser/prepare-browser-context'
 import resolveBrowserSession from '@/services/harness/browser/resolve-browser-session'
@@ -12,7 +13,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserFill = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Clear and fill an input by snapshot ref.',
+      'Clear and fill an input by snapshot ref. Snapshot afterwards. take_screenshot_afterwards is an optional visual check only.',
       [{ ref: 'e5', value: 'user@example.com' }],
     ),
     inputSchema: z.object({
@@ -26,8 +27,12 @@ const browserFill = (ctx: HarnessToolContext) =>
         .string()
         .optional()
         .describe('Legacy alias for session_id'),
+      take_screenshot_afterwards: z
+        .boolean()
+        .optional()
+        .describe('Optional visual check only; do not use for targeting'),
     }),
-    execute: async ({ ref, value, session_id, viewId }, { toolCallId }) => {
+    execute: async ({ ref, value, session_id, viewId, take_screenshot_afterwards }, { toolCallId }) => {
       const allowed = await gateToolPermission({
         ctx: toPermCtx(ctx),
         toolCallId,
@@ -54,7 +59,12 @@ const browserFill = (ctx: HarnessToolContext) =>
       }
 
       await fill(prepared.browser.client, session.sessionId, ref, value)
-      return { ok: true, ref, viewId: session.viewId }
+      const imageParts = await attachScreenshotAfterwards(
+        prepared.browser.client,
+        session.sessionId,
+        take_screenshot_afterwards,
+      )
+      return { ok: true, ref, viewId: session.viewId, ...(imageParts ? { imageParts } : {}) }
     },
   })
 

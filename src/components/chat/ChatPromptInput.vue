@@ -496,6 +496,8 @@ watch(
       </DropdownMenuContent>
     </DropdownMenu>
 
+    <ChatBrowserLockChip class="mb-2" />
+
     <div
       v-if="isEditing"
       class="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground"

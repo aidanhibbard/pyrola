@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { pressKey } from '@/services/browser/cdp-ops'
+import attachScreenshotAfterwards from '@/services/harness/browser/attach-screenshot-afterwards'
 import pickBrowserSessionId from '@/services/harness/browser/pick-browser-session-id'
 import prepareBrowserContext from '@/services/harness/browser/prepare-browser-context'
 import resolveBrowserSession from '@/services/harness/browser/resolve-browser-session'
@@ -12,7 +13,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserPressKey = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Press a key in the shared browser (optionally with modifiers).',
+      'Press a key in a CEF session (optionally with modifiers). Snapshot afterwards if the DOM changes. take_screenshot_afterwards is an optional visual check only.',
       [{ key: 'Enter' }, { key: 'a', modifiers: 4 }],
     ),
     inputSchema: z.object({
@@ -29,8 +30,12 @@ const browserPressKey = (ctx: HarnessToolContext) =>
         .string()
         .optional()
         .describe('Legacy alias for session_id'),
+      take_screenshot_afterwards: z
+        .boolean()
+        .optional()
+        .describe('Optional visual check only; do not use for targeting'),
     }),
-    execute: async ({ key, modifiers, session_id, viewId }, { toolCallId }) => {
+    execute: async ({ key, modifiers, session_id, viewId, take_screenshot_afterwards }, { toolCallId }) => {
       const allowed = await gateToolPermission({
         ctx: toPermCtx(ctx),
         toolCallId,
@@ -57,7 +62,12 @@ const browserPressKey = (ctx: HarnessToolContext) =>
       }
 
       await pressKey(prepared.browser.client, session.sessionId, key, modifiers ?? 0)
-      return { ok: true, key, viewId: session.viewId }
+      const imageParts = await attachScreenshotAfterwards(
+        prepared.browser.client,
+        session.sessionId,
+        take_screenshot_afterwards,
+      )
+      return { ok: true, key, viewId: session.viewId, ...(imageParts ? { imageParts } : {}) }
     },
   })
 

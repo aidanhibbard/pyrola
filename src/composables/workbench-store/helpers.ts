@@ -62,6 +62,14 @@ export const resolveProjectIdByRoot = (projectRoot: string): string | null => {
   return fleet.projects.value.find((p) => p.rootPath === projectRoot)?.id ?? null
 }
 
+export const resolveProjectIdBySlug = (slug: string): string | null => {
+  if (isHomeChatSlug(slug)) {
+    return HOME_WORKSPACE_ID
+  }
+  const fleet = useFleetRegistry()
+  return fleet.projects.value.find((p) => p.slug === slug)?.id ?? null
+}
+
 export const ensureSidebarOpen = (): void => {
   rightSidebarOpen.value = true
 }

@@ -3,15 +3,17 @@ import { toast } from 'vue-sonner'
 import createBrowserTabSessionView from '@/composables/create-browser-tab-session-view'
 import useBrowserPassthroughSuspend from '@/composables/use-browser-passthrough-suspend'
 import type CdpClient from '@/services/browser/cdp-client'
+import destroyCefSessionService from '@/services/browser/destroy-cef-session'
+import ensureWorkspaceCefSession from '@/services/browser/ensure-workspace-cef-session'
 import {
   getSessionCdpClient,
+  listTabs,
   registerCefSession,
   setLastInteractedViewId,
 } from '@/services/browser/registry'
 import {
   browserCefCanGoBack,
   browserCefCanGoForward,
-  browserCefCreate,
   browserCefGetTitle,
   browserCefGetUrl,
   browserCefResize,
@@ -160,6 +162,9 @@ export default (args: BrowserTabSessionArgs) => {
     clearSessionId: () => {
       cefSessionId.value = null
     },
+    setSessionId: (sessionId) => {
+      cefSessionId.value = sessionId
+    },
     setCreated: (value) => {
       created = value
     },
@@ -188,29 +193,17 @@ export default (args: BrowserTabSessionArgs) => {
       return true
     }
 
-    const resolved =
-      bounds
-      ?? readBrowserHostBounds(args.hostEl.value)
-      ?? { x: 0, y: 0, width: 1, height: 1 }
-
     try {
-      const sessionId = await browserCefCreate(resolved)
+      const sessionId = await ensureWorkspaceCefSession(args.workspaceId)
       cefSessionId.value = sessionId
       created = true
-      lastBounds = resolved
-      registerCefSession({
-        sessionId,
-        workspaceId: args.workspaceId,
-        url: 'about:blank',
-        title: null,
-      })
-      setLastInteractedViewId(args.workspaceId, sessionId)
+      lastBounds =
+        bounds
+        ?? readBrowserHostBounds(args.hostEl.value)
+        ?? lastBounds
       args.cefReady.value = true
       args.hasPage.value = false
-      args.addressBarValue.value = ''
       args.pageUrl.value = 'about:blank'
-      // Always hide until navigate sets hasPage and showCefView runs. CEF is
-      // behind the webview; keep it off-screen and clear passthrough for Empty.
       await browserCefResize(sessionId, BROWSER_HIDDEN_BOUNDS)
       await syncPassthroughRects()
       return true
@@ -219,6 +212,46 @@ export default (args: BrowserTabSessionArgs) => {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
       return false
+    }
+  }
+
+  const switchToSession = async (sessionId: string): Promise<void> => {
+    if (!sessionId) {
+      stopPolling()
+      cefSessionId.value = null
+      created = false
+      args.cefReady.value = false
+      args.hasPage.value = false
+      args.addressBarValue.value = ''
+      args.pageUrl.value = 'about:blank'
+      await view.hideCefView()
+      await focusAddressBar(args.addressInputRef)
+      return
+    }
+    await view.switchToSession(sessionId)
+    await refreshState()
+    if (args.isTabActive.value && args.hasPage.value) {
+      await view.showCefView()
+    } else {
+      await view.hideCefView()
+    }
+  }
+
+  const destroyAllSessions = async (): Promise<void> => {
+    stopPolling()
+    const ids = listTabs(args.workspaceId).map((tab) => tab.viewId)
+    cefSessionId.value = null
+    created = false
+    args.cefReady.value = false
+    args.hasPage.value = false
+    for (const sessionId of ids) {
+      try {
+        await destroyCefSessionService(sessionId)
+      } catch (error) {
+        toast.error('Failed to destroy browser view', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
     }
   }
 
@@ -248,8 +281,11 @@ export default (args: BrowserTabSessionArgs) => {
     hideCefView: view.hideCefView,
     showCefView: view.showCefView,
     resizeToHost: view.resizeToHost,
+    detachActiveSession: view.detachActiveSession,
     ensureCefSession,
+    switchToSession,
     destroyCefSession: view.destroyCefSession,
+    destroyAllSessions,
     closeCefView: view.closeCefView,
     markNavigated,
     syncPassthroughRects,

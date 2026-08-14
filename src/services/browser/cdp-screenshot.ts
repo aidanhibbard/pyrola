@@ -29,10 +29,15 @@ export const takeScreenshot = async (
     fullPage?: boolean
     ref?: string
     clip?: ScreenshotClip
+    type?: 'png' | 'jpeg'
   } = {},
 ): Promise<ScreenshotResult> => {
+  const format = args.type === 'jpeg' ? 'jpeg' : 'png'
   const params: Record<string, unknown> = {
-    format: 'png',
+    format,
+  }
+  if (format === 'jpeg') {
+    params.quality = 80
   }
 
   if (args.clip) {
@@ -71,6 +76,6 @@ export const takeScreenshot = async (
 
   return {
     data: decodeBase64(result.data),
-    mimeType: 'image/png',
+    mimeType: format === 'jpeg' ? 'image/jpeg' : 'image/png',
   }
 }

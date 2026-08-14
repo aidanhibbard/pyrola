@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { drag } from '@/services/browser/cdp-ops'
+import attachScreenshotAfterwards from '@/services/harness/browser/attach-screenshot-afterwards'
 import pickBrowserSessionId from '@/services/harness/browser/pick-browser-session-id'
 import prepareBrowserContext from '@/services/harness/browser/prepare-browser-context'
 import resolveBrowserSession from '@/services/harness/browser/resolve-browser-session'
@@ -12,7 +13,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserDrag = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Drag from a source snapshot ref to a target ref or coordinates.',
+      'Drag from a source snapshot ref to a target ref or coordinates. Snapshot afterwards. take_screenshot_afterwards is an optional visual check only.',
       [{ sourceRef: 'e1', targetRef: 'e2' }, { sourceRef: 'e1', targetX: 100, targetY: 200 }],
     ),
     inputSchema: z.object({
@@ -28,9 +29,13 @@ const browserDrag = (ctx: HarnessToolContext) =>
         .string()
         .optional()
         .describe('Legacy alias for session_id'),
+      take_screenshot_afterwards: z
+        .boolean()
+        .optional()
+        .describe('Optional visual check only; do not use for targeting'),
     }),
     execute: async (
-      { sourceRef, targetRef, targetX, targetY, session_id, viewId },
+      { sourceRef, targetRef, targetX, targetY, session_id, viewId, take_screenshot_afterwards },
       { toolCallId },
     ) => {
       const allowed = await gateToolPermission({
@@ -64,7 +69,12 @@ const browserDrag = (ctx: HarnessToolContext) =>
         targetX,
         targetY,
       })
-      return { ok: true, sourceRef, viewId: session.viewId }
+      const imageParts = await attachScreenshotAfterwards(
+        prepared.browser.client,
+        session.sessionId,
+        take_screenshot_afterwards,
+      )
+      return { ok: true, sourceRef, viewId: session.viewId, ...(imageParts ? { imageParts } : {}) }
     },
   })
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { asSchema } from 'ai'
 import type { PyrolaSettings } from '@/types/pyrola/pyrola-settings'
 import type { PendingApprovalView } from '@/services/harness/permission/gate'
 
@@ -35,6 +36,7 @@ const navigate = vi.fn<() => Promise<unknown>>()
 const getAccessibilitySnapshot = vi.fn<() => Promise<unknown>>()
 const takeScreenshot = vi.fn<() => Promise<unknown>>()
 const click = vi.fn<() => Promise<void>>()
+const clickAtPoint = vi.fn<() => Promise<void>>()
 const type = vi.fn<() => Promise<void>>()
 const fill = vi.fn<() => Promise<void>>()
 const selectOption = vi.fn<() => Promise<void>>()
@@ -46,6 +48,12 @@ const highlight = vi.fn<() => Promise<void>>()
 const applyUserAgentOverride = vi.fn<() => Promise<void>>()
 
 const saveScreenshot = vi.fn<() => Promise<unknown>>()
+
+vi.mock('@/composables/use-fleet-sidebar', () => ({
+  chatTitleForId: vi.fn<(chatId: string) => string | null>(() => null),
+  default: vi.fn<() => Record<string, never>>(),
+  refreshFleetSidebar: vi.fn<() => Promise<void>>(),
+}))
 
 vi.mock('@/services/harness/permission/gate', () => ({
   gateToolPermission,
@@ -65,6 +73,8 @@ vi.mock('@/services/browser/registry', () => ({
   registerCefSession,
   unregisterCefSession,
   takeControl: vi.fn<() => void>(),
+  releaseLocksForChat: vi.fn<() => void>(),
+  getSessionWaiters: vi.fn<() => unknown[]>(() => []),
   browserRegistryRevision: { value: 0 },
   resetBrowserRegistryForTests: vi.fn<() => void>(),
 }))
@@ -78,6 +88,7 @@ vi.mock('@/services/browser/cdp-ops', () => ({
   getAccessibilitySnapshot,
   takeScreenshot,
   click,
+  clickAtPoint,
   type,
   fill,
   selectOption,
@@ -99,6 +110,24 @@ vi.mock('@/services/browser/screenshot-store', () => ({
   default: saveScreenshot,
 }))
 
+const createCefSession = vi.fn<() => Promise<string>>(async () => 'cef-new')
+const destroyCefSession = vi.fn<() => Promise<void>>(async () => undefined)
+const ensureWorkbenchBrowser = vi.fn<() => Promise<{ ok: true }>>(async () => ({
+  ok: true,
+}))
+
+vi.mock('@/services/browser/create-cef-session', () => ({
+  default: createCefSession,
+}))
+
+vi.mock('@/services/browser/destroy-cef-session', () => ({
+  default: destroyCefSession,
+}))
+
+vi.mock('@/services/harness/browser/ensure-workbench-browser', () => ({
+  default: ensureWorkbenchBrowser,
+}))
+
 const BROWSER_TOOL_NAMES = [
   'browser_tabs',
   'browser_navigate',
@@ -106,6 +135,7 @@ const BROWSER_TOOL_NAMES = [
   'browser_snapshot',
   'browser_take_screenshot',
   'browser_click',
+  'browser_mouse_click_xy',
   'browser_type',
   'browser_fill',
   'browser_select_option',
@@ -122,10 +152,12 @@ describe('harness browser tools', () => {
     vi.clearAllMocks()
     gateToolPermission.mockResolvedValue(true)
     assertLockedBy.mockReturnValue({ ok: true })
-    acquireLock.mockReturnValue({ ok: true })
+    acquireLock.mockResolvedValue({ ok: true })
     releaseLock.mockReturnValue(undefined)
     getLastInteractedViewId.mockReturnValue('cef-1')
-    resolveSessionIdForWorkspace.mockReturnValue('cef-1')
+    resolveSessionIdForWorkspace.mockImplementation(
+      (_workspaceId: string, sessionId?: string) => sessionId?.trim() || 'cef-1',
+    )
     listTabs.mockReturnValue([
       {
         viewId: 'cef-1',
@@ -150,6 +182,7 @@ describe('harness browser tools', () => {
       path: '/tmp/shot.png',
     })
     click.mockResolvedValue(undefined)
+    clickAtPoint.mockResolvedValue(undefined)
     type.mockResolvedValue(undefined)
     fill.mockResolvedValue(undefined)
     selectOption.mockResolvedValue(undefined)
@@ -240,6 +273,7 @@ describe('harness browser tools', () => {
       workspaceId: 'project',
       chatId: 'chat-1',
       subagentId: undefined,
+      wait: false,
     })
     expect(navigate).toHaveBeenCalledWith(mockClient, '', 'https://example.com')
     expect(result).toMatchObject({
@@ -250,11 +284,12 @@ describe('harness browser tools', () => {
   })
 
   it('browser_navigate returns browser_locked when another chat holds the lock', async () => {
-    acquireLock.mockReturnValue({
+    acquireLock.mockResolvedValue({
       ok: false,
       error: 'browser_locked',
       ownerChatId: 'chat-other',
-      leaseExpiresAt: 123,
+      ownerTitle: null,
+      queueLength: 0,
     })
     const buildTools = (await import('@/services/harness/build-tools')).default
     const tools = buildTools(ctx)
@@ -266,7 +301,8 @@ describe('harness browser tools', () => {
     expect(result).toEqual({
       error: 'browser_locked',
       ownerChatId: 'chat-other',
-      leaseExpiresAt: 123,
+      ownerTitle: null,
+      queueLength: 0,
     })
     expect(navigate).not.toHaveBeenCalled()
   })
@@ -282,6 +318,7 @@ describe('harness browser tools', () => {
     expect(takeScreenshot).toHaveBeenCalledWith(mockClient, '', {
       fullPage: true,
       ref: undefined,
+      type: undefined,
     })
     expect(saveScreenshot).toHaveBeenCalled()
     expect(result).toMatchObject({
@@ -301,7 +338,8 @@ describe('harness browser tools', () => {
       workspaceId: 'project',
       chatId: 'chat-1',
       subagentId: undefined,
-      leaseMs: undefined,
+      wait: false,
+      signal: undefined,
     })
     expect(getSessionCdpClient).not.toHaveBeenCalled()
     expect(locked).toEqual({
@@ -321,6 +359,147 @@ describe('harness browser tools', () => {
       workspaceId: 'project',
       session_id: 'cef-1',
       viewId: 'cef-1',
+    })
+  })
+
+  it('browser_lock wait true parks via acquireLock', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    await runTool(tools.browser_lock.execute, { action: 'lock', wait: true })
+    expect(acquireLock).toHaveBeenCalledWith({
+      sessionId: 'cef-1',
+      workspaceId: 'project',
+      chatId: 'chat-1',
+      subagentId: undefined,
+      wait: true,
+      signal: undefined,
+    })
+  })
+
+  it('browser_lock wait false returns cancelled payload when takeControl wins', async () => {
+    acquireLock.mockResolvedValue({
+      ok: false,
+      error: 'browser_lock_cancelled',
+      cancelled: 'user_took_control',
+    })
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_lock.execute, {
+      action: 'lock',
+      wait: true,
+    })
+    expect(result).toEqual({
+      error: 'browser_lock_cancelled',
+      cancelled: 'user_took_control',
+    })
+  })
+
+  it('browser_cdp description requires Runtime.evaluate expression as a JS string', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const description = String(tools.browser_cdp.description ?? '')
+
+    expect(description).toContain('params.expression must be a JavaScript string')
+    expect(description).toContain('"expression": "document.title"')
+    expect(description).toContain('{ "expression": { "expression": "document.title" } }')
+    expect(description).toContain('Nested { expression: "..." } is invalid')
+  })
+
+  it('browser_cdp JSON schema types params.expression as string', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+    const jsonSchema = await asSchema(tools.browser_cdp.inputSchema).jsonSchema
+    const paramsSchema = (
+      jsonSchema.properties as Record<string, { properties?: Record<string, { type?: string }> }> | undefined
+    )?.params
+    expect(paramsSchema?.properties?.expression?.type).toBe('string')
+  })
+
+  it('browser_cdp rejects nested expression object without sending CDP', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_cdp.execute, {
+      method: 'Runtime.evaluate',
+      params: { expression: { expression: 'document.title' } },
+    })
+
+    expect(mockClient.send).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      error: 'invalid_cdp_params',
+      path: 'params.expression',
+      expected: 'string (JavaScript source)',
+      received: 'object',
+      example: {
+        method: 'Runtime.evaluate',
+        params: { expression: 'document.title', returnByValue: true },
+      },
+    })
+  })
+
+  it('browser_cdp sends Runtime.evaluate when expression is a string', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_cdp.execute, {
+      method: 'Runtime.evaluate',
+      params: { expression: 'document.title', returnByValue: true },
+    })
+
+    expect(mockClient.send).toHaveBeenCalledTimes(1)
+    expect(mockClient.send).toHaveBeenCalledWith(
+      'Runtime.evaluate',
+      { expression: 'document.title', returnByValue: true },
+      '',
+    )
+    expect(result).toMatchObject({
+      method: 'Runtime.evaluate',
+      viewId: 'cef-1',
+      result: { result: true },
+    })
+  })
+
+  it('browser_cdp rejects nested functionDeclaration without sending CDP', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_cdp.execute, {
+      method: 'Runtime.callFunctionOn',
+      params: {
+        functionDeclaration: { functionDeclaration: 'function() { return 1 }' },
+      },
+    })
+
+    expect(mockClient.send).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      error: 'invalid_cdp_params',
+      path: 'params.functionDeclaration',
+      expected: 'string (JavaScript source)',
+      received: 'object',
+    })
+  })
+
+  it('browser_cdp returns method, CDP code, and hint when send fails', async () => {
+    mockClient.send.mockRejectedValueOnce(
+      new Error('CDP error -32602: Invalid parameters'),
+    )
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_cdp.execute, {
+      method: 'Runtime.evaluate',
+      params: { expression: 'document.title' },
+    })
+
+    expect(mockClient.send).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({
+      error: 'cdp_failed',
+      method: 'Runtime.evaluate',
+      code: -32602,
+      message: 'Invalid parameters',
+      hint: 'params.expression must be a JavaScript string, not a nested object',
     })
   })
 
@@ -351,5 +530,30 @@ describe('harness browser tools', () => {
     })
     expect(result).toHaveProperty('yaml')
     expect(String((result as { yaml: string }).yaml)).toContain('[ref=e1]')
+  })
+
+  it('browser_mouse_click_xy clicks at viewport coordinates', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_mouse_click_xy.execute, {
+      x: 12,
+      y: 34,
+      button: 'left',
+    })
+
+    expect(clickAtPoint).toHaveBeenCalledWith(mockClient, '', 12, 34, {
+      button: 'left',
+    })
+    expect(result).toMatchObject({ ok: true, x: 12, y: 34, viewId: 'cef-1' })
+  })
+
+  it('browser_tabs new creates a CEF session', async () => {
+    const buildTools = (await import('@/services/harness/build-tools')).default
+    const tools = buildTools(ctx)
+
+    const result = await runTool(tools.browser_tabs.execute, { action: 'new' })
+    expect(createCefSession).toHaveBeenCalledWith('project')
+    expect(result).toMatchObject({ session_id: 'cef-new', viewId: 'cef-new' })
   })
 })

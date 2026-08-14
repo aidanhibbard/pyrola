@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { scroll } from '@/services/browser/cdp-ops'
+import attachScreenshotAfterwards from '@/services/harness/browser/attach-screenshot-afterwards'
 import pickBrowserSessionId from '@/services/harness/browser/pick-browser-session-id'
 import prepareBrowserContext from '@/services/harness/browser/prepare-browser-context'
 import resolveBrowserSession from '@/services/harness/browser/resolve-browser-session'
@@ -12,7 +13,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserScroll = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Scroll the page or scroll an element into view by snapshot ref.',
+      'Scroll the page or scroll an element into view by snapshot ref. Snapshot afterwards if the DOM changes. take_screenshot_afterwards is an optional visual check only.',
       [{ deltaY: 400 }, { ref: 'e20' }],
     ),
     inputSchema: z.object({
@@ -30,8 +31,12 @@ const browserScroll = (ctx: HarnessToolContext) =>
         .string()
         .optional()
         .describe('Legacy alias for session_id'),
+      take_screenshot_afterwards: z
+        .boolean()
+        .optional()
+        .describe('Optional visual check only; do not use for targeting'),
     }),
-    execute: async ({ deltaX, deltaY, ref, session_id, viewId }, { toolCallId }) => {
+    execute: async ({ deltaX, deltaY, ref, session_id, viewId, take_screenshot_afterwards }, { toolCallId }) => {
       const allowed = await gateToolPermission({
         ctx: toPermCtx(ctx),
         toolCallId,
@@ -62,7 +67,12 @@ const browserScroll = (ctx: HarnessToolContext) =>
         deltaY,
         ref,
       })
-      return { ok: true, viewId: session.viewId }
+      const imageParts = await attachScreenshotAfterwards(
+        prepared.browser.client,
+        session.sessionId,
+        take_screenshot_afterwards,
+      )
+      return { ok: true, viewId: session.viewId, ...(imageParts ? { imageParts } : {}) }
     },
   })
 

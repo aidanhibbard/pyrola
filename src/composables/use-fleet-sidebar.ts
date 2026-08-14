@@ -28,6 +28,27 @@ export type FleetSidebarActivityItem =
 const pinnedChats = ref<FleetPinnedChat[]>([])
 const chatsBySlug = ref<Record<string, ChatMeta[]>>({})
 
+export const chatTitleForId = (chatId: string): string | null => {
+  for (const chats of Object.values(chatsBySlug.value)) {
+    const match = chats.find((chat) => chat.id === chatId)
+    if (match?.title) {
+      return match.title
+    }
+  }
+  const pinned = pinnedChats.value.find((chat) => chat.chatId === chatId)
+  return pinned?.title ?? null
+}
+
+export const chatProjectSlugForId = (chatId: string): string | null => {
+  for (const [slug, chats] of Object.entries(chatsBySlug.value)) {
+    if (chats.some((chat) => chat.id === chatId)) {
+      return slug
+    }
+  }
+  const pinned = pinnedChats.value.find((chat) => chat.chatId === chatId)
+  return pinned?.projectSlug ?? null
+}
+
 const maxUpdatedAt = (chats: ChatMeta[]): string => {
   if (chats.length === 0) {
     return ''

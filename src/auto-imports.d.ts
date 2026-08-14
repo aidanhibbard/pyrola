@@ -17,6 +17,8 @@ declare global {
   const FileTreeStartRenameKey: typeof import('./composables/use-file-tree-node-menu').FileTreeStartRenameKey
   const asyncComputed: typeof import('@vueuse/core').asyncComputed
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
+  const chatProjectSlugForId: typeof import('./composables/use-fleet-sidebar').chatProjectSlugForId
+  const chatTitleForId: typeof import('./composables/use-fleet-sidebar').chatTitleForId
   const computed: typeof import('vue').computed
   const computedAsync: typeof import('@vueuse/core').computedAsync
   const computedEager: typeof import('@vueuse/core').computedEager
@@ -155,12 +157,17 @@ declare global {
   const useBrowserBookmarks: typeof import('./composables/use-browser-bookmarks').default
   const useBrowserConsole: typeof import('./composables/use-browser-console').default
   const useBrowserElementSelect: typeof import('./composables/use-browser-element-select').default
+  const useBrowserHostResize: typeof import('./composables/use-browser-host-resize').default
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
+  const useBrowserLockOverlay: typeof import('./composables/use-browser-lock-overlay').default
   const useBrowserNavigation: typeof import('./composables/use-browser-navigation').default
+  const useBrowserPageAssign: typeof import('./composables/use-browser-page-assign').default
+  const useBrowserPages: typeof import('./composables/use-browser-pages').default
   const useBrowserPassthroughSuspend: typeof import('./composables/use-browser-passthrough-suspend').default
   const useBrowserTab: typeof import('./composables/use-browser-tab').default
   const useBrowserToolbar: typeof import('./composables/use-browser-toolbar').default
   const useCached: typeof import('@vueuse/core').useCached
+  const useChatBrowserLock: typeof import('./composables/use-chat-browser-lock').default
   const useChatContextActions: typeof import('./composables/use-chat-context-actions').default
   const useChatContextBudgetSync: typeof import('./composables/use-chat-context-budget-sync').default
   const useChatPromptBridge: typeof import('./composables/use-chat-prompt-bridge').default
@@ -406,6 +413,8 @@ declare module 'vue' {
     readonly FileTreeStartRenameKey: UnwrapRef<typeof import('./composables/use-file-tree-node-menu')['FileTreeStartRenameKey']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
+    readonly chatProjectSlugForId: UnwrapRef<typeof import('./composables/use-fleet-sidebar')['chatProjectSlugForId']>
+    readonly chatTitleForId: UnwrapRef<typeof import('./composables/use-fleet-sidebar')['chatTitleForId']>
     readonly computed: UnwrapRef<typeof import('vue')['computed']>
     readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
     readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
@@ -544,12 +553,17 @@ declare module 'vue' {
     readonly useBrowserBookmarks: UnwrapRef<typeof import('./composables/use-browser-bookmarks')['default']>
     readonly useBrowserConsole: UnwrapRef<typeof import('./composables/use-browser-console')['default']>
     readonly useBrowserElementSelect: UnwrapRef<typeof import('./composables/use-browser-element-select')['default']>
+    readonly useBrowserHostResize: UnwrapRef<typeof import('./composables/use-browser-host-resize')['default']>
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
+    readonly useBrowserLockOverlay: UnwrapRef<typeof import('./composables/use-browser-lock-overlay')['default']>
     readonly useBrowserNavigation: UnwrapRef<typeof import('./composables/use-browser-navigation')['default']>
+    readonly useBrowserPageAssign: UnwrapRef<typeof import('./composables/use-browser-page-assign')['default']>
+    readonly useBrowserPages: UnwrapRef<typeof import('./composables/use-browser-pages')['default']>
     readonly useBrowserPassthroughSuspend: UnwrapRef<typeof import('./composables/use-browser-passthrough-suspend')['default']>
     readonly useBrowserTab: UnwrapRef<typeof import('./composables/use-browser-tab')['default']>
     readonly useBrowserToolbar: UnwrapRef<typeof import('./composables/use-browser-toolbar')['default']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
+    readonly useChatBrowserLock: UnwrapRef<typeof import('./composables/use-chat-browser-lock')['default']>
     readonly useChatContextActions: UnwrapRef<typeof import('./composables/use-chat-context-actions')['default']>
     readonly useChatContextBudgetSync: UnwrapRef<typeof import('./composables/use-chat-context-budget-sync')['default']>
     readonly useChatPromptBridge: UnwrapRef<typeof import('./composables/use-chat-prompt-bridge')['default']>

@@ -75,6 +75,36 @@ describe('orchestrator helpers', () => {
       expect(resolveToolErrorMessage('raw')).toBe('raw')
       expect(resolveToolErrorMessage({ code: 1 })).toBe('{"code":1}')
     })
+
+    it('includes Zod path and expected type for AI SDK validation errors', () => {
+      const error = {
+        name: 'AI_InvalidToolInputError',
+        toolName: 'browser_cdp',
+        message: 'Invalid input for tool browser_cdp: Type validation failed',
+        cause: {
+          name: 'AI_TypeValidationError',
+          message: 'Type validation failed',
+          cause: {
+            name: 'ZodError',
+            issues: [
+              {
+                code: 'invalid_type',
+                expected: 'string',
+                received: 'object',
+                path: ['params', 'expression'],
+                message: 'Expected string, received object',
+              },
+            ],
+          },
+        },
+      }
+      const message = resolveToolErrorMessage(error)
+      expect(message).toContain('browser_cdp')
+      expect(message).toContain('params.expression')
+      expect(message).toContain('expected: string')
+      expect(message).toContain('received: object')
+      expect(message).toContain('Expected string, received object')
+    })
   })
 
   describe('injectContextIntoLastUserMessage', () => {

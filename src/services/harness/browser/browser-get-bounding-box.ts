@@ -12,7 +12,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserGetBoundingBox = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Get the bounding box for a snapshot ref in the shared browser.',
+      'Get the bounding box for a snapshot ref from the latest browser_snapshot.',
       [{ ref: 'e12' }],
     ),
     inputSchema: z.object({

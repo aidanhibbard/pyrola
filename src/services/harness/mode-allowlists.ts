@@ -33,6 +33,7 @@ const BROWSER_TOOLS = [
   'browser_snapshot',
   'browser_take_screenshot',
   'browser_click',
+  'browser_mouse_click_xy',
   'browser_type',
   'browser_fill',
   'browser_select_option',

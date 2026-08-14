@@ -12,7 +12,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const browserHighlight = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Briefly highlight an element by snapshot ref in the shared browser.',
+      'Briefly highlight an element by snapshot ref. Does not replace snapshot or click targeting.',
       [{ ref: 'e12' }],
     ),
     inputSchema: z.object({
