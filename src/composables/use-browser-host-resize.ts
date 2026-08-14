@@ -1,17 +1,20 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
+import useBrowserLayoutHide from '@/composables/use-browser-layout-hide'
 
 const SETTLE_MS = 150
 
 type HostResizeArgs = {
   hostEl: Ref<HTMLElement | null>
   hasPage: Ref<boolean>
+  isTabActive: Ref<boolean>
   getCefSessionId: () => string | null
   hideCefView: () => Promise<void>
   resizeToHost: () => Promise<void>
 }
 
 export default (args: HostResizeArgs) => {
+  const layoutHide = useBrowserLayoutHide()
   const layoutBusy = ref(false)
   let observer: ResizeObserver | null = null
   let settleTimer: ReturnType<typeof setTimeout> | null = null
@@ -33,44 +36,63 @@ export default (args: HostResizeArgs) => {
 
   const settle = (): void => {
     settleTimer = null
-    const reveal = args.getCefSessionId() && args.hasPage.value
-      ? args.resizeToHost()
-      : args.hideCefView()
+    if (layoutHide.hidden.value) {
+      return
+    }
+    const shouldReveal =
+      Boolean(args.getCefSessionId())
+      && args.hasPage.value
+      && args.isTabActive.value
+    const reveal = shouldReveal ? args.resizeToHost() : args.hideCefView()
     reveal
       .catch((error: unknown) => {
         report(
-          args.hasPage.value
+          shouldReveal
             ? 'Failed to resize browser'
             : 'Failed to hide browser view',
           error,
         )
       })
       .finally(() => {
+        if (layoutHide.hidden.value) {
+          hideQuietly()
+          return
+        }
         layoutBusy.value = false
       })
   }
 
-  const scheduleSettle = (): void => {
+  const cancelSettle = (): void => {
     if (settleTimer) {
       clearTimeout(settleTimer)
+      settleTimer = null
     }
+  }
+
+  const scheduleSettle = (): void => {
+    cancelSettle()
     settleTimer = setTimeout(settle, SETTLE_MS)
   }
 
-  const beginLayoutHide = (): void => {
-    if (!args.getCefSessionId()) {
+  const beginLayoutHide = (schedule: boolean): void => {
+    if (
+      !args.getCefSessionId()
+      || !args.hasPage.value
+      || !args.isTabActive.value
+    ) {
       hideQuietly()
-      return
-    }
-    if (!args.hasPage.value) {
-      hideQuietly()
+      if (schedule) {
+        scheduleSettle()
+      }
       return
     }
     if (!layoutBusy.value) {
       layoutBusy.value = true
       hideQuietly()
     }
-    scheduleSettle()
+    if (schedule) {
+      scheduleSettle()
+    }
   }
 
   const onHostResized = (): void => {
@@ -88,16 +110,13 @@ export default (args: HostResizeArgs) => {
     }
     lastWidth = width
     lastHeight = height
-    beginLayoutHide()
+    beginLayoutHide(!layoutHide.hidden.value)
   }
 
   const detach = (): void => {
     observer?.disconnect()
     observer = null
-    if (settleTimer) {
-      clearTimeout(settleTimer)
-      settleTimer = null
-    }
+    cancelSettle()
   }
 
   const attach = (el: HTMLElement): void => {
@@ -121,6 +140,19 @@ export default (args: HostResizeArgs) => {
       attach(el)
     },
     { immediate: true },
+  )
+
+  watch(
+    () => layoutHide.hidden.value,
+    (hidden) => {
+      if (hidden) {
+        cancelSettle()
+        beginLayoutHide(false)
+        return
+      }
+      scheduleSettle()
+    },
+    { flush: 'sync' },
   )
 
   onBeforeUnmount(() => {

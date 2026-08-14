@@ -194,6 +194,7 @@ export default (workspaceId: string, tabId: string) => {
   const { layoutBusy } = useBrowserHostResize({
     hostEl,
     hasPage,
+    isTabActive,
     getCefSessionId: session.getCefSessionId,
     hideCefView: session.hideCefView,
     resizeToHost: session.resizeToHost,

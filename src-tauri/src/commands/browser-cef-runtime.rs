@@ -64,6 +64,10 @@ mod cr_app_protocol;
 mod stacking;
 
 #[cfg(target_os = "macos")]
+#[path = "browser-cef-live-resize.rs"]
+mod live_resize;
+
+#[cfg(target_os = "macos")]
 #[path = "browser-cef-hit-test.rs"]
 mod hit_test;
 
@@ -191,6 +195,20 @@ mod macos_handlers {
 
 fn sessions() -> &'static Mutex<HashMap<String, Session>> {
   SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Snapshot CEF NSView handles without holding the map across AppKit calls.
+/// `None` if the mutex is poisoned or contended (`try_lock`).
+#[cfg(target_os = "macos")]
+fn session_window_handles_try() -> Option<Vec<cef::sys::cef_window_handle_t>> {
+  use cef::{ImplBrowser, ImplBrowserHost};
+  let map = sessions().try_lock().ok()?;
+  Some(
+    map
+      .values()
+      .filter_map(|session| session.browser.host().map(|host| host.window_handle()))
+      .collect(),
+  )
 }
 
 fn claimed_targets() -> &'static Mutex<HashSet<String>> {
@@ -372,6 +390,7 @@ fn warm_init_macos(app: Option<&AppHandle>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
       if let Ok(ns_view) = window.ns_view() {
         stacking::clear_wkwebview_background(ns_view as cef::sys::cef_window_handle_t);
+        live_resize::install_on_content_view(ns_view);
       }
     }
   }
@@ -472,6 +491,9 @@ fn apply_nsview_bounds(
     let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
     let _: () = objc2::msg_send![view as &AnyObject, setFrame: frame];
     let _: () = objc2::msg_send![view as &AnyObject, setHidden: hidden];
+    // Host view only. Inner Chromium views must keep WidthSizable so they
+    // fill the host after create-at-zero then show.
+    live_resize::pin_nsview_not_sizable(view);
   }
   // Keep CEF behind WKWebView after frame changes (AppKit can reshuffle siblings).
   stacking::send_cef_view_to_back(handle);
@@ -521,11 +543,15 @@ fn create_browser_with_parent(
         log::info!("CEF send_cef_view_to_back after create");
         stacking::send_cef_view_to_back(host.window_handle());
         log::info!("CEF send_cef_view_to_back finished");
+        // Pin NSViewNotSizable and apply CSS bounds; set_as_child alone can leave
+        // an autoresizing mask that stretches during OS live-resize.
+        let _ = apply_nsview_bounds(&host, parent, bounds);
       } else {
         log::warn!("CEF browser host missing after create; skipping send-to-back");
       }
     }
     stacking::clear_wkwebview_background(parent);
+    live_resize::install_on_content_view(parent as *mut std::ffi::c_void);
 
     let session_id = NEXT_SESSION.fetch_add(1, Ordering::SeqCst).to_string();
     // Return immediately. CDP page targets are published by DevTools only while

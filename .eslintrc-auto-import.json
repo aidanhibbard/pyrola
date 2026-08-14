@@ -187,6 +187,7 @@
     "useBrowserConsole": true,
     "useBrowserElementSelect": true,
     "useBrowserHostResize": true,
+    "useBrowserLayoutHide": true,
     "useBrowserLocation": true,
     "useBrowserLockOverlay": true,
     "useBrowserNavigation": true,

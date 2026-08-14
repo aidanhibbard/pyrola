@@ -147,7 +147,7 @@ onMounted(() => {
         class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
         :class="activeLock ? 'agent-aurora-ring border border-transparent' : undefined"
       >
-        <!-- Hole is transparent only while a page is showing; CEF paints behind. -->
+        <!-- Hole is transparent only while a page is showing and layout is idle. -->
         <div
           ref="hostEl"
           class="absolute inset-0 h-full w-full"

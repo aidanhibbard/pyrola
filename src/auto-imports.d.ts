@@ -158,6 +158,7 @@ declare global {
   const useBrowserConsole: typeof import('./composables/use-browser-console').default
   const useBrowserElementSelect: typeof import('./composables/use-browser-element-select').default
   const useBrowserHostResize: typeof import('./composables/use-browser-host-resize').default
+  const useBrowserLayoutHide: typeof import('./composables/use-browser-layout-hide').default
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useBrowserLockOverlay: typeof import('./composables/use-browser-lock-overlay').default
   const useBrowserNavigation: typeof import('./composables/use-browser-navigation').default
@@ -554,6 +555,7 @@ declare module 'vue' {
     readonly useBrowserConsole: UnwrapRef<typeof import('./composables/use-browser-console')['default']>
     readonly useBrowserElementSelect: UnwrapRef<typeof import('./composables/use-browser-element-select')['default']>
     readonly useBrowserHostResize: UnwrapRef<typeof import('./composables/use-browser-host-resize')['default']>
+    readonly useBrowserLayoutHide: UnwrapRef<typeof import('./composables/use-browser-layout-hide')['default']>
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useBrowserLockOverlay: UnwrapRef<typeof import('./composables/use-browser-lock-overlay')['default']>
     readonly useBrowserNavigation: UnwrapRef<typeof import('./composables/use-browser-navigation')['default']>
