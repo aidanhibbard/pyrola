@@ -96,6 +96,16 @@ export const registryAddProject = (
   last_opened: string
 }> => call('registry_add_project', { name, rootPath })
 
+export const openProjectAtPath = (
+  rootPath: string,
+): Promise<{
+  id: string
+  name: string
+  slug: string
+  root_path: string
+  last_opened: string
+}> => call('open_project_at_path', { rootPath })
+
 export const registrySetActiveProject = (projectId: string | null): Promise<void> =>
   call('registry_set_active_project', { projectId })
 

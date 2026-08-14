@@ -252,6 +252,7 @@
     "useGeolocation": true,
     "useGitBranches": true,
     "useGitStatus": true,
+    "useGraphs": true,
     "useId": true,
     "useIdle": true,
     "useImage": true,

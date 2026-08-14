@@ -199,6 +199,7 @@ declare module 'vue' {
     GeneralSection: typeof import('./components/settings/sections/GeneralSection.vue')['default']
     GitBranchSelect: typeof import('./components/chat/GitBranchSelect.vue')['default']
     Github: typeof import('./components/ai-elements/open-in-chat/providers/icons/Github.vue')['default']
+    GraphsSection: typeof import('./components/settings/sections/GraphsSection.vue')['default']
     HomeEmptyChatInput: typeof import('./components/chat/HomeEmptyChatInput.vue')['default']
     Image: typeof import('./components/ai-elements/image/Image.vue')['default']
     InlineCitation: typeof import('./components/ai-elements/inline-citation/InlineCitation.vue')['default']

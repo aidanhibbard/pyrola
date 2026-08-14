@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use tauri::AppHandle;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -13,9 +14,12 @@ use super::rpc::{json_rpc, json_rpc_notify, list_tools_internal, spawn_reader};
 use super::types::{
   parse_mcp_icons, set_state, McpProcess, McpServerState, MCP_PROCESSES,
 };
+use crate::commands::codegraph::{codegraph_store_env_vars, prepare_codegraph_store};
+use crate::commands::fs::canonical_project_root;
 
 #[tauri::command]
 pub async fn mcp_start(
+  app: AppHandle,
   server_id: String,
   command: String,
   args: Vec<String>,
@@ -31,8 +35,18 @@ pub async fn mcp_start(
   } else {
     None
   };
+  let mut codegraph_store_dir: Option<PathBuf> = None;
+  let mut codegraph_env: Vec<(String, String)> = Vec::new();
   if let Some(project_path) = codegraph_path.as_deref() {
-    kill_orphaned_codegraph(project_path).await;
+    let canonical = canonical_project_root(project_path)?;
+    let prepared = prepare_codegraph_store(&app, &canonical)?;
+    codegraph_env = codegraph_store_env_vars(
+      &canonical,
+      &prepared.graph_dir,
+      &prepared.preload_path,
+    );
+    kill_orphaned_codegraph(project_path, Some(&prepared.graph_dir)).await;
+    codegraph_store_dir = Some(prepared.graph_dir);
   }
 
   set_state(&server_id, "starting", None, vec![], None).await;
@@ -49,6 +63,9 @@ pub async fn mcp_start(
     command_builder.process_group(0);
   }
   for (key, value) in &env_overlay {
+    command_builder.env(key, value);
+  }
+  for (key, value) in &codegraph_env {
     command_builder.env(key, value);
   }
 
@@ -98,7 +115,7 @@ pub async fn mcp_start(
     };
     let _ = mcp_stop(server_id.clone()).await;
     if let Some(project_path) = codegraph_path.as_deref() {
-      kill_orphaned_codegraph(project_path).await;
+      kill_orphaned_codegraph(project_path, codegraph_store_dir.as_deref()).await;
     }
     set_state(&server_id, "error", Some(full.clone()), vec![], None).await;
     Err(full)
@@ -186,33 +203,32 @@ fn extract_codegraph_project_path(args: &[String]) -> Option<String> {
 
 /// Best-effort cleanup of orphaned CodeGraph MCP trees left behind when `npx`
 /// reparents children out of the process group we track.
-#[cfg(unix)]
-async fn kill_orphaned_codegraph(project_path: &str) {
+async fn kill_orphaned_codegraph(project_path: &str, store_dir: Option<&Path>) {
   let path = project_path.trim();
   if path.is_empty() {
     return;
   }
-  let patterns = [
-    format!("codegraph.js serve --mcp --path {path}"),
-    format!("codegraph serve --mcp --path {path}"),
-    format!("@colbymchenry/codegraph serve --mcp --path {path}"),
-  ];
-  for pattern in patterns {
-    let _ = Command::new("pkill")
-      .args(["-f", &pattern])
-      .stdout(Stdio::null())
-      .stderr(Stdio::null())
-      .status()
-      .await;
+  #[cfg(unix)]
+  {
+    let patterns = [
+      format!("codegraph.js serve --mcp --path {path}"),
+      format!("codegraph serve --mcp --path {path}"),
+      format!("@colbymchenry/codegraph serve --mcp --path {path}"),
+    ];
+    for pattern in patterns {
+      let _ = Command::new("pkill")
+        .args(["-f", &pattern])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
+    }
   }
-  // Stale daemon socket blocks a clean restart after orphan kill storms.
-  let daemon_dir = Path::new(path).join(".codegraph");
-  let _ = tokio::fs::remove_file(daemon_dir.join("daemon.sock")).await;
-  let _ = tokio::fs::remove_file(daemon_dir.join("daemon.pid")).await;
+  if let Some(daemon_dir) = store_dir {
+    let _ = tokio::fs::remove_file(daemon_dir.join("daemon.sock")).await;
+    let _ = tokio::fs::remove_file(daemon_dir.join("daemon.pid")).await;
+  }
 }
-
-#[cfg(not(unix))]
-async fn kill_orphaned_codegraph(_project_path: &str) {}
 
 #[tauri::command]
 pub async fn mcp_stop(server_id: String) -> Result<(), String> {

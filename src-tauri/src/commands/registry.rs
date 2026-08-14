@@ -134,6 +134,14 @@ pub fn open_project_at_path(app: &AppHandle, root_path: PathBuf) -> Result<Fleet
   Ok(project)
 }
 
+#[tauri::command(rename = "open_project_at_path")]
+pub fn open_project_at_path_command(
+  app: AppHandle,
+  root_path: PathBuf,
+) -> Result<FleetProject, String> {
+  open_project_at_path(&app, root_path)
+}
+
 #[tauri::command]
 pub fn registry_add_project(
   app: AppHandle,

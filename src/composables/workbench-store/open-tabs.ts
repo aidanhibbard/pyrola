@@ -9,6 +9,7 @@ import type {
   WorkbenchTab,
 } from '@/types/workbench/workbench-tab'
 import { isHomeChatSlug } from '@/constants/home-chat'
+import toProjectRelativePath from '@/utils/to-project-relative-path'
 import { addEditorFile } from './editor'
 import { resolveWorkbenchTabOpen } from './duplicate-dialog'
 import {
@@ -26,26 +27,30 @@ export const openEditor = async (projectId: string, path = ''): Promise<void> =>
     await ensureHomeRoot()
   }
 
+  const project = getProject(projectId)
+  const editorPath =
+    path && project?.rootPath ? toProjectRelativePath(path, project.rootPath) : path
+
   const predicate = (tab: WorkbenchTab) =>
     tab.type === 'editor' && tab.projectId === projectId
   const existing = findTab(predicate)
 
   if (existing) {
-    if (path) {
-      addEditorFile(existing.id, path, false)
+    if (editorPath) {
+      addEditorFile(existing.id, editorPath, false)
     }
     focusTab(existing.id)
     return
   }
 
-  const openPaths = path ? [path] : []
-  const fileName = path ? (path.split('/').pop() ?? path) : 'Editor'
+  const openPaths = editorPath ? [editorPath] : []
+  const fileName = editorPath ? (editorPath.split('/').pop() ?? editorPath) : 'Editor'
   const tab: WorkbenchTab = {
     id: createId(),
     type: 'editor',
     projectId,
     label: fileName,
-    payload: { path: path || '', openPaths } satisfies EditorPayload,
+    payload: { path: editorPath || '', openPaths } satisfies EditorPayload,
   }
   tabs.value.push(tab)
   focusTab(tab.id)

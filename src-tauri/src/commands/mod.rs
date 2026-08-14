@@ -35,7 +35,7 @@ pub use chat::{
   append_chat_line, create_chat, delete_chat, fork_chat, list_chats, list_pinned_chats, pin_chat,
   read_chat_meta, read_chat_messages, truncate_chat_log, update_chat_meta,
 };
-pub use codegraph::codegraph_cli;
+pub use codegraph::{codegraph_cli, codegraph_store_stat, delete_graph, list_graphs};
 pub use config::{
   config_exists, read_json_file, read_lsp_config, read_mcp_config, read_settings, write_json_file,
   write_lsp_config, write_mcp_config, write_settings,
@@ -70,7 +70,8 @@ pub use paths::{
   list_project_files, list_pyrola_files,
 };
 pub use registry::{
-  get_active_project, open_project_at_path, registry_add_project, registry_list_projects,
+  get_active_project, open_project_at_path, open_project_at_path_command, registry_add_project,
+  registry_list_projects,
   registry_remove_project, registry_set_active_project, registry_update_project_root,
   resolve_launch_path,
 };

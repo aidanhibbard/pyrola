@@ -26,6 +26,7 @@ import type {
 import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
 import invokeErrorMessage from '@/utils/invoke-error-message'
 import openAtLine from '@/utils/open-at-line'
+import toProjectRelativePath from '@/utils/to-project-relative-path'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
@@ -89,14 +90,6 @@ const basename = (path: string): string => {
 
 const looksLikeFilePath = (value: string): boolean =>
   value.includes('/') || value.includes('\\') || /\.[A-Za-z0-9]+$/.test(value)
-
-const toAbsolutePath = (path: string, root: string): string => {
-  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
-    return path
-  }
-  const base = root.endsWith('/') ? root.slice(0, -1) : root
-  return `${base}/${path}`
-}
 
 const spanKey = (span: CodebaseToolSpan): string =>
   `${span.path}|${span.symbol ?? ''}|${span.startLine}`
@@ -536,8 +529,8 @@ const handleNodeClick = async (event: NodeMouseEvent): Promise<void> => {
   }
 
   try {
-    const absolute = toAbsolutePath(data.path, project.rootPath)
-    await openAtLine(project.id, absolute, data.startLine)
+    const relative = toProjectRelativePath(data.path, project.rootPath)
+    await openAtLine(project.id, relative, data.startLine)
   } catch (error) {
     toast.error('Could not open file', {
       description: invokeErrorMessage(error),

@@ -9,21 +9,17 @@ import mcpRuntime from '@/services/mcp/mcp-runtime'
 import { sessionTrusts } from '@/services/mcp/mcp-trust'
 import { mcpServerFingerprint } from '@/services/mcp/mcp-server-fingerprint'
 import {
-  CODEGRAPH_DB_NAME,
-  CODEGRAPH_DIR_NAME,
   CODEGRAPH_SERVER_ID,
   buildCodegraphServer,
 } from '@/types/codegraph/managed-codegraph'
 import {
   codegraphCli,
-  fsStat,
+  codegraphStoreStat,
   isTauri,
   readMcpConfig,
   writeMcpConfig,
 } from '@/services/pyrola/pyrola-tauri'
 import invokeErrorMessage from '@/utils/invoke-error-message'
-
-const relativeDbPath = `${CODEGRAPH_DIR_NAME}/${CODEGRAPH_DB_NAME}`
 
 const inFlightByRoot = new Map<string, Promise<void>>()
 
@@ -70,8 +66,8 @@ const pruneObsoleteCodegraphTrust = async (root: string): Promise<void> => {
 }
 
 const ensureCodeGraphOnce = async (root: string): Promise<void> => {
-  const dbStat = await fsStat(root, relativeDbPath)
-  if (!dbStat.exists) {
+  const store = await codegraphStoreStat(root)
+  if (!store.dbExists) {
     await codegraphCli(root, 'init')
   }
 

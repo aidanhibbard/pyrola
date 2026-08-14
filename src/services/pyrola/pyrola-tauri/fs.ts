@@ -1,7 +1,6 @@
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { call, isTauri } from './helpers'
 import type {
-  CodegraphCliResult,
   FileDiffRecord,
   FsEditReplacement,
   WorkspaceGlobResult,
@@ -216,9 +215,3 @@ export const workspaceGlob = async (
   })
   return result
 }
-
-/** Allowlisted CodeGraph CLI (`init` | `index`). Spawns `npx -y @colbymchenry/codegraph`. */
-export const codegraphCli = (
-  projectRoot: string,
-  action: 'init' | 'index',
-): Promise<CodegraphCliResult> => call('codegraph_cli', { projectRoot, action })

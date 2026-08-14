@@ -28,3 +28,12 @@ fn mcp_env_overlay_denies_dangerous_keys() {
   env.insert("PATH".into(), "/evil".into());
   assert!(validate_mcp_env(&env).is_err());
 }
+
+#[test]
+fn mcp_env_overlay_denies_node_options() {
+  // Overlay must not set NODE_OPTIONS. Rust injects it for CodeGraph children
+  // after validation, appending --require for the store preload.
+  let mut env = HashMap::new();
+  env.insert("NODE_OPTIONS".into(), "--require /tmp/evil.js".into());
+  assert!(validate_mcp_env(&env).is_err());
+}

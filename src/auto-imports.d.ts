@@ -223,6 +223,7 @@ declare global {
   const useGeolocation: typeof import('@vueuse/core').useGeolocation
   const useGitBranches: typeof import('./composables/use-git-branches').default
   const useGitStatus: typeof import('./composables/use-git-status').default
+  const useGraphs: typeof import('./composables/use-graphs').default
   const useId: typeof import('vue').useId
   const useIdle: typeof import('@vueuse/core').useIdle
   const useImage: typeof import('@vueuse/core').useImage
@@ -611,6 +612,7 @@ declare module 'vue' {
     readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
     readonly useGitBranches: UnwrapRef<typeof import('./composables/use-git-branches')['default']>
     readonly useGitStatus: UnwrapRef<typeof import('./composables/use-git-status')['default']>
+    readonly useGraphs: UnwrapRef<typeof import('./composables/use-graphs')['default']>
     readonly useId: UnwrapRef<typeof import('vue')['useId']>
     readonly useIdle: UnwrapRef<typeof import('@vueuse/core')['useIdle']>
     readonly useImage: UnwrapRef<typeof import('@vueuse/core')['useImage']>

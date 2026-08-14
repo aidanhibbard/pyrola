@@ -11,12 +11,17 @@ export const CODEGRAPH_NPM_PACKAGE = '@colbymchenry/codegraph'
 
 export const CODEGRAPH_DIR_NAME = '.codegraph'
 
-export const CODEGRAPH_DB_NAME = 'codegraph.db'
-
 export const CODEGRAPH_MCP_TOOLS =
   'explore,node,search,callers,callees,impact,files,status'
 
-/** In-memory MCP stdio config for the internal CodeGraph process. */
+/**
+ * In-memory MCP stdio config for the internal CodeGraph process.
+ * `--path` stays the real project root. Rust `mcp_start` injects store env
+ * (`PYROLA_CODEGRAPH_PROJECT`, `PYROLA_CODEGRAPH_STORE`, and `NODE_OPTIONS`
+ * preload) when `server_id` is codegraph. Do not set `NODE_OPTIONS` here
+ * (dangerous MCP env key). Optional `PYROLA_*` keys would need `storeDir`
+ * and would duplicate Rust, so they are omitted.
+ */
 export const buildCodegraphServer = (projectRoot: string): McpStdioServer => ({
   command: 'npx',
   args: [
@@ -36,8 +41,3 @@ export const buildCodegraphServer = (projectRoot: string): McpStdioServer => ({
   },
   enabled: true,
 })
-
-export const codegraphDbPath = (projectRoot: string): string => {
-  const root = projectRoot.endsWith('/') ? projectRoot.slice(0, -1) : projectRoot
-  return `${root}/${CODEGRAPH_DIR_NAME}/${CODEGRAPH_DB_NAME}`
-}

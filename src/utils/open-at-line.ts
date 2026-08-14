@@ -1,6 +1,7 @@
 import * as monaco from 'monaco-editor'
 import useWorkbenchStore from '@/composables/use-workbench-store'
 import type { EditorPayload } from '@/types/workbench/workbench-tab'
+import toProjectRelativePath from '@/utils/to-project-relative-path'
 
 const RETRY_ATTEMPTS = 40
 const RETRY_MS = 50
@@ -48,14 +49,17 @@ export default async (
   startLine?: number,
 ): Promise<void> => {
   const workbench = useWorkbenchStore()
-  await workbench.openEditor(projectId, path)
+  const project = workbench.getProject(projectId)
+  const editorPath =
+    path && project?.rootPath ? toProjectRelativePath(path, project.rootPath) : path
+  await workbench.openEditor(projectId, editorPath)
 
   if (typeof startLine !== 'number' || !Number.isFinite(startLine) || startLine < 1) {
     return
   }
 
   for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt += 1) {
-    if (activeEditorPath(workbench, projectId) !== path) {
+    if (activeEditorPath(workbench, projectId) !== editorPath) {
       throw new Error('Editor switched away before the line could be revealed')
     }
     if (revealLine(startLine)) {

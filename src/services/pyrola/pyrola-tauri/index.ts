@@ -23,6 +23,8 @@ export type {
   LspServerStatus,
   LspCatalogEntry,
 } from './types'
+export type { GraphListItem } from '@/types/codegraph/graph-list-item'
+export type { CodegraphStoreStat } from '@/types/codegraph/store-stat'
 export {
   getUserPyrolaDir,
   readJsonFile,
@@ -41,6 +43,7 @@ export {
   configExists,
   registryListProjects,
   registryAddProject,
+  openProjectAtPath,
   registrySetActiveProject,
   registryUpdateProjectRoot,
   registryRemoveProject,
@@ -76,8 +79,13 @@ export {
   fsStagePreviewDelete,
   workspaceGrep,
   workspaceGlob,
-  codegraphCli,
 } from './fs'
+export {
+  codegraphCli,
+  codegraphStoreStat,
+  listGraphs,
+  deleteGraph,
+} from './codegraph'
 export {
   gitStatus,
   gitDiff,
