@@ -161,14 +161,14 @@ jobs:
           tagName: v__VERSION__
           releaseName: pyrola v__VERSION__
           releaseBody: |
-            Draft release for pyrola v__VERSION__.
+            Alpha prerelease for pyrola v__VERSION__. This is an early preview, not a stable release.
+
+            This build includes the embedded CEF (`cef` feature). User-facing docs will land later.
 
             Checksums (`SHA256SUMS.txt`, `SHA512SUMS.txt`) are attached after all platform builds finish.
             See CONTRIBUTING.md for how to verify downloads.
-
-            This build includes the optional embedded CEF (`cef` feature).
           releaseDraft: true
-          prerelease: false
+          prerelease: true
           tauriScript: npm run tauri
           args: ${{ matrix.args }}
           updaterJsonPreferNsis: true
@@ -211,7 +211,11 @@ jobs:
           sha512sum -- "${files[@]}" > SHA512SUMS.txt
 
           {
-            echo "## pyrola v${VERSION}"
+            echo "## pyrola v${VERSION} (alpha)"
+            echo
+            echo "This is an alpha prerelease, not a stable release."
+            echo
+            echo "This build includes the embedded CEF (\`cef\` feature). User-facing docs will land later."
             echo
             echo "Installers and bundles for macOS, Linux, and Windows are attached below."
             echo
@@ -246,4 +250,5 @@ jobs:
           gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-file RELEASE_NOTES.md \
+            --prerelease \
             --draft=false

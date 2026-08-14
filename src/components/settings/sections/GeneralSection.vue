@@ -20,6 +20,7 @@ import {
 import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.vue'
 import useAppUpdater from '@/composables/use-app-updater'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
+import { appShortcutHelp } from '@/utils/keyboard'
 import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
 
 const themeOptions = [
@@ -106,15 +107,6 @@ const handleDownloadAndRestart = async (): Promise<void> => {
     })
   }
 }
-
-const shortcuts = [
-  { keys: 'Cmd/Ctrl+K', action: 'Command palette' },
-  { keys: 'Cmd/Ctrl+N', action: 'New Agent' },
-  { keys: 'Cmd/Ctrl+B', action: 'Toggle left sidebar' },
-  { keys: 'Cmd/Ctrl+Shift+B', action: 'Toggle right workbench' },
-  { keys: 'Ctrl+`', action: 'Toggle bottom terminal' },
-  { keys: 'Esc', action: 'Leave Settings' },
-]
 </script>
 
 <template>
@@ -173,7 +165,10 @@ const shortcuts = [
             <TooltipContent>View shortcuts</TooltipContent>
           </Tooltip>
         </div>
-        <p class="text-sm text-muted-foreground">Cmd+K search, Cmd+N new agent, ...</p>
+        <p class="text-sm text-muted-foreground">
+          Cmd/Ctrl+K command palette, Cmd/Ctrl+N new agent, Cmd/Ctrl+B left sidebar,
+          Cmd/Ctrl+Shift+B right workbench
+        </p>
       </div>
 
       <div class="space-y-2">
@@ -248,7 +243,7 @@ const shortcuts = [
         </DialogHeader>
         <div class="space-y-2 text-sm">
           <div
-            v-for="shortcut in shortcuts"
+            v-for="shortcut in appShortcutHelp"
             :key="shortcut.keys"
             class="flex justify-between gap-4"
           >

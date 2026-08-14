@@ -48,19 +48,21 @@ npm run tauri dev
 
 Run these before opening a PR:
 
-```bash
-npm run ci              # lint, type-check, npm audit, build
-npm run audit:rust      # cargo audit on src-tauri/Cargo.lock
-npm run test:unit       # Vitest (when touching covered code)
-```
+| Command | What it does |
+| --- | --- |
+| `npm run ci` | lint, type-check, `test:coverage`, npm audit, build |
+| `npm run audit:rust` | cargo audit on `src-tauri/Cargo.lock` |
+| `npm run test:unit` | Vitest (when touching covered code) |
 
 CI also runs a Tauri build job. Match existing style and the conventions in `AGENTS.md`.
 
 ### Docs site
 
+The docs site is VuePress (`docs/`).
+
 ```bash
-npm run vp:dev
-npm run vp:build
+npm run docs:dev
+npm run docs:build
 ```
 
 ## Pull request process
@@ -98,8 +100,8 @@ Breaking changes should be called out in the PR description.
 | `src/services/harness/` | Agent harness and tool loop |
 | `src-tauri/` | Tauri / Rust shell |
 | `src/prompts/` | System and tool guidance prompts |
-| `docs/` | VitePress documentation |
-| `media/` | README screenshots and assets |
+| `docs/` | VuePress documentation |
+| `docs/media/` | README screenshots and assets |
 
 ## Commit messages
 
@@ -111,13 +113,13 @@ required.
 
 Maintainers handle releases. Contributors do not need to publish builds.
 
-1. Bump `version` in `src-tauri/tauri.conf.json` (and `src-tauri/Cargo.toml` to match).
+1. Bump `version` in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` so they match.
 2. Merge the version bump to `main` (signed commits, CI green, review as usual).
 3. Tag and push, or run the **Release** workflow manually:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.0-alpha.0
+git push origin v0.1.0-alpha.0
 ```
 
 The [Release](.github/workflows/release.yml) workflow builds macOS (arm64 + x64), Linux x64, and Windows via [`tauri-action`](https://v2.tauri.app/distribute/pipelines/github/), uploads installers to a GitHub Release, then attaches `SHA256SUMS.txt` and `SHA512SUMS.txt` and publishes the release.

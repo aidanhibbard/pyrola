@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
-import { useMagicKeys, whenever } from '@vueuse/core'
+import { toast } from 'vue-sonner'
 import AppSidebar from '@/components/navigation/aside/left/LeftSidebar.vue'
 import NavigationCommandPalette from '@/components/navigation/CommandPalette.vue'
 import { SidebarInset, SidebarProvider } from '@/components/shadcn/ui/sidebar'
@@ -21,7 +21,8 @@ import useCommandPalette from '@/composables/use-command-palette'
 import usePyrolaLiveSync from '@/composables/use-pyrola-live-sync'
 import useFleetRegistry from '@/composables/use-fleet-registry'
 import useWorkbenchStore from '@/composables/use-workbench-store'
-import { RouterView } from 'vue-router'
+import { matchAppShortcut } from '@/utils/keyboard'
+import { RouterView, useRouter } from 'vue-router'
 
 type CollapsiblePanelApi = {
   collapse: () => void
@@ -37,7 +38,8 @@ useAppearance()
 usePyrolaLiveSync()
 const updater = useAppUpdater()
 
-const { rightSidebarOpen, setRightSidebarOpen } = useWorkbenchStore()
+const router = useRouter()
+const { rightSidebarOpen, setRightSidebarOpen, toggleRightSidebar } = useWorkbenchStore()
 const commandPalette = useCommandPalette()
 const rightSidebarPanelRef = ref<CollapsiblePanelApi | null>(null)
 let rightSidebarHasExpanded = rightSidebarOpen.value
@@ -60,21 +62,43 @@ const syncRightSidebarPanel = (open: boolean): void => {
   }
 }
 
-const keys = useMagicKeys({
-  passive: false,
-  onEventFired(event) {
-    if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault()
-    }
-  },
-})
+const openNewAgent = async (): Promise<void> => {
+  try {
+    await router.push('/')
+  } catch (error) {
+    toast.error('Navigation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 
-whenever(
-  () => keys.Meta_K?.value || keys.Ctrl_K?.value,
-  () => {
+const handleAppKeydown = (event: KeyboardEvent): void => {
+  const action = matchAppShortcut(event)
+  if (action === null) {
+    return
+  }
+
+  event.preventDefault()
+
+  if (action === 'toggle-right-sidebar') {
+    event.stopImmediatePropagation()
+    toggleRightSidebar()
+    return
+  }
+
+  if (action === 'toggle-palette') {
     commandPalette.togglePalette()
-  },
-)
+    return
+  }
+
+  openNewAgent().catch((error: unknown) => {
+    toast.error('Navigation failed', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  })
+}
+
+useEventListener('keydown', handleAppKeydown)
 
 onMounted(async () => {
   await nextTick()
