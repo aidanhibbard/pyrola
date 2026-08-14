@@ -81,14 +81,10 @@ export default (workspaceId: string, tabId: string) => {
     hasPage,
   })
 
-  const reloadBridge = {
-    run: async (): Promise<void> => {},
-  }
-
   const toolbar = useBrowserToolbar({
-    cefReady,
     currentUrl,
-    reload: () => reloadBridge.run(),
+    getCefSessionId: session.getCefSessionId,
+    getClient: session.getCdpClient,
   })
 
   const navigation = useBrowserNavigation({
@@ -104,7 +100,6 @@ export default (workspaceId: string, tabId: string) => {
     startPolling: session.startPolling,
     recordHistoryUrl: toolbar.recordHistoryUrl,
   })
-  reloadBridge.run = navigation.handleReload
 
   const handleTakeControl = (): void => {
     const sessionId = session.getCefSessionId()

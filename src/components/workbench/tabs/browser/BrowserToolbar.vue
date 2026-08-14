@@ -75,6 +75,9 @@ const emit = defineEmits<{
   'take-control': []
 }>()
 
+const passthroughSuspend = useBrowserPassthroughSuspend()
+const moreActionsOpen = ref(false)
+
 const setAddressInputRef = (el: unknown): void => {
   emit(
     'set-address-input-ref',
@@ -92,6 +95,27 @@ const bookmarkLabel = (bookmark: BrowserBookmark): string => {
     return bookmark.url
   }
 }
+
+const handleMoreActionsOpen = (isOpen: boolean): void => {
+  moreActionsOpen.value = isOpen
+}
+
+watch(moreActionsOpen, (isOpen, wasOpen) => {
+  if (isOpen === wasOpen) {
+    return
+  }
+  if (isOpen) {
+    passthroughSuspend.suspend()
+    return
+  }
+  passthroughSuspend.resume()
+})
+
+onBeforeUnmount(() => {
+  if (moreActionsOpen.value) {
+    passthroughSuspend.resume()
+  }
+})
 </script>
 
 <template>
@@ -191,7 +215,10 @@ const bookmarkLabel = (bookmark: BrowserBookmark): string => {
     <Tooltip :disable-closing-trigger="true">
       <TooltipTrigger as-child>
         <span class="inline-flex shrink-0">
-          <DropdownMenu>
+          <DropdownMenu
+            :open="moreActionsOpen"
+            @update:open="handleMoreActionsOpen"
+          >
             <DropdownMenuTrigger as-child>
               <Button
                 variant="ghost"

@@ -1,11 +1,26 @@
 import { ref, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
+import type CdpClient from '@/services/browser/cdp-client'
+import {
+  hardReload,
+  resetNavigationHistory,
+} from '@/services/browser/cdp-navigation'
+import { takeScreenshot } from '@/services/browser/cdp-screenshot'
+import {
+  clearCacheForActiveOrigin,
+  clearCookiesForActiveOrigin,
+} from '@/services/browser/cdp-storage'
+import saveScreenshot from '@/services/browser/screenshot-store'
+import { revealInFolder } from '@/services/pyrola/pyrola-tauri'
 
 type ToolbarArgs = {
-  cefReady: Ref<boolean>
   currentUrl: Ref<string>
-  reload: () => Promise<void>
+  getCefSessionId: () => string | null
+  getClient: () => Promise<CdpClient>
 }
+
+// CEF connects as a page-target CDP socket. Commands go on the socket root.
+const PAGE_TARGET_CDP_SESSION_ID = ''
 
 export default (args: ToolbarArgs) => {
   const historyUrls = ref<string[]>([])
@@ -25,21 +40,41 @@ export default (args: ToolbarArgs) => {
     // Local navigation memory only; embedded CEF has no CDP history list.
   }
 
-  const handleTakeScreenshot = async (): Promise<void> => {
-    toast.info(
-      'Screenshots are available via the agent browser_take_screenshot tool',
-    )
+  const requirePageTargetClient = async (): Promise<CdpClient> => {
+    if (!args.getCefSessionId()) {
+      throw new Error('No active browser session')
+    }
+    return args.getClient()
   }
 
-  const handleHardReload = async (): Promise<void> => {
-    if (!args.cefReady.value) {
+  const handleTakeScreenshot = async (): Promise<void> => {
+    const url = args.currentUrl.value.trim()
+    if (!url || url === 'about:blank') {
+      toast.error('No page to screenshot')
       return
     }
     try {
-      await args.reload()
-      toast.success('Reload complete')
+      const client = await requirePageTargetClient()
+      const shot = await takeScreenshot(client, PAGE_TARGET_CDP_SESSION_ID)
+      const saved = await saveScreenshot(shot.data)
+      await revealInFolder(saved.path)
+      toast.success('Screenshot saved', {
+        description: saved.path,
+      })
     } catch (error) {
-      toast.error('Failed to reload', {
+      toast.error('Failed to take screenshot', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  }
+
+  const handleHardReload = async (): Promise<void> => {
+    try {
+      const client = await requirePageTargetClient()
+      await hardReload(client, PAGE_TARGET_CDP_SESSION_ID)
+      toast.success('Hard reload complete')
+    } catch (error) {
+      toast.error('Failed to hard reload', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
@@ -62,17 +97,40 @@ export default (args: ToolbarArgs) => {
   }
 
   const handleClearBrowsingData = async (): Promise<void> => {
-    toast.info(
-      'Clear browsing data is not available for the embedded browser yet',
-    )
+    try {
+      const client = await requirePageTargetClient()
+      await resetNavigationHistory(client, PAGE_TARGET_CDP_SESSION_ID)
+      historyUrls.value = []
+      toast.success('Browsing history cleared')
+    } catch (error) {
+      toast.error('Failed to clear browsing history', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
   }
 
   const handleClearCookies = async (): Promise<void> => {
-    toast.info('Clear cookies is not available for the embedded browser yet')
+    try {
+      const client = await requirePageTargetClient()
+      await clearCookiesForActiveOrigin(client, PAGE_TARGET_CDP_SESSION_ID)
+      toast.success('Cookies cleared')
+    } catch (error) {
+      toast.error('Failed to clear cookies', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
   }
 
   const handleClearCache = async (): Promise<void> => {
-    toast.info('Clear cache is not available for the embedded browser yet')
+    try {
+      const client = await requirePageTargetClient()
+      await clearCacheForActiveOrigin(client, PAGE_TARGET_CDP_SESSION_ID)
+      toast.success('Cache cleared')
+    } catch (error) {
+      toast.error('Failed to clear cache', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
   }
 
   return {

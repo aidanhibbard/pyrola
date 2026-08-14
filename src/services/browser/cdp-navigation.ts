@@ -239,3 +239,11 @@ export const getNavigationHistoryUrls = async (
     .map((entry) => (typeof entry.url === 'string' ? entry.url : ''))
     .filter((url) => url.length > 0)
 }
+
+export const resetNavigationHistory = async (
+  client: CdpClient,
+  sessionId: string,
+): Promise<void> => {
+  await client.send('Page.enable', {}, sessionId)
+  await client.send('Page.resetNavigationHistory', {}, sessionId)
+}

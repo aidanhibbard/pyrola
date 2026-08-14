@@ -8,27 +8,26 @@ use super::super::sandbox::generate_seatbelt_profile;
 /// Resolve bash for `pipefail` honest pipeline exit codes.
 /// Cached once. Returns `None` when bash is unavailable (caller falls back to `sh`).
 fn resolve_bash() -> Option<&'static str> {
-  static BASH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-  BASH
-    .get_or_init(|| {
-      if std::path::Path::new("/bin/bash").exists() {
-        return Some("/bin/bash".to_string());
-      }
-      std::process::Command::new("which")
-        .arg("bash")
-        .output()
-        .ok()
-        .and_then(|out| {
-          if !out.status.success() {
-            return None;
-          }
-          let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-          if path.is_empty() {
-            None
-          } else {
-            Some(path)
-          }
-        })
+    static BASH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    BASH.get_or_init(|| {
+        if std::path::Path::new("/bin/bash").exists() {
+            return Some("/bin/bash".to_string());
+        }
+        std::process::Command::new("which")
+            .arg("bash")
+            .output()
+            .ok()
+            .and_then(|out| {
+                if !out.status.success() {
+                    return None;
+                }
+                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if path.is_empty() {
+                    None
+                } else {
+                    Some(path)
+                }
+            })
     })
     .as_deref()
 }
@@ -37,42 +36,45 @@ fn resolve_bash() -> Option<&'static str> {
 /// Used when the shell binary is an argument (sandbox-exec / bwrap), not Command::new.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn append_shell_command(cmd: &mut Command, command: &str) {
-  match resolve_bash() {
-    Some(bash) => {
-      cmd.arg(bash).arg("-o").arg("pipefail").arg("-c").arg(command);
+    match resolve_bash() {
+        Some(bash) => {
+            cmd.arg(bash)
+                .arg("-o")
+                .arg("pipefail")
+                .arg("-c")
+                .arg(command);
+        }
+        None => {
+            cmd.arg("sh").arg("-c").arg(command);
+        }
     }
-    None => {
-      cmd.arg("sh").arg("-c").arg(command);
-    }
-  }
 }
 
 fn build_tracked_command(project_root: &str, command: &str) -> Command {
-  let mut cmd = match resolve_bash() {
-    Some(bash) => {
-      let mut cmd = Command::new(bash);
-      cmd.arg("-o").arg("pipefail");
-      cmd
+    let mut cmd = match resolve_bash() {
+        Some(bash) => {
+            let mut cmd = Command::new(bash);
+            cmd.arg("-o").arg("pipefail");
+            cmd
+        }
+        None => Command::new("sh"),
+    };
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(project_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
     }
-    None => Command::new("sh"),
-  };
-  cmd
-    .arg("-c")
-    .arg(command)
-    .current_dir(project_root)
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .kill_on_drop(true);
 
-  #[cfg(unix)]
-  unsafe {
-    cmd.pre_exec(|| {
-      libc::setpgid(0, 0);
-      Ok(())
-    });
-  }
-
-  cmd
+    cmd
 }
 
 /// On macOS: wrap the command with `sandbox-exec` using a generated Seatbelt profile.
@@ -80,42 +82,40 @@ fn build_tracked_command(project_root: &str, command: &str) -> Command {
 /// `killpg` continues to work for the full process tree.
 #[cfg(target_os = "macos")]
 fn build_sandboxed_command(project_root: &str, command: &str, allow_network: bool) -> Command {
-  use std::env;
+    use std::env;
 
-  let home = env::var("HOME").unwrap_or_default();
-  let tmpdir_raw = env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-  let tmpdir = std::fs::canonicalize(&tmpdir_raw)
-    .map(|p| p.to_string_lossy().to_string())
-    .unwrap_or(tmpdir_raw);
-  let project_root_clean = project_root.trim_end_matches('/').to_string();
-  let profile = generate_seatbelt_profile(allow_network, &home, &project_root_clean);
+    let home = env::var("HOME").unwrap_or_default();
+    let tmpdir_raw = env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+    let tmpdir = std::fs::canonicalize(&tmpdir_raw)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(tmpdir_raw);
+    let project_root_clean = project_root.trim_end_matches('/').to_string();
+    let profile = generate_seatbelt_profile(allow_network, &home, &project_root_clean);
 
-  let mut cmd = Command::new("/usr/bin/sandbox-exec");
-  cmd
-    .arg("-D")
-    .arg(format!("HOME={home}"))
-    .arg("-D")
-    .arg(format!("PROJECT_ROOT={project_root_clean}"))
-    .arg("-D")
-    .arg(format!("TMPDIR={tmpdir}"))
-    .arg("-p")
-    .arg(profile);
-  append_shell_command(&mut cmd, command);
-  cmd
-    .current_dir(project_root)
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .kill_on_drop(true);
+    let mut cmd = Command::new("/usr/bin/sandbox-exec");
+    cmd.arg("-D")
+        .arg(format!("HOME={home}"))
+        .arg("-D")
+        .arg(format!("PROJECT_ROOT={project_root_clean}"))
+        .arg("-D")
+        .arg(format!("TMPDIR={tmpdir}"))
+        .arg("-p")
+        .arg(profile);
+    append_shell_command(&mut cmd, command);
+    cmd.current_dir(project_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
-  #[cfg(unix)]
-  unsafe {
-    cmd.pre_exec(|| {
-      libc::setpgid(0, 0);
-      Ok(())
-    });
-  }
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
 
-  cmd
+    cmd
 }
 
 /// On Linux: wrap the command with `bwrap` (bubblewrap) for namespace-based sandboxing.
@@ -123,92 +123,93 @@ fn build_sandboxed_command(project_root: &str, command: &str, allow_network: boo
 /// Network isolation is applied when `allow_network` is false.
 #[cfg(target_os = "linux")]
 fn find_bwrap() -> Option<String> {
-  let candidates = ["/usr/bin/bwrap", "/usr/local/bin/bwrap", "/bin/bwrap"];
-  for candidate in &candidates {
-    if std::path::Path::new(candidate).exists() {
-      return Some((*candidate).to_string());
-    }
-  }
-  // Fall back to PATH search
-  std::process::Command::new("which")
-    .arg("bwrap")
-    .output()
-    .ok()
-    .and_then(|out| {
-      if out.status.success() {
-        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !path.is_empty() {
-          return Some(path);
+    let candidates = ["/usr/bin/bwrap", "/usr/local/bin/bwrap", "/bin/bwrap"];
+    for candidate in &candidates {
+        if std::path::Path::new(candidate).exists() {
+            return Some((*candidate).to_string());
         }
-      }
-      None
-    })
+    }
+    // Fall back to PATH search
+    std::process::Command::new("which")
+        .arg("bwrap")
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+            None
+        })
 }
 
 #[cfg(target_os = "linux")]
-fn build_bubblewrap_command(bwrap: &str, project_root: &str, command: &str, allow_network: bool) -> Command {
-  let mut cmd = Command::new(bwrap);
+fn build_bubblewrap_command(
+    bwrap: &str,
+    project_root: &str,
+    command: &str,
+    allow_network: bool,
+) -> Command {
+    let mut cmd = Command::new(bwrap);
 
-  // Read-only system mounts
-  for ro_path in &["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"] {
-    if std::path::Path::new(ro_path).exists() {
-      cmd.arg("--ro-bind").arg(ro_path).arg(ro_path);
+    // Read-only system mounts
+    for ro_path in &["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"] {
+        if std::path::Path::new(ro_path).exists() {
+            cmd.arg("--ro-bind").arg(ro_path).arg(ro_path);
+        }
     }
-  }
 
-  // Common tool prefixes (nix, snap)
-  for opt_path in &["/opt", "/run/current-system", "/nix"] {
-    if std::path::Path::new(opt_path).exists() {
-      cmd.arg("--ro-bind").arg(opt_path).arg(opt_path);
+    // Common tool prefixes (nix, snap)
+    for opt_path in &["/opt", "/run/current-system", "/nix"] {
+        if std::path::Path::new(opt_path).exists() {
+            cmd.arg("--ro-bind").arg(opt_path).arg(opt_path);
+        }
     }
-  }
 
-  // /dev and /proc (required for most shell commands)
-  cmd.arg("--dev").arg("/dev");
-  cmd.arg("--proc").arg("/proc");
+    // /dev and /proc (required for most shell commands)
+    cmd.arg("--dev").arg("/dev");
+    cmd.arg("--proc").arg("/proc");
 
-  // tmpfs for /tmp
-  cmd.arg("--tmpfs").arg("/tmp");
+    // tmpfs for /tmp
+    cmd.arg("--tmpfs").arg("/tmp");
 
-  // Project root: read-write bind mount
-  cmd
-    .arg("--bind")
-    .arg(project_root)
-    .arg(project_root);
+    // Project root: read-write bind mount
+    cmd.arg("--bind").arg(project_root).arg(project_root);
 
-  // HOME: read-write so tool caches work, but only if it differs from project root
-  if let Ok(home) = std::env::var("HOME") {
-    if !home.is_empty() && home != project_root {
-      cmd.arg("--bind").arg(&home).arg(&home);
+    // HOME: read-write so tool caches work, but only if it differs from project root
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() && home != project_root {
+            cmd.arg("--bind").arg(&home).arg(&home);
+        }
     }
-  }
 
-  // Network isolation
-  if !allow_network {
-    cmd.arg("--unshare-net");
-  }
+    // Network isolation
+    if !allow_network {
+        cmd.arg("--unshare-net");
+    }
 
-  // Kill bwrap sandbox when the parent process exits
-  cmd.arg("--die-with-parent");
+    // Kill bwrap sandbox when the parent process exits
+    cmd.arg("--die-with-parent");
 
-  // The actual command
-  cmd.arg("--");
-  append_shell_command(&mut cmd, command);
-  cmd
-    .current_dir(project_root)
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .kill_on_drop(true);
+    // The actual command
+    cmd.arg("--");
+    append_shell_command(&mut cmd, command);
+    cmd.current_dir(project_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
 
-  #[cfg(unix)]
-  unsafe {
-    cmd.pre_exec(|| {
-      libc::setpgid(0, 0);
-      Ok(())
-    });
-  }
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
 
-  cmd
+    cmd
 }
 
 /// Spawn the child process, applying OS-appropriate sandboxing when requested.
@@ -223,51 +224,56 @@ fn build_bubblewrap_command(bwrap: &str, project_root: &str, command: &str, allo
 /// Default when `sandboxed` is `None` is sandboxed (`true`). This is OS process
 /// isolation for the agent shell tool only, not a full VM or MCP/LSP sandbox.
 pub(crate) fn spawn_child(
-  project_root: &str,
-  command: &str,
-  sandboxed: Option<bool>,
-  allow_network: Option<bool>,
+    project_root: &str,
+    command: &str,
+    sandboxed: Option<bool>,
+    allow_network: Option<bool>,
 ) -> Result<tokio::process::Child, String> {
-  let want_sandbox = sandboxed.unwrap_or(true);
+    let want_sandbox = sandboxed.unwrap_or(true);
 
-  #[cfg(target_os = "macos")]
-  {
-    if want_sandbox {
-      return build_sandboxed_command(project_root, command, allow_network.unwrap_or(false))
-        .spawn()
-        .map_err(|e| format!("SANDBOX_FAILED: {e}"));
-    }
-  }
-
-  #[cfg(target_os = "linux")]
-  {
-    if want_sandbox {
-      match find_bwrap() {
-        Some(bwrap) => {
-          return build_bubblewrap_command(&bwrap, project_root, command, allow_network.unwrap_or(false))
-            .spawn()
-            .map_err(|e| format!("SANDBOX_FAILED: {e}"));
+    #[cfg(target_os = "macos")]
+    {
+        if want_sandbox {
+            return build_sandboxed_command(project_root, command, allow_network.unwrap_or(false))
+                .spawn()
+                .map_err(|e| format!("SANDBOX_FAILED: {e}"));
         }
-        None => {
-          return Err("SANDBOX_UNAVAILABLE: install bubblewrap".to_string());
-        }
-      }
     }
-  }
 
-  #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-  {
-    if want_sandbox {
-      return Err(
+    #[cfg(target_os = "linux")]
+    {
+        if want_sandbox {
+            match find_bwrap() {
+                Some(bwrap) => {
+                    return build_bubblewrap_command(
+                        &bwrap,
+                        project_root,
+                        command,
+                        allow_network.unwrap_or(false),
+                    )
+                    .spawn()
+                    .map_err(|e| format!("SANDBOX_FAILED: {e}"));
+                }
+                None => {
+                    return Err("SANDBOX_UNAVAILABLE: install bubblewrap".to_string());
+                }
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        if want_sandbox {
+            return Err(
         "SANDBOX_UNAVAILABLE: no OS sandbox on this platform; approve unsandboxed shell to continue"
           .to_string(),
       );
+        }
     }
-  }
 
-  let _ = allow_network;
+    let _ = allow_network;
 
-  build_tracked_command(project_root, command)
-    .spawn()
-    .map_err(|e| e.to_string())
+    build_tracked_command(project_root, command)
+        .spawn()
+        .map_err(|e| e.to_string())
 }

@@ -156,6 +156,7 @@ onMounted(() => {
         v-if="consoleOpen"
         :lines="lines"
         @clear="clearConsole"
+        @close="toggleConsole"
       />
     </div>
   </div>

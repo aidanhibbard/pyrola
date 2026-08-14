@@ -160,6 +160,44 @@ describe('cdp-navigation', () => {
     expect(send.mock.calls.map((call) => call[0])).toEqual(['Page.enable', 'Page.reload'])
   })
 
+  it('hardReload calls Page.reload with ignoreCache true and waits for load', async () => {
+    const { client, send, emit } = createFakeClient()
+    send.mockImplementation(async (method) => {
+      if (method === 'Page.enable') {
+        return {}
+      }
+      if (method === 'Page.reload') {
+        queueMicrotask(() => {
+          emit('Page.loadEventFired', {}, 'sess-1')
+        })
+        return {}
+      }
+      return {}
+    })
+
+    const { hardReload } = await import('@/services/browser/cdp-navigation')
+    await hardReload(client, 'sess-1')
+
+    expect(send).toHaveBeenCalledWith(
+      'Page.reload',
+      { ignoreCache: true },
+      'sess-1',
+    )
+    expect(send.mock.calls.map((call) => call[0])).toEqual(['Page.enable', 'Page.reload'])
+  })
+
+  it('resetNavigationHistory sends Page.enable then Page.resetNavigationHistory', async () => {
+    const { client, send } = createFakeClient()
+
+    const { resetNavigationHistory } = await import('@/services/browser/cdp-navigation')
+    await resetNavigationHistory(client, 'sess-1')
+
+    expect(send.mock.calls).toEqual([
+      ['Page.enable', {}, 'sess-1'],
+      ['Page.resetNavigationHistory', {}, 'sess-1'],
+    ])
+  })
+
   it('goBack throws when there is no previous entry', async () => {
     const { client, send } = createFakeClient()
     send.mockImplementation(async (method) => {

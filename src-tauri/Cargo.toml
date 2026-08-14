@@ -77,6 +77,10 @@ path = "src/bin/cef-spike-validate.rs"
 required-features = ["cef-spike"]
 
 [[test]]
+name = "commands_shell"
+path = "../spec/src-tauri/commands/shell.rs"
+
+[[test]]
 name = "commands_sandbox"
 path = "../spec/src-tauri/commands/sandbox.rs"
 

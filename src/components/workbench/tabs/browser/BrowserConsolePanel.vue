@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Trash2 } from '@lucide/vue'
+import { Trash2, X } from '@lucide/vue'
 import { Button } from '@/components/shadcn/ui/button'
 import {
   Tooltip,
@@ -14,6 +14,7 @@ defineProps<{
 
 const emit = defineEmits<{
   clear: []
+  close: []
 }>()
 </script>
 
@@ -23,22 +24,39 @@ const emit = defineEmits<{
       <span class="text-xs font-medium text-muted-foreground">
         Console
       </span>
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="h-6 w-6"
-            type="button"
-            aria-label="Clear console"
-            :disabled="lines.length === 0"
-            @click="emit('clear')"
-          >
-            <Trash2 class="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Clear console</TooltipContent>
-      </Tooltip>
+      <div class="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6"
+              type="button"
+              aria-label="Clear console"
+              :disabled="lines.length === 0"
+              @click="emit('clear')"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Clear console</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6"
+              type="button"
+              aria-label="Close console"
+              @click="emit('close')"
+            >
+              <X class="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close console</TooltipContent>
+        </Tooltip>
+      </div>
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto px-2 py-1 font-mono text-[11px] leading-relaxed">
       <div
