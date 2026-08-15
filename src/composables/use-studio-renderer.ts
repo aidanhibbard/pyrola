@@ -36,7 +36,7 @@ export default (
   const applyParsedContent = async (content: string): Promise<void> => {
     if (isStudioHtmlContent(content)) {
       parseError.value =
-        'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio").'
+        'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio-blocks").'
       renderMarkdown.value = ''
       return
     }
@@ -75,7 +75,7 @@ export default (
       const file = await fsReadFile({ projectRoot: root, path: artifactPath.value })
       if (isStudioHtmlContent(file.content)) {
         parseError.value =
-          'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio").'
+          'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio-blocks").'
         markdown.value = ''
         renderMarkdown.value = ''
         data.value = {}

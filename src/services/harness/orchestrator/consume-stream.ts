@@ -12,6 +12,7 @@ import {
   setTurnResponseMessages,
 } from '@/services/harness/subagent/registry'
 import { getPlanExecutionSession } from '@/services/harness/plan-execution-session'
+import toCachedInstructions from '@/services/models/to-cached-instructions'
 import {
   nowIso,
   resolveStreamError,
@@ -43,7 +44,7 @@ export default async (prepared: PreparedHarnessStream): Promise<void> => {
 
   const result = streamText({
     model,
-    instructions: system,
+    instructions: toCachedInstructions(system, callOptions.providerOptions),
     messages: finalModelMessages,
     tools,
     maxOutputTokens: callOptions.maxOutputTokens,

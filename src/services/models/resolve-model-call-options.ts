@@ -11,6 +11,7 @@ import {
   type SdkPortableReasoningLevel,
 } from '@/services/models/resolve-reasoning-for-call'
 import resolveSupportsFast from '@/services/models/resolve-fast-capability'
+import applyAnthropicPromptCache from '@/services/models/apply-anthropic-prompt-cache'
 
 type JsonPrimitive = string | number | boolean | null
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
@@ -150,6 +151,7 @@ export const resolveModelCallOptions = (
       ref,
       resolveSupportsFast(ref) ? reasoningMapping.fast : undefined,
     )
+    applyAnthropicPromptCache(options, ref)
     return options
   }
 
@@ -211,6 +213,7 @@ export const resolveModelCallOptions = (
     ref,
     resolveSupportsFast(ref) ? reasoningMapping.fast : undefined,
   )
+  applyAnthropicPromptCache(options, ref)
   return options
 }
 

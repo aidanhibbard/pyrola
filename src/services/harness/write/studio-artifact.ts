@@ -13,7 +13,7 @@ import type { HarnessToolContext } from '@/types/harness/tool-context'
 const writeStudioArtifact = (ctx: HarnessToolContext) =>
   tool({
     description: withToolExamples(
-      'Publish a Comark studio artifact to .pyrola/studio/<slug>/index.md. Load skill studio first. Optional data sidecar writes data.json. Never use HTML.',
+      'Publish a Comark studio artifact to .pyrola/studio/<slug>/index.md. Call load_skill("studio-blocks") for the block catalog. Optional data sidecar writes data.json. Never use HTML.',
       [
         {
           slug: 'launch-brief',
@@ -41,7 +41,7 @@ const writeStudioArtifact = (ctx: HarnessToolContext) =>
       if (isStudioHtmlContent(content)) {
         return {
           error:
-            'Studio artifacts must be Comark markdown, not HTML. Call load_skill("studio") for block syntax.',
+            'Studio artifacts must be Comark markdown, not HTML. Call load_skill("studio-blocks") for block syntax.',
         }
       }
 

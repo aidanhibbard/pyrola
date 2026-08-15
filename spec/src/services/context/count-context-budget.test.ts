@@ -20,7 +20,7 @@ vi.mock('@/services/context/system-prompt-parts', async () => {
     ...actual,
     default: async () => ({
       base: 'base-system',
-      tools: 'tool-catalog-prose',
+      tools: 'Tools are provided as function calls; do not grep the repo for them.',
       mcp: 'mcp-catalog',
       rules: 'rules-body',
       subagents: 'subagents',

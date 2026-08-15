@@ -39,7 +39,7 @@ const syncStudioParseError = (): void => {
   }
   if (isStudioHtmlContent(props.content)) {
     studioParseError.value =
-      'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio").'
+      'This artifact uses unsupported HTML. Regenerate with Comark blocks via load_skill("studio-blocks").'
     return
   }
   studioParseError.value = null

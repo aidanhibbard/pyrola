@@ -8,6 +8,7 @@ import loadPrompt from '@/services/prompts/load-prompt'
 import { appendChatLine, updateChatMeta } from '@/services/pyrola/pyrola-tauri'
 import { resolveParsedModelForRole } from '@/services/models/resolve-model-for-role'
 import { resolveSideTaskCallOptions } from '@/services/models/resolve-model-call-options'
+import toCachedInstructions from '@/services/models/to-cached-instructions'
 import estimateTextTokens from '@/utils/estimate-text-tokens'
 import formatUnknownError from '@/utils/format-unknown-error'
 
@@ -156,7 +157,7 @@ export default async (input: CompactSessionInput): Promise<CompactSessionResult>
 
     const result = await generateText({
       model,
-      system,
+      system: toCachedInstructions(system, callOptions.providerOptions),
       prompt,
       maxOutputTokens: COMPACT_MAX_OUTPUT_TOKENS,
       temperature: callOptions.temperature,

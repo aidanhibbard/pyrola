@@ -206,8 +206,8 @@ export default async (input: CountContextBudgetInput): Promise<ContextBudget> =>
     input.standalone,
   )
 
-  // System includes tool-catalog prose that is part of instructions.
-  // Tools / MCP buckets count real definition schemas (not that prose again).
+  // System includes the tools hint that is part of instructions.
+  // Tools / MCP buckets count real definition schemas (not that hint again).
   // Conversation prefers timeline serialization so tool args/results count;
   // chatStore.messages only keep assistant text/reasoning.
   const bucketTokens: Record<ContextBucketId, number> = {

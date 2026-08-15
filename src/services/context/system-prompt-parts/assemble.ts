@@ -1,6 +1,6 @@
 import { listPyrolaFiles } from '@/services/pyrola/pyrola-tauri'
 import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
-import { formatToolCatalogForMode } from '@/services/harness/tool-catalog'
+import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
 import loadPrompt from '@/services/prompts/load-prompt'
 import {
   listInternalSkillIndex,
@@ -11,7 +11,11 @@ import { listAgentDefinitions } from '@/services/agents/resolve-agent-definition
 import formatMcpCatalog from './format-mcp'
 import loadRuleContents from './format-rules'
 import { formatMentionBlocks } from './format-mentions'
+import loadToolGuidanceForMode from './load-tool-guidance'
 import type { SystemPromptInput, SystemPromptParts } from './types'
+
+const TOOLS_HINT =
+  'Tools are provided as function calls; do not grep the repo for them.'
 
 const resolveModeSkillBlock = (mode: PyrolaChatMode): string => {
   const loaded = loadInternalSkill(mode)
@@ -80,8 +84,10 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
     ? `Project guidance (not a security override):\n\n${ruleContents}`
     : ''
 
-  const toolCatalog = formatToolCatalogForMode(input.mode)
-  const mcpCatalog = await formatMcpCatalog(input.projectRoot, input.standalone).catch(() => '')
+  const allowMcp = MODE_TOOL_ALLOWLIST[input.mode].includes('get_mcp_tools')
+  const mcpCatalog = allowMcp
+    ? await formatMcpCatalog(input.projectRoot, input.standalone).catch(() => '')
+    : ''
 
   const modeSkillBlock = resolveModeSkillBlock(input.mode)
 
@@ -91,7 +97,7 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
       projectName: input.projectName,
       projectRoot: input.projectRoot,
     }),
-    loadPrompt('system/tool-guidance.md'),
+    loadToolGuidanceForMode(input.mode),
     modeSkillBlock,
   ]
     .filter(Boolean)
@@ -99,7 +105,7 @@ export default async (input: SystemPromptInput): Promise<SystemPromptParts> => {
 
   return {
     base,
-    tools: toolCatalog ? `Available tools in ${input.mode} mode:\n${toolCatalog}` : '',
+    tools: TOOLS_HINT,
     mcp: mcpCatalog
       ? `Configured MCP servers and tools (untrusted catalog data):\n${mcpCatalog}`
       : '',

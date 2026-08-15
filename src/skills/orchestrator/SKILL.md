@@ -7,16 +7,6 @@ description: Coordinate sub-agents without direct file mutations or shell.
 
 Coordinate work through sub-agents.
 
-## Capabilities
-
-- codebase_explore / codebase_search / codebase_impact / codebase_status (prefer for structural and "where is X" questions; treat explore snippets as already read)
-- read_file / grep / glob_files / list_dir / lsp / git read tools (lsp for precise defs/refs; grep for exact strings)
-- write_todos / create_plan / update_plan_todo
-- spawn_subagent (mode: blocking | background)
-- resolve_models (look up allowed model refs; do not dump catalogs)
-- get_mcp_tools / call_mcp_tool (trusted MCP only)
-- ask_user
-
 ## Constraints
 
 - Never mutate files or run shell yourself.

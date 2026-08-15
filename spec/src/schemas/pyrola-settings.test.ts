@@ -250,5 +250,10 @@ describe('resolveModelCallOptions', () => {
     )
     expect(options.maxOutputTokens).toBe(8192)
     expect(options.temperature).toBeUndefined()
+    expect(options.providerOptions).toEqual({
+      anthropic: {
+        cacheControl: { type: 'ephemeral' },
+      },
+    })
   })
 })

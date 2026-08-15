@@ -1,6 +1,3 @@
-import type { PyrolaChatMode } from '@/types/pyrola/pyrola-settings'
-import { MODE_TOOL_ALLOWLIST } from '@/services/harness/mode-allowlists'
-
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
   read_file: 'Read a file from the project workspace',
   write_file: 'Create or overwrite a file',
@@ -67,12 +64,4 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Raw CDP (restricted). Prefer dedicated browser_* tools. Input.* denied. Runtime.evaluate expression is a JS string (wrong: nested { expression: { expression: "..." } }; right: expression: "document.title"). Snapshot after DOM changes.',
   web_fetch:
     'Fetch an http(s) URL as markdown, text, or html (not the CEF browser; use browser_* for JS SPAs)',
-}
-
-export const formatToolCatalogForMode = (mode: PyrolaChatMode): string => {
-  const lines = MODE_TOOL_ALLOWLIST[mode].map((name) => {
-    const description = TOOL_DESCRIPTIONS[name] ?? name.replaceAll('_', ' ')
-    return `- ${name}: ${description}`
-  })
-  return lines.join('\n')
 }

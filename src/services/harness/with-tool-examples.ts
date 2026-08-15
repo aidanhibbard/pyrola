@@ -1,5 +1,5 @@
-const MAX_EXAMPLES = 2
-const MAX_EXAMPLE_CHARS = 600
+const MAX_EXAMPLES = 1
+const MAX_EXAMPLE_CHARS = 280
 
 const formatExample = (example: Record<string, unknown>, index: number): string => {
   const body = JSON.stringify(example, null, 2)
