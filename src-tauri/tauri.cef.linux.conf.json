@@ -6,6 +6,13 @@
     ],
     "resources": {
       "cef-runtime/**/*": "./"
+    },
+    "linux": {
+      "rpm": {
+        "compression": {
+          "type": "none"
+        }
+      }
     }
   }
 }

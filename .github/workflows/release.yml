@@ -48,7 +48,7 @@ jobs:
             cache_key: cef-ubuntu-24.04-release
           - platform: ubuntu-24.04
             label: Linux rpm
-            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles rpm'
+            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles rpm --verbose'
             rust_targets: ''
             cache_key: cef-ubuntu-24.04-release
           - platform: windows-latest
