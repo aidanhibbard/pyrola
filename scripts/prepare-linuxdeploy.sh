@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Extract linuxdeploy and its AppImage plugin so Tauri can bundle without FUSE.
-# GitHub-hosted Ubuntu 24.04 runners cannot mount AppImages.
+# Place extracted linuxdeploy ELFs where Tauri expects *.AppImage names.
+# Do not leave shell scripts named .AppImage: binfmt treats those as AppImages and fails.
 set -euo pipefail
 
 export APPIMAGE_EXTRACT_AND_RUN=1
@@ -12,12 +12,12 @@ cd "$CACHE"
 find_exec() {
   local root="$1"
   local name="$2"
-  if [[ -x "${root}/AppRun" ]]; then
-    echo "${root}/AppRun"
-    return
-  fi
   if [[ -x "${root}/usr/bin/${name}" ]]; then
     echo "${root}/usr/bin/${name}"
+    return
+  fi
+  if [[ -x "${root}/AppRun" ]]; then
+    echo "${root}/AppRun"
     return
   fi
   echo "Could not find ${name} under ${root}" >&2
@@ -43,38 +43,23 @@ PLUGIN_BIN="$(find_exec "${CACHE}/plugin-appimage-root" linuxdeploy-plugin-appim
 
 echo "linuxdeploy binary: ${LINUXDEPLOY_BIN}"
 echo "plugin binary: ${PLUGIN_BIN}"
+file "${LINUXDEPLOY_BIN}" "${PLUGIN_BIN}" || true
 
-cat > linuxdeploy-x86_64.AppImage <<EOF
-#!/usr/bin/env bash
-export APPIMAGE_EXTRACT_AND_RUN=1
-export PATH="${CACHE}:\${PATH}"
-args=()
-for arg in "\$@"; do
-  if [[ "\$arg" != "--appimage-extract-and-run" ]]; then
-    args+=("\$arg")
-  fi
-done
-exec "${LINUXDEPLOY_BIN}" "\${args[@]}"
-EOF
-chmod +x linuxdeploy-x86_64.AppImage
+cp -L "${LINUXDEPLOY_BIN}" "${CACHE}/linuxdeploy-x86_64.AppImage"
+chmod +x "${CACHE}/linuxdeploy-x86_64.AppImage"
 
-cat > linuxdeploy-plugin-appimage-x86_64.AppImage <<EOF
-#!/usr/bin/env bash
-export APPIMAGE_EXTRACT_AND_RUN=1
-args=()
-for arg in "\$@"; do
-  if [[ "\$arg" != "--appimage-extract-and-run" ]]; then
-    args+=("\$arg")
-  fi
-done
-exec "${PLUGIN_BIN}" "\${args[@]}"
-EOF
-chmod +x linuxdeploy-plugin-appimage-x86_64.AppImage
+cp -L "${PLUGIN_BIN}" "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage"
+cp -L "${PLUGIN_BIN}" "${CACHE}/linuxdeploy-plugin-appimage"
+chmod +x "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" "${CACHE}/linuxdeploy-plugin-appimage"
 
-cp linuxdeploy-plugin-appimage-x86_64.AppImage linuxdeploy-plugin-appimage
-chmod +x linuxdeploy-plugin-appimage
-
-chattr +i linuxdeploy-x86_64.AppImage linuxdeploy-plugin-appimage-x86_64.AppImage 2>/dev/null || true
+chattr +i "${CACHE}/linuxdeploy-x86_64.AppImage" \
+  "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" 2>/dev/null || true
 
 echo "${CACHE}" >> "${GITHUB_PATH:-/dev/null}"
+
+set +e
+(cd /tmp && "${CACHE}/linuxdeploy-x86_64.AppImage" --help)
+echo "linuxdeploy help exit: $?"
+set -e
+
 echo "Prepared linuxdeploy at ${CACHE} without FUSE"
