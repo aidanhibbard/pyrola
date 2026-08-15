@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Place extracted linuxdeploy ELFs where Tauri expects *.AppImage names.
-# Do not leave shell scripts named .AppImage: binfmt treats those as AppImages and fails.
+# Install linuxdeploy as a small ELF trampoline named *.AppImage.
+# Tauri always passes --appimage-extract-and-run. The extracted linuxdeploy
+# binary does not accept that flag. A shell script named .AppImage is also
+# unusable: binfmt treats it as an AppImage and fails with ENOENT.
 set -euo pipefail
 
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 CACHE="${HOME}/.cache/tauri"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$CACHE"
 cd "$CACHE"
 
@@ -43,14 +46,17 @@ PLUGIN_BIN="$(find_exec "${CACHE}/plugin-appimage-root" linuxdeploy-plugin-appim
 
 echo "linuxdeploy binary: ${LINUXDEPLOY_BIN}"
 echo "plugin binary: ${PLUGIN_BIN}"
-file "${LINUXDEPLOY_BIN}" "${PLUGIN_BIN}" || true
 
-cp -L "${LINUXDEPLOY_BIN}" "${CACHE}/linuxdeploy-x86_64.AppImage"
-chmod +x "${CACHE}/linuxdeploy-x86_64.AppImage"
-
-cp -L "${PLUGIN_BIN}" "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage"
-cp -L "${PLUGIN_BIN}" "${CACHE}/linuxdeploy-plugin-appimage"
-chmod +x "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" "${CACHE}/linuxdeploy-plugin-appimage"
+gcc -O2 -o "${CACHE}/linuxdeploy-x86_64.AppImage" \
+  -DREAL_PATH="\"${LINUXDEPLOY_BIN}\"" \
+  "${ROOT}/scripts/linuxdeploy-trampoline.c"
+gcc -O2 -o "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" \
+  -DREAL_PATH="\"${PLUGIN_BIN}\"" \
+  "${ROOT}/scripts/linuxdeploy-trampoline.c"
+cp "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" "${CACHE}/linuxdeploy-plugin-appimage"
+chmod +x "${CACHE}/linuxdeploy-x86_64.AppImage" \
+  "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" \
+  "${CACHE}/linuxdeploy-plugin-appimage"
 
 chattr +i "${CACHE}/linuxdeploy-x86_64.AppImage" \
   "${CACHE}/linuxdeploy-plugin-appimage-x86_64.AppImage" 2>/dev/null || true
@@ -58,8 +64,8 @@ chattr +i "${CACHE}/linuxdeploy-x86_64.AppImage" \
 echo "${CACHE}" >> "${GITHUB_PATH:-/dev/null}"
 
 set +e
-(cd /tmp && "${CACHE}/linuxdeploy-x86_64.AppImage" --help)
-echo "linuxdeploy help exit: $?"
+(cd /tmp && "${CACHE}/linuxdeploy-x86_64.AppImage" --appimage-extract-and-run --help)
+echo "linuxdeploy trampoline help exit: $?"
 set -e
 
-echo "Prepared linuxdeploy at ${CACHE} without FUSE"
+echo "Prepared linuxdeploy trampoline at ${CACHE}"
