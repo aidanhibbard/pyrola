@@ -17,27 +17,48 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            label: macOS aarch64
-            args: '--target aarch64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json'
+            label: macOS aarch64 dmg
+            args: '--target aarch64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json --bundles dmg'
             rust_targets: aarch64-apple-darwin
-            cef_config: src-tauri/tauri.cef.macos.conf.json
+            cache_key: cef-macos-latest-aarch64-apple-darwin-release
           - platform: macos-latest
-            label: macOS x86_64
-            args: '--target x86_64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json'
+            label: macOS x86_64 dmg
+            args: '--target x86_64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json --bundles dmg'
             rust_targets: x86_64-apple-darwin
-            cef_config: src-tauri/tauri.cef.macos.conf.json
+            cache_key: cef-macos-latest-x86_64-apple-darwin-release
+          - platform: macos-latest
+            label: macOS aarch64 app
+            args: '--target aarch64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json --bundles app'
+            rust_targets: aarch64-apple-darwin
+            cache_key: cef-macos-latest-aarch64-apple-darwin-release
+          - platform: macos-latest
+            label: macOS x86_64 app
+            args: '--target x86_64-apple-darwin --features cef --config src-tauri/tauri.cef.macos.conf.json --bundles app'
+            rust_targets: x86_64-apple-darwin
+            cache_key: cef-macos-latest-x86_64-apple-darwin-release
           - platform: ubuntu-24.04
-            label: Linux x86_64
-            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json'
+            label: Linux AppImage
+            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles appimage'
             rust_targets: ''
-            cef_config: src-tauri/tauri.cef.linux.conf.json
+            cache_key: cef-ubuntu-24.04-release
+          - platform: ubuntu-24.04
+            label: Linux deb
+            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles deb'
+            rust_targets: ''
+            cache_key: cef-ubuntu-24.04-release
+          - platform: ubuntu-24.04
+            label: Linux rpm
+            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles rpm'
+            rust_targets: ''
+            cache_key: cef-ubuntu-24.04-release
           - platform: windows-latest
-            label: Windows x86_64
-            args: '--features cef --config src-tauri/tauri.cef.windows.conf.json'
+            label: Windows NSIS
+            args: '--features cef --config src-tauri/tauri.cef.windows.conf.json --bundles nsis'
             rust_targets: ''
-            cef_config: src-tauri/tauri.cef.windows.conf.json
+            cache_key: cef-windows-latest-release
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -65,7 +86,8 @@ jobs:
             libxdamage1 \
             libxrandr2 \
             libcups2 \
-            libpangocairo-1.0-0
+            libpangocairo-1.0-0 \
+            rpm
           sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
 
       - name: Install macOS build tools
@@ -87,7 +109,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
-          key: release-cef-${{ matrix.platform }}-${{ matrix.rust_targets }}
+          key: ${{ matrix.cache_key }}
 
       - name: Resolve CEF cache path
         id: cef
@@ -169,6 +191,7 @@ jobs:
   checksums:
     name: Checksums and publish
     needs: publish-tauri
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
