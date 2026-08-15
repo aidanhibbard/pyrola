@@ -9,6 +9,7 @@ use super::env::codegraph_store_env_vars;
 use super::safety_net::safety_net_after_cli;
 use super::prepare::prepare_codegraph_store;
 use crate::commands::fs::canonical_project_root;
+use crate::commands::mcp::{apply_resolved_path_env, resolve_command};
 
 const CODEGRAPH_NPM_PACKAGE: &str = "@colbymchenry/codegraph";
 
@@ -65,7 +66,8 @@ pub async fn codegraph_cli(
   }
   args.push(&root_str);
 
-  let mut command = Command::new("npx");
+  let npx = resolve_command(&app, "npx").await?;
+  let mut command = Command::new(&npx);
   command
     .args(&args)
     .current_dir(&root)
@@ -78,6 +80,7 @@ pub async fn codegraph_cli(
   {
     command.env(key, value);
   }
+  apply_resolved_path_env(&mut command, &npx);
 
   let output = command
     .output()

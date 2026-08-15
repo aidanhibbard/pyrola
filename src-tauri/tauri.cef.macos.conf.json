@@ -9,7 +9,8 @@
         "./cef-runtime/Chromium Embedded Framework.framework"
       ],
       "entitlements": "./Entitlements.cef.plist",
-      "hardenedRuntime": true
+      "hardenedRuntime": false,
+      "signingIdentity": "-"
     }
   }
 }

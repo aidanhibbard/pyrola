@@ -121,10 +121,8 @@ export default (workspaceId: string, tabId: string) => {
         }
         session.startPolling()
       }
-      consoleApi.attachConsole(session.getCdpClient).catch((error: unknown) => {
-        toast.error('Failed to attach browser console', {
-          description: formatUnknownError(error),
-        })
+      consoleApi.attachConsole(session.getCdpClient).catch(() => {
+        consoleApi.detachConsole()
       })
       if (hasPage.value) {
         toolbar.recordHistoryUrl(pageUrl.value)

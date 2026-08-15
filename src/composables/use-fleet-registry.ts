@@ -3,7 +3,6 @@ import { toast } from 'vue-sonner'
 import type { FleetProject } from '@/types/fleet/fleet-project'
 import useMcpServers from '@/composables/use-mcp-servers'
 import ensureCodeGraph from '@/services/codegraph/ensure-codegraph'
-import invokeErrorMessage from '@/utils/invoke-error-message'
 import { sessionTrusts } from '@/services/mcp/mcp-trust'
 import { CODEGRAPH_SERVER_ID } from '@/types/codegraph/managed-codegraph'
 import {
@@ -61,6 +60,17 @@ export default () => {
     loaded.value = true
   }
 
+  // Auto-start: Graph chip owns MCP serverState.error. Do not toast.
+  const ensureGraphQuietly = async (root: string): Promise<void> => {
+    try {
+      await ensureCodeGraph(root)
+    } catch {
+      return
+    } finally {
+      await refreshHasPyrola()
+    }
+  }
+
   const setActiveProject = async (projectId: string | null): Promise<void> => {
     if (projectId === activeProjectId.value) {
       return
@@ -108,13 +118,9 @@ export default () => {
       if (project) {
         // Project MCP was stopped above; reload configs for the new root via ensure.
         // Do not block activation on CodeGraph connect; Graph UI polls status itself.
-        ensureCodeGraph(project.rootPath)
-          .then(() => refreshHasPyrola())
-          .catch((error: unknown) => {
-            toast.error('Failed to start graph', {
-              description: invokeErrorMessage(error),
-            })
-          })
+        ensureGraphQuietly(project.rootPath).catch(() => {
+          return
+        })
       }
     }
   }
@@ -145,13 +151,7 @@ export default () => {
     if (isTauri()) {
       const project = projects.value.find((entry) => entry.id === activeProjectId.value)
       if (project) {
-        try {
-          await ensureCodeGraph(project.rootPath)
-        } catch (error) {
-          toast.error('Failed to start graph', {
-            description: invokeErrorMessage(error),
-          })
-        }
+        await ensureGraphQuietly(project.rootPath)
       }
     }
   }

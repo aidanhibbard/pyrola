@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 use super::allowlist::validate_mcp_spawn;
 use super::env::validate_mcp_env;
+use super::resolve_cmd::{apply_resolved_path_env, resolve_command};
 use super::rpc::{json_rpc, json_rpc_notify, list_tools_internal, spawn_reader};
 use super::types::{
   parse_mcp_icons, set_state, McpProcess, McpServerState, MCP_PROCESSES,
@@ -28,6 +29,7 @@ pub async fn mcp_start(
   validate_mcp_spawn(&command, &args)?;
   let env_overlay = env.unwrap_or_default();
   validate_mcp_env(&env_overlay)?;
+  let program = resolve_command(&app, command.trim()).await?;
   mcp_stop(server_id.clone()).await.ok();
 
   let codegraph_path = if server_id == "codegraph" {
@@ -51,7 +53,7 @@ pub async fn mcp_start(
 
   set_state(&server_id, "starting", None, vec![], None).await;
 
-  let mut command_builder = Command::new(&command);
+  let mut command_builder = Command::new(&program);
   command_builder
     .args(&args)
     .stdin(Stdio::piped())
@@ -68,6 +70,7 @@ pub async fn mcp_start(
   for (key, value) in &codegraph_env {
     command_builder.env(key, value);
   }
+  apply_resolved_path_env(&mut command_builder, &program);
 
   let mut child = command_builder.spawn().map_err(|e| {
     let message = format!("Failed to spawn MCP command '{command}': {e}");
