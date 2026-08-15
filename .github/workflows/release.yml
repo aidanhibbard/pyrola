@@ -89,6 +89,7 @@ jobs:
             libpangocairo-1.0-0 \
             rpm
           sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
 
       - name: Install macOS build tools
         if: matrix.platform == 'macos-latest'
@@ -172,6 +173,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           NO_STRIP: 'true'
           CEF_PATH: ${{ env.CEF_PATH }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
         with:
           tagName: v__VERSION__
           releaseName: pyrola v__VERSION__
