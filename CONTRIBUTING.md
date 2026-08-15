@@ -124,7 +124,9 @@ git push origin v0.1.0-alpha.0
 
 The [Release](.github/workflows/release.yml) workflow builds macOS (arm64 + x64), Linux x64, and Windows via [`tauri-action`](https://v2.tauri.app/distribute/pipelines/github/), uploads installers to a GitHub Release, then attaches `SHA256SUMS.txt` and `SHA512SUMS.txt` and publishes the release.
 
-Optional Apple signing/notarization: set `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` repository secrets.
+Unsigned GitHub binaries are the default. Do not pass empty `APPLE_*` secrets into the Release workflow: GitHub injects empty strings and macOS bundling fails on `security import`.
+
+When a real Developer ID certificate exists, add these env vars to the tauri-action step only if every value is non-empty: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`.
 
 ### OTA updates
 
