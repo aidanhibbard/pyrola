@@ -14,8 +14,8 @@ jobs:
     name: CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -27,7 +27,7 @@ jobs:
     name: Rust audit
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -52,7 +52,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux dependencies
         run: |
@@ -64,7 +64,7 @@ jobs:
             patchelf \
             xdg-utils
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -102,7 +102,7 @@ jobs:
             label: Linux
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-24.04'
@@ -143,7 +143,7 @@ jobs:
         run: |
           choco install cmake ninja -y --no-progress || true
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -171,7 +171,7 @@ jobs:
           echo "CEF_PATH=${CEF_DIR}" >> "$GITHUB_ENV"
 
       - name: Cache CEF binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.cef.outputs.path }}
           key: cef-${{ matrix.platform }}-${{ runner.arch }}-${{ steps.cef.outputs.version }}

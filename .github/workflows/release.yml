@@ -39,7 +39,7 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-24.04'
@@ -74,7 +74,7 @@ jobs:
           brew list cmake >/dev/null 2>&1 || brew install cmake
           brew list ninja >/dev/null 2>&1 || brew install ninja
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
           cache: npm
@@ -104,7 +104,7 @@ jobs:
           echo "CEF_PATH=${CEF_DIR}" >> "$GITHUB_ENV"
 
       - name: Cache CEF binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.cef.outputs.path }}
           key: cef-${{ matrix.platform }}-${{ runner.arch }}-${{ steps.cef.outputs.version }}
@@ -171,7 +171,7 @@ jobs:
     needs: publish-tauri
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve release tag
         id: meta
