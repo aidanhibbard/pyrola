@@ -31,7 +31,7 @@ chmod +x linuxdeploy-x86_64.AppImage.bin
 ./linuxdeploy-x86_64.AppImage.bin --appimage-extract
 rm -rf linuxdeploy-root
 mv squashfs-root linuxdeploy-root
-LINUXDEPLOY_BIN="$(find_exec linuxdeploy-root linuxdeploy)"
+LINUXDEPLOY_BIN="$(find_exec "${CACHE}/linuxdeploy-root" linuxdeploy)"
 
 curl -fsSL -o linuxdeploy-plugin-appimage-x86_64.AppImage.bin \
   https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
@@ -39,7 +39,7 @@ chmod +x linuxdeploy-plugin-appimage-x86_64.AppImage.bin
 ./linuxdeploy-plugin-appimage-x86_64.AppImage.bin --appimage-extract
 rm -rf plugin-appimage-root
 mv squashfs-root plugin-appimage-root
-PLUGIN_BIN="$(find_exec plugin-appimage-root linuxdeploy-plugin-appimage)"
+PLUGIN_BIN="$(find_exec "${CACHE}/plugin-appimage-root" linuxdeploy-plugin-appimage)"
 
 echo "linuxdeploy binary: ${LINUXDEPLOY_BIN}"
 echo "plugin binary: ${PLUGIN_BIN}"
