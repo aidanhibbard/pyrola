@@ -2,7 +2,7 @@ import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { toast } from 'vue-sonner'
 import { isTauri } from '@/services/pyrola/pyrola-tauri'
-import { formatError } from './helpers'
+import formatMonacoError from '@/utils/format-monaco-error'
 import type { MonacoHelpers } from './helpers'
 import type { MonacoLsp } from './lsp'
 import type { MonacoModels } from './models'
@@ -34,7 +34,7 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
         })
         .catch((error) => {
           toast.error('Failed to subscribe to LSP diagnostics', {
-            description: formatError(error),
+            description: formatMonacoError(error),
           })
         })
     }
@@ -61,7 +61,7 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
         : deps.editors.switchToCodeView
       switchView().catch((error) => {
         toast.error(enabled ? 'Failed to open diff view' : 'Failed to open editor', {
-          description: formatError(error),
+          description: formatMonacoError(error),
         })
       })
     },
@@ -76,14 +76,14 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
       if (ctx.props.diffView) {
         deps.models.attachDiffModels(path).catch((error) => {
           toast.error('Failed to load diff', {
-            description: formatError(error),
+            description: formatMonacoError(error),
           })
         })
         return
       }
       deps.models.attachModel(path).catch((error) => {
         toast.error('Failed to load file', {
-          description: formatError(error),
+          description: formatMonacoError(error),
         })
       })
     },
@@ -104,7 +104,7 @@ export const bindMonacoLifecycle = (ctx: MonacoEditorContext, deps: LifecycleDep
         await deps.models.reloadFromDisk(path)
       } catch (error) {
         toast.error('Failed to reload file', {
-          description: formatError(error),
+          description: formatMonacoError(error),
         })
       }
     },

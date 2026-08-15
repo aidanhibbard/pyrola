@@ -15,6 +15,8 @@ import useBrowserNavigation from '@/composables/use-browser-navigation'
 import useBrowserPassthroughSuspend from '@/composables/use-browser-passthrough-suspend'
 import useBrowserToolbar from '@/composables/use-browser-toolbar'
 import useWorkbenchStore from '@/composables/use-workbench-store'
+import { browserCefLastWarmInitError } from '@/services/pyrola/pyrola-tauri/browser'
+import formatUnknownError from '@/utils/format-unknown-error'
 
 export default (workspaceId: string, tabId: string) => {
   const workbench = useWorkbenchStore()
@@ -103,7 +105,14 @@ export default (workspaceId: string, tabId: string) => {
   const bootstrap = async (): Promise<void> => {
     starting.value = true
     try {
+      const lastWarmInitError = await browserCefLastWarmInitError()
+      if (lastWarmInitError) {
+        toast.error('Failed to start browser', {
+          description: lastWarmInitError,
+        })
+      }
       await session.ensureCefSession()
+      starting.value = false
       if (isTabActive.value) {
         if (hasPage.value) {
           await session.showCefView()
@@ -112,13 +121,11 @@ export default (workspaceId: string, tabId: string) => {
         }
         session.startPolling()
       }
-      try {
-        await consoleApi.attachConsole(session.getCdpClient)
-      } catch (error) {
+      consoleApi.attachConsole(session.getCdpClient).catch((error: unknown) => {
         toast.error('Failed to attach browser console', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: formatUnknownError(error),
         })
-      }
+      })
       if (hasPage.value) {
         toolbar.recordHistoryUrl(pageUrl.value)
       } else {
@@ -126,7 +133,7 @@ export default (workspaceId: string, tabId: string) => {
       }
     } catch (error) {
       toast.error('Failed to start browser', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatUnknownError(error),
       })
     } finally {
       starting.value = false
@@ -139,7 +146,7 @@ export default (workspaceId: string, tabId: string) => {
     consoleApi.detachConsole()
     session.destroyAllSessions().catch((error: unknown) => {
       toast.error('Failed to close browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatUnknownError(error),
       })
     })
   }
@@ -160,8 +167,7 @@ export default (workspaceId: string, tabId: string) => {
               ? 'Failed to show browser view'
               : 'Failed to hide browser view',
             {
-              description:
-                error instanceof Error ? error.message : 'Unknown error',
+              description: formatUnknownError(error),
             },
           )
         })
@@ -172,7 +178,7 @@ export default (workspaceId: string, tabId: string) => {
     elementSelect.stopElementSelect()
     session.hideCefView().catch((error: unknown) => {
       toast.error('Failed to hide browser view', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatUnknownError(error),
       })
     })
   })
@@ -185,7 +191,7 @@ export default (workspaceId: string, tabId: string) => {
       }
       session.syncPassthroughRects().catch((error: unknown) => {
         toast.error('Failed to update browser click targets', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: formatUnknownError(error),
         })
       })
     },

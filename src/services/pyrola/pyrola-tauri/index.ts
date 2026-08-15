@@ -133,6 +133,7 @@ export {
   browserCefGoForward,
   browserCefReload,
   browserCefGetCdpWsUrl,
+  browserCefLastWarmInitError,
   browserCefCdpEndpoint,
   browserCefBench,
 } from './browser'

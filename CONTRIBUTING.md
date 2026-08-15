@@ -130,7 +130,7 @@ When a real Developer ID certificate exists, add these env vars to the tauri-act
 
 ### OTA updates
 
-The Release workflow signs updater artifacts and uploads a static `latest.json` to each GitHub Release (via tauri-action defaults). The app's updater checks `https://github.com/aidanhibbard/pyrola/releases/latest/download/latest.json`.
+The Release workflow signs updater artifacts and uploads a static `latest.json` to each GitHub Release (via tauri-action defaults). The app's updater checks `https://github.com/aidanhibbard/pyrola/releases/download/v{{current_version}}/latest.json` (Tauri substitutes the running app version).
 
 Required repo secret for OTA: `TAURI_SIGNING_PRIVATE_KEY` (minisign key, passwordless). Optional: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if a password-protected key is used.
 
@@ -140,7 +140,7 @@ The public key is embedded in `src-tauri/tauri.conf.json` under `plugins.updater
 
 Apple notarization (`APPLE_*` secrets) is separate from the updater minisign signature: one is for Gatekeeper trust, the other is for OTA integrity.
 
-Releases must be published (not draft) for `/releases/latest/download/latest.json` to resolve. The checksums job already flips draft to false after all matrix legs, so clients never see a partial `latest.json`.
+GitHub `/releases/latest` only resolves the latest non-prerelease, non-draft release. Current Release workflow tags are prereleases (`prerelease: true`), so `/releases/latest/download/latest.json` 404s. Keep using the versioned `/releases/download/v{{current_version}}/latest.json` URL while shipping prereleases. Releases must still be published (not draft) so the asset URL resolves. The checksums job already flips draft to false after all matrix legs, so clients never see a partial `latest.json`.
 
 ### Verify a download
 

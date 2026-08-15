@@ -43,6 +43,9 @@ export const browserCefReload = (sessionId: string): Promise<void> =>
 export const browserCefGetCdpWsUrl = (sessionId: string): Promise<string> =>
   call('browser_cef_get_cdp_ws_url', { sessionId })
 
+export const browserCefLastWarmInitError = (): Promise<string | null> =>
+  call('browser_cef_last_warm_init_error')
+
 export const browserCefCdpEndpoint = (): Promise<string> => call('browser_cef_cdp_endpoint')
 
 export const browserCefBench = (

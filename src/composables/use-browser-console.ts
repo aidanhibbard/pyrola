@@ -1,5 +1,4 @@
 import { onBeforeUnmount, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import type CdpClient from '@/services/browser/cdp-client'
 
 export type BrowserConsoleLine = {
@@ -121,9 +120,8 @@ export default () => {
       await client.send('Runtime.enable')
       await client.send('Log.enable')
     } catch (error) {
-      toast.error('Failed to attach browser console', {
-        description: error instanceof Error ? error.message : 'Unknown error',
-      })
+      detachConsole()
+      throw error
     }
   }
 

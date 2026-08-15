@@ -37,6 +37,7 @@ static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
 static CLAIMED_TARGETS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 static CEF_PATHS: OnceLock<CefPaths> = OnceLock::new();
+static LAST_WARM_INIT_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -215,6 +216,23 @@ fn claimed_targets() -> &'static Mutex<HashSet<String>> {
   CLAIMED_TARGETS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+fn last_warm_init_error_slot() -> &'static Mutex<Option<String>> {
+  LAST_WARM_INIT_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+fn store_last_warm_init_error(error: Option<String>) {
+  if let Ok(mut slot) = last_warm_init_error_slot().lock() {
+    *slot = error;
+  }
+}
+
+pub(super) fn last_warm_init_error() -> Option<String> {
+  last_warm_init_error_slot()
+    .lock()
+    .ok()
+    .and_then(|slot| slot.clone())
+}
+
 fn cache_path(app: Option<&AppHandle>) -> PathBuf {
   if let Some(app) = app {
     if let Ok(dir) = app.path().app_cache_dir() {
@@ -260,19 +278,30 @@ fn ensure_framework_libs_beside_exe(paths: &CefPaths) -> Result<(), String> {
 
 pub fn warm_init(app: &AppHandle) -> Result<(), String> {
   if CEF_READY.load(Ordering::SeqCst) {
+    store_last_warm_init_error(None);
     return Ok(());
   }
 
   let resource_dir = app.path().resource_dir().ok();
-  let paths = cef_paths::resolve(resource_dir.as_deref())?;
+  let paths = match cef_paths::resolve(resource_dir.as_deref()) {
+    Ok(paths) => paths,
+    Err(error) => {
+      store_last_warm_init_error(Some(error.clone()));
+      return Err(error);
+    }
+  };
   let _ = CEF_PATHS.set(paths);
 
   #[cfg(target_os = "macos")]
   {
-    warm_init_macos(Some(app))?;
+    if let Err(error) = warm_init_macos(Some(app)) {
+      store_last_warm_init_error(Some(error.clone()));
+      return Err(error);
+    }
     CEF_READY.store(true, Ordering::SeqCst);
     // Kick the external pump; further work is scheduled by CEF callbacks.
     message_pump::schedule(0);
+    store_last_warm_init_error(None);
     log::info!(
       "CEF warm-init complete (remote debugging on port {})",
       remote_debugging_port()
@@ -283,7 +312,9 @@ pub fn warm_init(app: &AppHandle) -> Result<(), String> {
   #[cfg(not(target_os = "macos"))]
   {
     let _ = app;
-    Err("CEF warm-init is only implemented on macOS".into())
+    let error = "CEF warm-init is only implemented on macOS".to_string();
+    store_last_warm_init_error(Some(error.clone()));
+    Err(error)
   }
 }
 
@@ -415,6 +446,8 @@ pub fn cdp_endpoint() -> String {
 pub(super) fn ensure_ready() -> Result<(), String> {
   if CEF_READY.load(Ordering::SeqCst) {
     Ok(())
+  } else if let Some(error) = last_warm_init_error() {
+    Err(format!("CEF is not initialized: {error}"))
   } else {
     Err("CEF is not initialized".into())
   }
@@ -616,7 +649,7 @@ fn try_claim_unclaimed_page_target() -> Option<(String, Option<String>)> {
     let ws = item
       .get("webSocketDebuggerUrl")
       .and_then(|v| v.as_str())
-      .map(|s| s.replace("ws://127.0.0.1:", "ws://localhost:"));
+      .map(str::to_string);
     claimed.insert(id.clone());
     return Some((id, ws));
   }

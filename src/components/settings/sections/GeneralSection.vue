@@ -21,6 +21,7 @@ import SettingsSectionScroll from '@/components/settings/SettingsSectionScroll.v
 import useAppUpdater from '@/composables/use-app-updater'
 import usePyrolaConfig from '@/composables/use-pyrola-config'
 import { appShortcutHelp } from '@/utils/keyboard'
+import formatUnknownError from '@/utils/format-unknown-error'
 import type { PyrolaTheme } from '@/types/pyrola/pyrola-settings'
 
 const themeOptions = [
@@ -73,7 +74,7 @@ const updateMachineLabel = async (value: string | number): Promise<void> => {
     await config.setMachineLabel(String(value))
   } catch (error) {
     toast.error('Failed to save machine label', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
@@ -83,7 +84,7 @@ const setTheme = async (value: PyrolaTheme): Promise<void> => {
     await config.setTheme('personal', value)
   } catch (error) {
     toast.error('Failed to save theme', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
@@ -93,7 +94,7 @@ const handleCheckForUpdates = async (): Promise<void> => {
     await updater.checkForUpdates({ silent: false })
   } catch (error) {
     toast.error('Failed to check for updates', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }
@@ -103,7 +104,7 @@ const handleDownloadAndRestart = async (): Promise<void> => {
     await updater.downloadAndInstall()
   } catch (error) {
     toast.error('Failed to install update', {
-      description: error instanceof Error ? error.message : 'Unknown error',
+      description: formatUnknownError(error),
     })
   }
 }

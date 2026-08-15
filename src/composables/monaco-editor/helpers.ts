@@ -6,16 +6,6 @@ import {
 } from '@/utils/monaco-theme'
 import type { MonacoEditorContext } from './types'
 
-export const formatError = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message
-  }
-  if (typeof error === 'string') {
-    return error
-  }
-  return 'Unknown error'
-}
-
 export const hasEditorDimensions = (element: HTMLElement): boolean =>
   element.clientWidth > 0 && element.clientHeight > 0
 

@@ -140,11 +140,13 @@ pub async fn browser_cef_reload(window: Window, session_id: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn browser_cef_get_cdp_ws_url(
-  window: Window,
-  session_id: String,
-) -> Result<String, String> {
-  run_on_window_main(&window, move || runtime::get_cdp_ws_url_on_main(&session_id))
+pub async fn browser_cef_get_cdp_ws_url(session_id: String) -> Result<String, String> {
+  runtime::get_cdp_ws_url_on_main(&session_id)
+}
+
+#[tauri::command]
+pub async fn browser_cef_last_warm_init_error() -> Result<Option<String>, String> {
+  Ok(runtime::last_warm_init_error())
 }
 
 #[tauri::command]

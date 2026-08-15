@@ -2,6 +2,7 @@ import { useDebounceFn } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import * as monaco from 'monaco-editor'
 import { lspEnsureServer, lspRequest } from '@/services/pyrola/pyrola-tauri'
+import formatMonacoError from '@/utils/format-monaco-error'
 import {
   fileExtension,
   LSP_MARKER_OWNER,
@@ -10,7 +11,6 @@ import {
   parseLspDiagnostics,
   workspacePathToFileUri,
 } from '@/utils/monaco-lsp'
-import { formatError } from './helpers'
 import type { LspDiagnosticsEvent, MonacoEditorContext } from './types'
 
 export const createLsp = (ctx: MonacoEditorContext) => {
@@ -209,7 +209,7 @@ export const createLsp = (ctx: MonacoEditorContext) => {
         } catch (error) {
           toast.error('TypeScript language server unavailable', {
             description:
-              formatError(error) +
+              formatMonacoError(error) +
               '. Vue script hover and completions need TypeScript with the Vue plugin.',
           })
         }
@@ -223,7 +223,7 @@ export const createLsp = (ctx: MonacoEditorContext) => {
     } catch (error) {
       ctx.lspServerByPath.delete(path)
       clearLspMarkers(model)
-      const message = formatError(error)
+      const message = formatMonacoError(error)
       if (
         extension === 'java' ||
         extension === '.java' ||

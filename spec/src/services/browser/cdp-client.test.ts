@@ -56,6 +56,7 @@ class FakeWebSocket {
 describe('cdp-client', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('send assigns incrementing IDs', async () => {
@@ -123,5 +124,34 @@ describe('cdp-client', () => {
       },
     ])
     client.close()
+  })
+
+  it('connectWsUrl times out if the socket never opens', async () => {
+    vi.useFakeTimers()
+    class ConnectingWebSocket {
+      static readonly CONNECTING = 0
+      static readonly OPEN = 1
+      static readonly CLOSING = 2
+      static readonly CLOSED = 3
+
+      readyState = ConnectingWebSocket.CONNECTING
+
+      close = (): void => {
+        this.readyState = ConnectingWebSocket.CLOSED
+      }
+
+      addEventListener = (): void => {}
+
+      removeEventListener = (): void => {}
+    }
+    vi.stubGlobal('WebSocket', ConnectingWebSocket)
+
+    const pending = CdpClient.connectWsUrl('ws://127.0.0.1:9333/devtools/page/1')
+    await Promise.all([
+      expect(pending).rejects.toThrow(
+        /CDP WebSocket connect timed out after 5000ms/,
+      ),
+      vi.advanceTimersByTimeAsync(5_000),
+    ])
   })
 })

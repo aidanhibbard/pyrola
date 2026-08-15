@@ -29,7 +29,7 @@ const activeTabId = computed(() => workbench.activeTabId.value)
               <span class="text-xs">⋯</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" class="z-[60]">
             <DropdownMenuItem
               :disabled="!activeTabId"
               @click="activeTabId && workbench.closeOthers(activeTabId)"

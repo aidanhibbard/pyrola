@@ -82,9 +82,6 @@ const mapOpenedProject = (record: {
   lastOpened: record.last_opened,
 })
 
-const isInSidebar = (graph: GraphListItem): boolean =>
-  fleet.projects.value.some((project) => project.rootPath === graph.projectRoot)
-
 const revealGraphsFolder = async (): Promise<void> => {
   revealingRoot.value = true
   try {
@@ -212,7 +209,6 @@ const handleConfirmDelete = async (): Promise<void> => {
             <TableHead class="h-9 px-3 text-xs">Name</TableHead>
             <TableHead class="h-9 px-3 text-xs">Project path</TableHead>
             <TableHead class="h-9 px-3 text-xs">Storage size</TableHead>
-            <TableHead class="h-9 px-3 text-xs">In sidebar</TableHead>
             <TableHead class="h-9 w-28 px-3 text-right text-xs">
               Actions
             </TableHead>
@@ -236,9 +232,6 @@ const handleConfirmDelete = async (): Promise<void> => {
             </TableCell>
             <TableCell class="px-3 py-2.5">
               {{ formatBytes(graph.bytes) }}
-            </TableCell>
-            <TableCell class="px-3 py-2.5">
-              {{ isInSidebar(graph) ? 'Yes' : 'No' }}
             </TableCell>
             <TableCell class="px-3 py-2.5 text-right" @click.stop>
               <div class="inline-flex items-center justify-end gap-1">

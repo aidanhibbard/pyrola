@@ -87,6 +87,10 @@ describe('use-browser-navigation', () => {
     await nav.handleNavigate()
     expect(ensureCefSession).toHaveBeenCalledTimes(1)
     expect(browserCefNavigate).toHaveBeenCalledWith('3', 'https://example.com')
+    expect(showCefView).toHaveBeenCalledTimes(1)
     expect(markNavigated).toHaveBeenCalledWith('https://example.com')
+    expect(showCefView.mock.invocationCallOrder[0]).toBeLessThan(
+      markNavigated.mock.invocationCallOrder[0]!,
+    )
   })
 })

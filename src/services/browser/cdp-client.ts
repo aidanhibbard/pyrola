@@ -25,12 +25,27 @@ type PendingRequest = {
 }
 
 const SEND_TIMEOUT_MS = 20_000
+const CONNECT_TIMEOUT_MS = 5_000
 
 type CdpEventHandler = (params: unknown, sessionId?: string) => void
 
 const openWebSocket = (url: string): Promise<WebSocket> =>
   new Promise((resolve, reject) => {
     const ws = new WebSocket(url)
+    const timer = setTimeout(() => {
+      cleanup()
+      if (
+        ws.readyState === WebSocket.CONNECTING
+        || ws.readyState === WebSocket.OPEN
+      ) {
+        ws.close()
+      }
+      reject(
+        new Error(
+          `CDP WebSocket connect timed out after ${CONNECT_TIMEOUT_MS}ms: ${url}`,
+        ),
+      )
+    }, CONNECT_TIMEOUT_MS)
     const handleOpen = (): void => {
       cleanup()
       resolve(ws)
@@ -40,6 +55,7 @@ const openWebSocket = (url: string): Promise<WebSocket> =>
       reject(new Error(`Failed to open CDP WebSocket: ${url}`))
     }
     const cleanup = (): void => {
+      clearTimeout(timer)
       ws.removeEventListener('open', handleOpen)
       ws.removeEventListener('error', handleError)
     }

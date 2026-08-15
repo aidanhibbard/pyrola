@@ -3,6 +3,7 @@ import { toast } from 'vue-sonner'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { isTauri } from '@/services/pyrola/pyrola-tauri'
+import formatUnknownError from '@/utils/format-unknown-error'
 
 type UpdateProgress = {
   downloaded: number
@@ -56,7 +57,7 @@ export default () => {
     } catch (error) {
       if (!silent) {
         toast.error('Failed to check for updates', {
-          description: error instanceof Error ? error.message : 'Unknown error',
+          description: formatUnknownError(error),
         })
       }
     } finally {
@@ -99,7 +100,7 @@ export default () => {
       await relaunch()
     } catch (error) {
       toast.error('Failed to install update', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+        description: formatUnknownError(error),
       })
     } finally {
       downloading.value = false

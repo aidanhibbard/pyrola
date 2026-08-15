@@ -51,9 +51,9 @@ export default (args: NavigationArgs) => {
         return
       }
       await browserCefNavigate(sessionId, url)
+      await args.showCefView()
       args.markNavigated(url)
       args.recordHistoryUrl(url)
-      await args.showCefView()
       await args.refreshState()
       args.startPolling()
       args.addressInputRef.value?.blur()

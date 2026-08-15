@@ -1,17 +1,44 @@
 <script setup lang="ts">
 import { X, Minus, Plus } from "@lucide/vue"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { toast } from 'vue-sonner'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/shadcn/ui/tooltip'
 
-const {
-  minimize,
-  toggleMaximize,
-  close
-} = getCurrentWindow()
+const appWindow = getCurrentWindow()
+
+const handleClose = async (): Promise<void> => {
+  try {
+    await appWindow.close()
+  } catch (error) {
+    toast.error('Failed to close window', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleMinimize = async (): Promise<void> => {
+  try {
+    await appWindow.minimize()
+  } catch (error) {
+    toast.error('Failed to minimize window', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+const handleToggleMaximize = async (): Promise<void> => {
+  try {
+    await appWindow.toggleMaximize()
+  } catch (error) {
+    toast.error('Failed to maximize window', {
+      description: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
 </script>
 
 <template>
@@ -26,7 +53,7 @@ const {
           type="button"
           aria-label="Close"
           class="flex size-3 items-center justify-center rounded-full bg-[#ff5f57] transition-opacity hover:opacity-90"
-          @click="close"
+          @click="handleClose"
         >
           <X class="size-2 text-black/60 opacity-0 group-hover/controls:opacity-100" />
         </button>
@@ -39,7 +66,7 @@ const {
           type="button"
           aria-label="Minimize"
           class="flex size-3 items-center justify-center rounded-full bg-[#febc2e] transition-opacity hover:opacity-90"
-          @click="minimize"
+          @click="handleMinimize"
         >
           <Minus class="size-2 text-black/60 opacity-0 group-hover/controls:opacity-100" />
         </button>
@@ -52,7 +79,7 @@ const {
           type="button"
           aria-label="Maximize"
           class="flex size-3 items-center justify-center rounded-full bg-[#28c840] transition-opacity hover:opacity-90"
-          @click="toggleMaximize"
+          @click="handleToggleMaximize"
         >
           <Plus class="size-2 text-black/60 opacity-0 group-hover/controls:opacity-100" />
         </button>

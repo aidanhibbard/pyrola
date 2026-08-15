@@ -1,8 +1,8 @@
 import { toast } from 'vue-sonner'
 import * as monaco from 'monaco-editor'
+import formatMonacoError from '@/utils/format-monaco-error'
 import { ensureMonacoShiki } from '@/utils/monaco-shiki'
 import { applyMonacoTheme, resolveMonacoEditorOptions } from '@/utils/monaco-theme'
-import { formatError } from './helpers'
 import type { MonacoHelpers } from './helpers'
 import type { MonacoModels } from './models'
 import type { MonacoEditorContext } from './types'
@@ -32,7 +32,7 @@ export const createEditorInstances = (ctx: MonacoEditorContext, deps: EditorDeps
     created.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       deps.save().catch((error) => {
         toast.error('Failed to save file', {
-          description: formatError(error),
+          description: formatMonacoError(error),
         })
       })
     })
@@ -91,7 +91,7 @@ export const createEditorInstances = (ctx: MonacoEditorContext, deps: EditorDeps
       }
     } catch (error) {
       toast.error('Syntax highlighting unavailable', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
     }
   }
@@ -119,7 +119,7 @@ export const createEditorInstances = (ctx: MonacoEditorContext, deps: EditorDeps
       }
     } catch (error) {
       toast.error('Syntax highlighting unavailable', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
     }
   }
@@ -158,14 +158,14 @@ export const createEditorInstances = (ctx: MonacoEditorContext, deps: EditorDeps
         }
       } catch (error) {
         toast.error('Syntax highlighting unavailable', {
-          description: formatError(error),
+          description: formatMonacoError(error),
         })
       }
 
       return deps.helpers.hasActiveEditor()
     } catch (error) {
       toast.error('Failed to initialize editor', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
       return false
     } finally {
@@ -176,7 +176,7 @@ export const createEditorInstances = (ctx: MonacoEditorContext, deps: EditorDeps
   const tryInitializeEditor = (): void => {
     initializeEditor().catch((error) => {
       toast.error('Failed to initialize editor', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
     })
   }

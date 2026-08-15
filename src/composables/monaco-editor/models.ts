@@ -1,10 +1,11 @@
 import { toast } from 'vue-sonner'
 import * as monaco from 'monaco-editor'
 import { fsReadFile, fsWriteFile, gitShowFile } from '@/services/pyrola/pyrola-tauri'
+import formatMonacoError from '@/utils/format-monaco-error'
 import { detectMonacoLanguage } from '@/utils/monaco-language'
 import { ensureMonacoLanguage } from '@/utils/monaco-shiki'
 import { GIT_HEAD_SCHEME, workingFileUri } from '@/utils/monaco-working-uri'
-import { ensureLanguageRegistered, formatError } from './helpers'
+import { ensureLanguageRegistered } from './helpers'
 import type { MonacoHelpers } from './helpers'
 import type { MonacoLsp } from './lsp'
 import type { MonacoEditorContext } from './types'
@@ -70,7 +71,7 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
       content = result.content
     } catch (error) {
       toast.error('Failed to load HEAD version', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
     }
 
@@ -269,7 +270,7 @@ export const createModels = (ctx: MonacoEditorContext, deps: ModelsDeps) => {
       return true
     } catch (error) {
       toast.error('Failed to save file', {
-        description: formatError(error),
+        description: formatMonacoError(error),
       })
       return false
     } finally {

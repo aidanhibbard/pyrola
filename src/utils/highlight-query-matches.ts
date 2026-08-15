@@ -3,6 +3,33 @@ type HighlightSegment = {
   matched: boolean
 }
 
+const keepUnmatchedLeadingWhitespaceOnPrevious = (
+  segments: HighlightSegment[],
+): HighlightSegment[] => {
+  const result: HighlightSegment[] = []
+  for (const segment of segments) {
+    if (segment.matched || result.length === 0) {
+      result.push({ text: segment.text, matched: segment.matched })
+      continue
+    }
+    const leadingMatch = /^(\s+)(.*)$/.exec(segment.text)
+    if (!leadingMatch) {
+      result.push({ text: segment.text, matched: false })
+      continue
+    }
+    const leading = leadingMatch[1] ?? ''
+    const rest = leadingMatch[2] ?? ''
+    const previous = result[result.length - 1]
+    if (previous) {
+      previous.text += leading
+    }
+    if (rest.length > 0) {
+      result.push({ text: rest, matched: false })
+    }
+  }
+  return result
+}
+
 const collapseFlags = (text: string, matched: boolean[]): HighlightSegment[] => {
   const segments: HighlightSegment[] = []
   for (let index = 0; index < text.length; index += 1) {
@@ -15,7 +42,7 @@ const collapseFlags = (text: string, matched: boolean[]): HighlightSegment[] => 
     }
     segments.push({ text: char, matched: isMatched })
   }
-  return segments
+  return keepUnmatchedLeadingWhitespaceOnPrevious(segments)
 }
 
 export default (text: string, query: string): HighlightSegment[] => {
