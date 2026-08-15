@@ -38,7 +38,7 @@ jobs:
             cache_key: cef-macos-latest-x86_64-apple-darwin-release
           - platform: ubuntu-24.04
             label: Linux AppImage
-            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles appimage'
+            args: '--features cef --config src-tauri/tauri.cef.linux.conf.json --bundles appimage --verbose'
             rust_targets: ''
             cache_key: cef-ubuntu-24.04-release
           - platform: ubuntu-24.04
@@ -164,6 +164,14 @@ jobs:
           # CEF binaries must match the build target architecture. Cross-compiling
           # (e.g. x86_64-apple-darwin on arm64 runners) requires a matching CEF_PATH.
           echo "Using CEF_PATH=${CEF_PATH} for ${{ matrix.label }}"
+
+      - name: Extract linuxdeploy without FUSE
+        if: contains(matrix.args, '--bundles appimage')
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          chmod +x scripts/prepare-linuxdeploy.sh
+          ./scripts/prepare-linuxdeploy.sh
 
       - name: Build and upload to GitHub Release
         uses: tauri-apps/tauri-action@v1
