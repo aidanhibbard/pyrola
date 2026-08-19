@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Stage CEF binaries for Tauri bundling (macOS / Linux).
 # Requires CEF_PATH (or ~/.local/share/cef from export-cef-dir).
-# Also builds and stages pyrola_cef_helper for bundle.externalBin.
+# Builds pyrola_cef_helper: Linux/Windows use bundle.externalBin; macOS
+# stages nested Helper.app trees under src-tauri/cef-helpers/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,6 +10,7 @@ SRC_TAURI="$ROOT/src-tauri"
 CEF_PATH="${CEF_PATH:-${HOME}/.local/share/cef}"
 DEST="$SRC_TAURI/cef-runtime"
 BINARIES="$SRC_TAURI/binaries"
+HELPERS_DEST="$SRC_TAURI/cef-helpers"
 PROFILE="${CEF_BUNDLE_PROFILE:-release}"
 
 if [[ ! -d "$CEF_PATH" ]]; then
@@ -82,6 +84,51 @@ fi
 
 cp "$HELPER_SRC" "$BINARIES/pyrola_cef_helper-${TARGET_TRIPLE}"
 chmod +x "$BINARIES/pyrola_cef_helper-${TARGET_TRIPLE}"
+
+if [[ "$OS" == "Darwin" ]]; then
+  rm -rf "$HELPERS_DEST"
+  mkdir -p "$HELPERS_DEST"
+  stage_macos_helper_app() {
+    local app_file_name="$1"
+    local bundle_id="$2"
+    local exe_name="$3"
+    local app_dir="$HELPERS_DEST/$app_file_name"
+    local macos_dir="$app_dir/Contents/MacOS"
+    mkdir -p "$macos_dir"
+    cat > "$app_dir/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleExecutable</key>
+  <string>${exe_name}</string>
+  <key>CFBundleIdentifier</key>
+  <string>${bundle_id}</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>${exe_name}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+    cp "$HELPER_SRC" "$macos_dir/$exe_name"
+    chmod +x "$macos_dir/$exe_name"
+    codesign --force --sign - "$macos_dir/$exe_name"
+    codesign --force --sign - "$app_dir"
+  }
+  stage_macos_helper_app "pyrola Helper.app" "app.pyrola.helper" "pyrola Helper"
+  stage_macos_helper_app "pyrola Helper (GPU).app" "app.pyrola.helper.gpu" "pyrola Helper (GPU)"
+  stage_macos_helper_app "pyrola Helper (Plugin).app" "app.pyrola.helper.plugin" "pyrola Helper (Plugin)"
+  stage_macos_helper_app "pyrola Helper (Renderer).app" "app.pyrola.helper.renderer" "pyrola Helper (Renderer)"
+  stage_macos_helper_app "pyrola Helper (Alerts).app" "app.pyrola.helper.alerts" "pyrola Helper (Alerts)"
+  echo "Staged nested helper apps at $HELPERS_DEST"
+fi
 
 echo "Staged CEF runtime at $DEST"
 echo "Staged helper as $BINARIES/pyrola_cef_helper-${TARGET_TRIPLE}"

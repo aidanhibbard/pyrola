@@ -1,13 +1,17 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "bundle": {
-    "externalBin": [
-      "binaries/pyrola_cef_helper"
-    ],
     "macOS": {
       "frameworks": [
         "./cef-runtime/Chromium Embedded Framework.framework"
       ],
+      "files": {
+        "Frameworks/pyrola Helper.app": "./cef-helpers/pyrola Helper.app",
+        "Frameworks/pyrola Helper (GPU).app": "./cef-helpers/pyrola Helper (GPU).app",
+        "Frameworks/pyrola Helper (Plugin).app": "./cef-helpers/pyrola Helper (Plugin).app",
+        "Frameworks/pyrola Helper (Renderer).app": "./cef-helpers/pyrola Helper (Renderer).app",
+        "Frameworks/pyrola Helper (Alerts).app": "./cef-helpers/pyrola Helper (Alerts).app"
+      },
       "entitlements": "./Entitlements.cef.plist",
       "hardenedRuntime": false,
       "signingIdentity": "-"
