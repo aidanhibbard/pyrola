@@ -95,6 +95,8 @@ if [[ "$OS" == "Darwin" ]]; then
     local app_dir="$HELPERS_DEST/$app_file_name"
     local macos_dir="$app_dir/Contents/MacOS"
     mkdir -p "$macos_dir"
+    # Chromium helper Info.plist: LSBackgroundOnly plus LSUIElement so
+    # Launch Services / Spotlight / Raycast do not list these as apps.
     cat > "$app_dir/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -112,11 +114,20 @@ if [[ "$OS" == "Darwin" ]]; then
   <string>${exe_name}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>LSBackgroundOnly</key>
+  <true/>
+  <key>LSFileQuarantineEnabled</key>
+  <true/>
   <key>LSUIElement</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
 </dict>
 </plist>
 PLIST
+    touch "$app_dir/.metadata_never_index"
     cp "$HELPER_SRC" "$macos_dir/$exe_name"
     chmod +x "$macos_dir/$exe_name"
     codesign --force --sign - "$macos_dir/$exe_name"
