@@ -127,7 +127,6 @@ if [[ "$OS" == "Darwin" ]]; then
 </dict>
 </plist>
 PLIST
-    touch "$app_dir/.metadata_never_index"
     cp "$HELPER_SRC" "$macos_dir/$exe_name"
     chmod +x "$macos_dir/$exe_name"
     codesign --force --sign - "$macos_dir/$exe_name"
