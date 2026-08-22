@@ -25,7 +25,9 @@
 
 Pyrola is a local-first BYOK desktop Agents UI (Tauri, Vue, AI SDK).
 
-This project is in alpha. Download a build from [GitHub Releases](https://github.com/aidanhibbard/pyrola/releases). Contributors should start with [CONTRIBUTING.md](./CONTRIBUTING.md).
+This project is in alpha. Download a build from [GitHub Releases](https://github.com/aidanhibbard/pyrola/releases).
+
+Contributors should start with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Sponsored by
 
